@@ -1,0 +1,27 @@
+{
+  "name": "tide-js",
+  "version": "1.0.4",
+  "description": "A Javascript library to manage accounts, key share and encrypt in the Tide ecosystem.",
+  "main": "index.js",
+  "scripts": {
+    "watch": "webpack --watch --mode development"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tide-foundation/tide-js.git"
+  },
+  "author": "Matthew Spencer",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/tide-foundation/tide-js/issues"
+  },
+  "homepage": "https://github.com/tide-foundation/tide-js#readme",
+  "devDependencies": {
+    "webpack": "^4.31.0",
+    "webpack-cli": "^3.3.2"
+  },
+  "files": [
+    "index.js",
+    "src/cryptide.js"
+  ]
+}
