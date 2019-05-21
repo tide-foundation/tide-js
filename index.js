@@ -17,10 +17,11 @@
 
 import elGamal from './src/cryptide.js'
 export default class Tide {
-    constructor(orkNodes) {
+    constructor(orkNodes, encryptionStrength = 32) {
         this.nodeArray = orkNodes;
         this.threshold = orkNodes.length - 1;
         this.hashes = [];
+        this.encryptionStrength = encryptionStrength;
     }
 
     postCredentials(username, password) {
@@ -31,12 +32,12 @@ export default class Tide {
                     const saltAndUser = self.hashUsername(username);
 
                     // Create fragments
-                    const [cvkPrv, cvkPub] = elGamal.getKeys();
+                    const [cvkPrv, cvkPub] = elGamal.getKeys(self.encryptionStrength);
                     const frags = elGamal.shareKey(cvkPrv, self.nodeArray.length, self.threshold);
 
                     self.hashes = await elGamal.hashPasswords(password, saltAndUser.salt, self.nodeArray);
 
-                    await self.tideRequest(`${self.nodeArray[0]}/CreateAccount?publickey=notused&username=${saltAndUser.username}`)
+                    await self.tideRequest(`${self.nodeArray[0]}/CreateAccount?publickey=na&username=${saltAndUser.username}`)
 
                     // Send fragments to ork nodes
                     const sendFragmentsResult = await postFragments(self.nodeArray, cvkPub, frags, saltAndUser.username, self.hashes);
@@ -125,7 +126,7 @@ function postFragments(nodes, cvkPublic, frags, username, hashes) {
                     PasswordHash: hashes.find(h => h.server == nodes[nodeIndex]).pass
                 };
 
-                executeTideRequest(nodes[nodeIndex] + "/PushFragment", model).then((r) => {
+                await executeTideRequest(nodes[nodeIndex] + "/PushFragment", model).then((r) => {
                     if (r.success) {
                         complete++;
                     } else {

@@ -1,6 +1,6 @@
 {
   "name": "tide-js",
-  "version": "1.0.4",
+  "version": "1.0.7",
   "description": "A Javascript library to manage accounts, key share and encrypt in the Tide ecosystem.",
   "main": "index.js",
   "scripts": {

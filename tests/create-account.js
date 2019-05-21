@@ -1,7 +1,7 @@
 import Tide from "../tide";
 import config from "./test-config"
 
-const tide = new Tide(config.nodes)
+const tide = new Tide(config.nodes, 32)
 
 async function createAccount(username, password) {
     try {

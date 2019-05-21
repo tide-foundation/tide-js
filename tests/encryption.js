@@ -1,7 +1,7 @@
 import Tide from "../tide";
 import config from "./test-config"
 
-const tide = new Tide(config.nodes)
+const tide = new Tide(config.nodes, 32)
 
 const keys = {
     pub: "AJra1cjNkuhygof9/Gs7eQs6XZVlVp4eEnCywvGtpJmbLAp+NBHpVLSGLv7Bu8VbinESeSuvgyrSshz34OaIXNAQPuj+Y8KtXiin4MQUnO81DtIHxO3XzaU4rDZfSve0Vg==",
