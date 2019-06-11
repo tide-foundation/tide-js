@@ -1,9 +1,10 @@
 {
   "name": "tide-js",
-  "version": "1.0.7",
+  "version": "1.0.18",
   "description": "A Javascript library to manage accounts, key share and encrypt in the Tide ecosystem.",
   "main": "index.js",
   "scripts": {
+    "compile": "webpack",
     "watch": "webpack --watch --mode development"
   },
   "repository": {
@@ -23,5 +24,8 @@
   "files": [
     "index.js",
     "src/cryptide.js"
-  ]
+  ],
+  "dependencies": {
+    "eosjs-ecc": "^4.0.4"
+  }
 }

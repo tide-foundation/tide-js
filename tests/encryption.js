@@ -1,4 +1,4 @@
-import Tide from "../tide";
+import Tide from "../dist/main";
 import config from "./test-config"
 
 const tide = new Tide(config.nodes, 32)

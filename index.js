@@ -16,35 +16,90 @@
  */
 
 import elGamal from './src/cryptide.js'
+import ecc from 'eosjs-ecc'
+
 export default class Tide {
-    constructor(orkNodes, encryptionStrength = 32) {
+    constructor(orkNodes, vendorEndpoint, vendorUsername, encryptionStrength = 32) {
         this.nodeArray = orkNodes;
         this.threshold = orkNodes.length - 1;
         this.hashes = [];
         this.encryptionStrength = encryptionStrength;
+        this.vendorEndpoint = vendorEndpoint;
+        this.vendorUsername = vendorUsername;
     }
 
-    postCredentials(username, password) {
+    createMasterAccount(username, password, useOrks) {
         var self = this;
         return new Promise(
             async function (resolve, reject) {
                 try {
-                    const saltAndUser = self.hashUsername(username);
+                    const hashedCreds = self.hashUsername(username);
 
-                    // Create fragments
-                    const [cvkPrv, cvkPub] = elGamal.getKeys(self.encryptionStrength);
-                    const frags = elGamal.shareKey(cvkPrv, self.nodeArray.length, self.threshold);
+                    // Create keys
+                    const keys = await createBlockchainKeys();
 
-                    self.hashes = await elGamal.hashPasswords(password, saltAndUser.salt, self.nodeArray);
+                    // Initialize the account
+                    const accountResult = await self.tideRequest(`${self.vendorEndpoint}/${actions.INIT_USER}`, {
+                        username: hashedCreds.username,
+                        publicKey: keys.pub
+                    });
 
-                    await self.tideRequest(`${self.nodeArray[0]}/CreateAccount?publickey=na&username=${saltAndUser.username}`)
+                    if (!accountResult.success) return reject(accountResult.error);
 
-                    // Send fragments to ork nodes
-                    const sendFragmentsResult = await postFragments(self.nodeArray, cvkPub, frags, saltAndUser.username, self.hashes);
+                    if (useOrks) {
+                        // Create fragments
+                        const frags = elGamal.shareText(keys.priv, self.nodeArray.length, self.threshold);
+
+                        // Hash password and get the password fragments
+                        self.hashes = await elGamal.hashPasswords(password, hashedCreds.salt, self.nodeArray);
+
+                        // Send fragments to the ork nodes
+                        await postFragments(self.nodeArray, keys.pub, frags, hashedCreds.username, self.hashes);
+                    }
+
+                    // Confirm the account
+                    await self.tideRequest(`${self.vendorEndpoint}/${actions.CONFIRM_USER}`, {
+                        username: hashedCreds.username
+                    });
 
                     return resolve({
-                        pub: cvkPub,
-                        priv: cvkPrv
+                        pub: keys.pub,
+                        priv: keys.priv,
+                        account: accountResult.content
+                    });
+                } catch (thrownError) {
+                    return reject(`Failed sending fragments to all selected orks with error: ${thrownError}`);
+                }
+            });
+    }
+
+    postCredentials(username, password, useOrks, master = false) {
+        var self = this;
+        return new Promise(
+            async function (resolve, reject) {
+                try {
+                    const hashedCreds = self.hashUsername(username);
+
+                    // Create keys. Eos for master and elgamal for vendor
+                    const keys = createKeys();
+
+                    if (useOrks) {
+                        // Create fragments. Eos for master and elgamal for vendor
+                        const frags = elGamal.shareKey(keys.priv, self.nodeArray.length, self.threshold);
+
+                        // Hash password and get the password fragments
+                        self.hashes = await elGamal.hashPasswords(password, hashedCreds.salt, self.nodeArray);
+
+                        // Send fragments to ork nodes
+                        await postFragments(self.nodeArray, keys.pub, frags, hashedCreds.username, self.hashes);
+                    }
+
+                    // If master, confirm the account
+                    if (master) await self.tideRequest(`${self.vendorEndpoint}/${actions.CONFIRM_USER}`, hashedCreds);
+
+                    return resolve({
+                        pub: publicKey,
+                        priv: keys.priv
                     });
                 } catch (thrownError) {
                     return reject(`Failed sending fragments to all selected orks with error: ${thrownError}`);
@@ -60,21 +115,20 @@ export default class Tide {
                 const id = nextId();
                 log(id, `gathering user nodes...`)
                 try {
-                    const saltAndUser = self.hashUsername(username);
+                    const hashedCreds = self.hashUsername(username);
 
                     // Gather the nodes the user used to register with Tide
                     const userNodes = await tideRequest(`${self.nodeArray[0]}/nodes`, {
-                        username: saltAndUser.username
+                        username: hashedCreds.username
                     });
 
                     log(id, `Gathered user nodes. Count: ${userNodes.length}`)
                     log(id, `Creating password fragments`)
-                    console.log(self.nodeArray)
-                    console.log(userNodes)
-                    self.hashes = await elGamal.hashPasswords(password, saltAndUser.salt, userNodes.map(n => n.ork_url));
+
+                    self.hashes = await elGamal.hashPasswords(password, hashedCreds.salt, userNodes.map(n => n.ork_url));
 
                     // Get the fragments from each node
-                    const fragmentResult = await getFragments(userNodes, saltAndUser.username, password, self.hashes, self.threshold);
+                    const fragmentResult = await getFragments(userNodes, hashedCreds.username, password, self.hashes, self.threshold);
 
                     return resolve(fragmentResult);
                 } catch (thrownError) {
@@ -100,18 +154,28 @@ export default class Tide {
     hashUsername(data) {
         var salt = elGamal.hashSha(data)
         var username = elGamal.hashSha(salt)
+        var vendorUsername = elGamal.hashSha(`${salt}-${this.vendorUsername}`)
         return {
             salt: salt,
-            username: username
+            username: username,
+            vendorUsername: vendorUsername
         };
     }
 
     tideRequest(url, data) {
         return executeTideRequest(url, data)
     }
+
+    createKeys() {
+        const [privateKey, publicKey] = elGamal.getKeys(self.encryptionStrength);
+        return {
+            priv: privateKey,
+            pub: publicKey
+        }
+    }
 }
 
-function postFragments(nodes, cvkPublic, frags, username, hashes) {
+function postFragments(nodes, pub, frags, username, hashes) {
     return new Promise(
         async function (resolve, reject) {
             var complete = 0;
@@ -121,8 +185,8 @@ function postFragments(nodes, cvkPublic, frags, username, hashes) {
                 const nodeIndex = i;
                 const model = {
                     username: username,
-                    cvkPublic: cvkPublic,
-                    cvkPrivateFrag: frags[i],
+                    accountPublic: pub,
+                    accountPrivateFrag: frags[i],
                     PasswordHash: hashes.find(h => h.server == nodes[nodeIndex]).pass
                 };
 
@@ -250,4 +314,21 @@ function executeTideRequest(url, data) {
                 http.send();
             }
         });
+}
+
+function createBlockchainKeys() {
+    return new window.Promise(
+        async function (resolve, reject) {
+            ecc.randomKey().then(privateKey => {
+                return resolve({
+                    priv: privateKey,
+                    pub: ecc.privateToPublic(privateKey)
+                })
+            })
+        });
+}
+
+const actions = {
+    INIT_USER: 'initializeAccount',
+    CONFIRM_USER: 'confirmAccount'
 }
