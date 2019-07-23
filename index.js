@@ -16,16 +16,58 @@
  */
 
 import elGamal from './src/cryptide.js'
+
 import ecc from 'eosjs-ecc'
+import {
+    JsSignatureProvider
+} from 'eosjs/dist/eosjs-jssig'; // development only
+import {
+    Api,
+    JsonRpc,
+    RpcError
+} from 'eosjs';
+
+const signatureProvider = new JsSignatureProvider(["5JMzv4Q5Qtd2xGoPhSNWNFkBH7dLJ3RUr6BQ2We58xWohCEngUa"]);
+
+const rpc = new JsonRpc('http://104.43.250.225:8888');
+const api = new Api({
+    rpc,
+    signatureProvider
+});
+//uint64_t vendor_username, name account, uint64_t account_username, uint64_t time)
+//7365744080294536752,"tidexdroplet", 7089007990059132210, 100
+(async () => {
+    const result = await api.transact({
+        actions: [{
+            account: 'xtidemasterx',
+            name: 'inituser',
+            authorization: [{
+                actor: 'xtidemasterx',
+                permission: 'active',
+            }],
+            data: {
+                vendor_username: '7365744080294536752',
+                account: 'eosjs',
+                account_username: 777333,
+                time: '999',
+            },
+        }]
+    }, {
+        blocksBehind: 3,
+        expireSeconds: 30,
+    });
+    console.log(result);
+})();
 
 export default class Tide {
-    constructor(orkNodes, vendorEndpoint, vendorUsername, encryptionStrength = 32) {
+    constructor(orkNodes, vendorEndpoint, vendorUsername, blockchainEndpoint, encryptionStrength = 32) {
         this.nodeArray = orkNodes;
         this.threshold = orkNodes.length - 1;
         this.hashes = [];
         this.encryptionStrength = encryptionStrength;
         this.vendorEndpoint = vendorEndpoint;
         this.vendorUsername = vendorUsername;
+        this.blockchainEndpoint = blockchainEndpoint;
     }
 
     createMasterAccount(username, password, useOrks) {
@@ -54,7 +96,7 @@ export default class Tide {
                         self.hashes = await elGamal.hashPasswords(password, hashedCreds.salt, self.nodeArray);
 
                         // Send fragments to the ork nodes
-                        await postFragments(self.nodeArray, keys.pub, frags, hashedCreds.username, self.hashes);
+                        await postFragments(self.nodeArray, keys.pub, frags, hashedCreds.username, self.hashes, null);
                     }
 
                     // Confirm the account
@@ -65,44 +107,39 @@ export default class Tide {
                     return resolve({
                         pub: keys.pub,
                         priv: keys.priv,
-                        account: accountResult.content
+                        account: accountResult.content,
+                        username: hashedCreds.username
                     });
                 } catch (thrownError) {
-                    return reject(`Failed sending fragments to all selected orks with error: ${thrownError}`);
+                    return reject(thrownError);
                 }
             });
     }
 
-    postCredentials(username, password, useOrks, master = false) {
+    createVendorAccount(username, password, useOrks) {
         var self = this;
         return new Promise(
             async function (resolve, reject) {
                 try {
                     const hashedCreds = self.hashUsername(username);
 
-                    // Create keys. Eos for master and elgamal for vendor
-                    const keys = createKeys();
+                    // Create keys
+                    const keys = self.createKeys();
 
                     if (useOrks) {
-                        // Create fragments. Eos for master and elgamal for vendor
+                        // Create elGamal fragments
                         const frags = elGamal.shareKey(keys.priv, self.nodeArray.length, self.threshold);
 
                         // Hash password and get the password fragments
                         self.hashes = await elGamal.hashPasswords(password, hashedCreds.salt, self.nodeArray);
 
                         // Send fragments to ork nodes
-                        await postFragments(self.nodeArray, keys.pub, frags, hashedCreds.username, self.hashes);
+                        await postFragments(self.nodeArray, keys.pub, frags, hashedCreds.username, self.hashes, self.vendorUsername);
                     }
 
-                    // If master, confirm the account
-                    if (master) await self.tideRequest(`${self.vendorEndpoint}/${actions.CONFIRM_USER}`, hashedCreds);
-
-                    return resolve({
-                        pub: publicKey,
-                        priv: keys.priv
-                    });
+                    return resolve(keys);
                 } catch (thrownError) {
-                    return reject(`Failed sending fragments to all selected orks with error: ${thrownError}`);
+                    return reject(thrownError);
                 }
             }
         );
@@ -139,6 +176,14 @@ export default class Tide {
         );
     }
 
+    encryptUsingMaster(data, myPrivate, targetPublic) {
+        return ecc.Aes.encrypt(myPrivate, targetPublic, data);
+    }
+
+    decryptUsingMaster(data, myPrivate, targetPublic) {
+        return ecc.Aes.decrypt(myPrivate, targetPublic, data.nonce, data.message, data.checksum)
+    }
+
     processEncryption(encrypt, data, key) {
         return new window.Promise(
             async function (resolve, reject) {
@@ -153,12 +198,12 @@ export default class Tide {
 
     hashUsername(data) {
         var salt = elGamal.hashSha(data)
-        var username = elGamal.hashSha(salt)
-        var vendorUsername = elGamal.hashSha(`${salt}-${this.vendorUsername}`)
+        var username = elGamal.hashSha(salt) // Master account username
+        var userVendorUsername = elGamal.hashSha(`${salt}-${this.vendorUsername}`) // Vendor specific username
         return {
             salt: salt,
             username: username,
-            vendorUsername: vendorUsername
+            userVendorUsername: userVendorUsername
         };
     }
 
@@ -175,7 +220,7 @@ export default class Tide {
     }
 }
 
-function postFragments(nodes, pub, frags, username, hashes) {
+function postFragments(nodes, pub, frags, username, hashes, vendor) {
     return new Promise(
         async function (resolve, reject) {
             var complete = 0;
@@ -187,7 +232,8 @@ function postFragments(nodes, pub, frags, username, hashes) {
                     username: username,
                     accountPublic: pub,
                     accountPrivateFrag: frags[i],
-                    PasswordHash: hashes.find(h => h.server == nodes[nodeIndex]).pass
+                    PasswordHash: hashes.find(h => h.server == nodes[nodeIndex]).pass,
+                    vendor: vendor
                 };
 
                 await executeTideRequest(nodes[nodeIndex] + "/PushFragment", model).then((r) => {
@@ -326,6 +372,16 @@ function createBlockchainKeys() {
                 })
             })
         });
+}
+
+function getBlockchainClient(privateKey, endpoint) {
+    const signatureProvider = new JsSignatureProvider([privateKey]);
+
+    const rpc = new JsonRpc(endpoint);
+    return new Api({
+        rpc,
+        signatureProvider
+    });
 }
 
 const actions = {

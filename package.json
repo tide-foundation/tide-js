@@ -1,6 +1,6 @@
 {
   "name": "tide-js",
-  "version": "1.0.18",
+  "version": "1.0.25",
   "description": "A Javascript library to manage accounts, key share and encrypt in the Tide ecosystem.",
   "main": "index.js",
   "scripts": {
@@ -26,6 +26,7 @@
     "src/cryptide.js"
   ],
   "dependencies": {
+    "eosjs": "^20.0.0",
     "eosjs-ecc": "^4.0.4"
   }
 }
