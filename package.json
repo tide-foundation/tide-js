@@ -26,6 +26,8 @@
     "src/cryptide.js"
   ],
   "dependencies": {
+    "axios": "^0.19.0",
+    "cryptide": "^1.0.3",
     "eosjs": "^20.0.0",
     "eosjs-ecc": "^4.0.4"
   }

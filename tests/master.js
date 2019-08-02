@@ -1,20 +1,11 @@
-import Tide from "../tide";
-import config from "./test-config"
-
-const tide = new Tide([], '', 'tide');
+import tide from './test-config'
 
 
 
 async function createAccount(username, password) {
     try {
-        const registerVendorResult = await tide.createMasterAccount(username, password, false);
-        console.log(registerVendorResult)
-        console.log(`Test completed successfully`);
-        console.log(`Credentials: `, {
-            "username": username,
-            "password": password
-        });
-        console.log(`Keys: `, registerVendorResult);
+        const result = await tide.createMasterAccount(username, password, false);
+        console.log(result);
     } catch (error) {
         console.log(error);
     }
