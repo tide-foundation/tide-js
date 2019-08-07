@@ -28,6 +28,7 @@ import {
     RpcError
 } from 'eosjs';
 
+
 export default class Tide {
     constructor(orkNodes, vendorEndpoint, vendorUsername, blockchainEndpoint, encryptionStrength = 32) {
         this.nodeArray = orkNodes;
@@ -48,7 +49,7 @@ export default class Tide {
                     self.authorizedAccount = await self.hashUsername(username);
 
                     // Select Orks
-                    var selectedOrks = await gatherOrks(self.nodeArray, self.authorizedAccount.username);
+                    var selectedOrks = await gatherOrks(self.nodeArray, self.authorizedAccount.username, self.vendorEndpoint);
 
                     // Create keys
                     const keys = await createBlockchainKeys();
@@ -72,19 +73,19 @@ export default class Tide {
                         const hashes = await cryptide.hashPasswords(password, self.authorizedAccount.salt, selectedOrks);
 
                         // Send fragments to the ork nodes
-                        await postFragments(selectedOrks, self.vendorUsername, keys.pub, frags, hashes, self.authorizedAccount.account, self.client);
+                        await postFragments(selectedOrks, self.vendorUsername, keys.pub, frags, hashes, self.authorizedAccount.account, self.client, self.authorizedAccount.username);
                     }
 
                     // Confirm the account
                     await self.tideRequest(`${self.vendorEndpoint}/${actions.CONFIRM_USER}`, {
-                        username: hashedCreds.username
+                        username: self.authorizedAccount.username
                     });
 
                     return resolve({
                         pub: keys.pub,
                         priv: keys.priv,
-                        account: accountResult.content,
-                        username: hashedCreds.username
+                        account: self.authorizedAccount.account,
+                        username: self.authorizedAccount.username
                     });
                 } catch (thrownError) {
                     return reject(thrownError);
@@ -97,7 +98,10 @@ export default class Tide {
         return new Promise(
             async function (resolve, reject) {
                 try {
-                    const hashedCreds = self.hashUsername(username);
+                    if (self.authorizedAccount == null) await self.hashUsername(username);
+
+                    // Select Orks
+                    var selectedOrks = await gatherOrks(self.nodeArray, self.authorizedAccount.username, self.vendorEndpoint);
 
                     // Create keys
                     const keys = self.createKeys();
@@ -107,10 +111,12 @@ export default class Tide {
                         const frags = cryptide.shareKey(keys.priv, self.nodeArray.length, self.threshold);
 
                         // Hash password and get the password fragments
-                        const hashes = await cryptide.hashPasswords(password, hashedCreds.salt, self.nodeArray);
+                        const hashes = await cryptide.hashPasswords(password, self.authorizedAccount.salt, self.nodeArray);
 
+
+                        console.log(self.authorizedAccount)
                         // Send fragments to ork nodes
-                        await postFragments(self.nodeArray, keys.pub, frags, hashedCreds.username, hashes, self.vendorUsername);
+                        await postFragments(selectedOrks, self.vendorUsername, keys.pub, frags, hashes, self.authorizedAccount.account, self.client, self.authorizedAccount.username);
                     }
 
                     return resolve(keys);
@@ -177,12 +183,12 @@ export default class Tide {
         var username = cryptide.hashSha(salt) // Master account username
         var userVendorUsername = cryptide.hashSha(`${salt}-${this.vendorUsername}`) // Vendor specific username
 
-        var intUsername = await axios.get(`${this.vendorEndpoint}/TempConvertUsername/${encodeURIComponent(username)}`);
-        var intVendorUsername = await axios.get(`${this.vendorEndpoint}/TempConvertUsername/${encodeURIComponent(userVendorUsername)}`);
+        var intUsername = await tempConvertUsername(username);
+        var intVendorUsername = await tempConvertUsername(userVendorUsername);
         return {
             salt: salt,
-            username: intUsername.data,
-            userVendorUsername: intVendorUsername.data
+            username: intUsername,
+            userVendorUsername: intVendorUsername
         };
     }
 
@@ -199,40 +205,44 @@ export default class Tide {
     }
 }
 
-async function gatherOrks(orkUrls, username) {
+async function tempConvertUsername(username) {
+    return (await axios.get(`https://localhost:5001/api/tide/TempConvertUsername/${encodeURIComponent(username)}`)).data.toString();
+}
+
+async function gatherOrks(orkUrls, username, vendorEndpoint) {
     var assembledOrks = [];
     for (let i = 0; i < orkUrls.length; i++) {
-        var username = (await axios.get(`${orkUrls[i]}/api/Authentication/Username`)).data;
+        var username = (await axios.get(`${orkUrls[i]}/api/Authentication/Username`)).data.username;
+        var usernameForOrk = await tempConvertUsername(cryptide.hashSha(`${username}${username}`));
+
         assembledOrks.push({
             url: orkUrls[i],
             username: username,
-            usernameForOrk: cryptide.hashSha(`${username}${username}`)
+            usernameForOrk: usernameForOrk
         })
     }
     return assembledOrks;
 }
 
-function postFragments(nodes, vendorUsername, pubToDisplay, privFragsToShare, passwordHashes, auth, client) {
-    var self = this;
+function postFragments(nodes, vendorUsername, pubToDisplay, privFragsToShare, passwordHashes, auth, client, tempUsernameInsteadOfOrkSpecificOne) {
     return new Promise(
         async function (resolve, reject) {
-
-            var successful = 0;
-            for (let i = 0; i < nodes.length; i++) {
-
-                const result = await transaction(client, 'xtidemasterx', actions.POST_FRAGMENT, auth, {
-                    ork_username: nodes[i].username,
-                    username: nodes[i].usernameForOrk,
-                    vendor: vendorUsername,
-                    private_key_frag: privFragsToShare[i],
-                    public_key: pubToDisplay,
-                    pass_hash: passwordHashes[i],
-                });
-
-                console.log(result)
-                successful++;
+            try {
+                for (let i = 0; i < nodes.length; i++) {
+                    await transaction(client, 'xtidemasterx', actions.POST_FRAGMENT, auth, {
+                        ork_username: nodes[i].username,
+                        username: tempUsernameInsteadOfOrkSpecificOne, //nodes[i].usernameForOrk,
+                        vendor: vendorUsername,
+                        private_key_frag: privFragsToShare[i],
+                        public_key: pubToDisplay,
+                        pass_hash: passwordHashes[i],
+                    });
+                }
+                return resolve();
+            } catch (error) {
+                return reject();
             }
-            return resolve();
+
         });
 }
 
@@ -343,24 +353,27 @@ function getBlockchainClient(privateKey, endpoint) {
 }
 
 async function transaction(client, contract, scope, auth, data) {
+    console.log(contract, scope, auth, data)
     return new window.Promise(
         async function (resolve, reject) {
-            console.log(client, contract, scope, auth, data)
-            const result = await client.transact({
-                actions: [{
-                    account: contract,
-                    name: scope,
-                    authorization: [{
-                        actor: auth,
-                        permission: 'active',
-                    }],
-                    data: data,
-                }]
-            }, {
-                blocksBehind: 3,
-                expireSeconds: 30,
-            });
-            return resolve();
+            try {
+                await client.transact({
+                    actions: [{
+                        account: contract,
+                        name: scope,
+                        authorization: [{
+                            actor: auth,
+                            permission: 'active',
+                        }],
+                        data: data,
+                    }]
+                }, blockchainSettings);
+                return resolve();
+            } catch (error) {
+                console.log(error)
+                return reject(error);
+            }
+
         });
 }
 
@@ -370,57 +383,7 @@ const actions = {
     POST_FRAGMENT: 'postfragment'
 }
 
-
-
-function tide() {
-    return new Tide([
-        'https://droplet-ork-1.azurewebsites.net',
-        'https://droplet-ork-2.azurewebsites.net',
-        'https://droplet-ork-3.azurewebsites.net'
-    ], 'https://localhost:5001/api/tide', 12687203501835550816, 'http://104.43.250.225:8888');
-}
-
-function testHash() {
-    return tide().hashUsername('test hash').username == "OQCM8Z0S9zjulSBU/k4DRtDi/RDhA8zEyFOs/uSEn7s="
-}
-
-async function testTideRequest() {
-    return new window.Promise(
-        async function (resolve, reject) {
-            try {
-                console.log(await axios.get(`https://localhost:5001/api/tide/TempConvertUsername/test`));
-                return resolve(true);
-            } catch (error) {
-
-                return resolve(false);
-            }
-        });
-}
-
-function testCreateTideKeys() {
-    const keys = tide().createKeys();
-
-    return keys.priv != null && keys.pub != null;
-}
-
-async function testCreateBlockchainKeys() {
-    const keys = await createBlockchainKeys();
-    return keys.priv != null && keys.pub != null;
-}
-
-async function runTests() {
-    console.log('Hash: ', testHash())
-    console.log('Tide Requests: ', await testTideRequest());
-    // console.log('Tide Keys: ', testCreateTideKeys())
-    console.log('EOS Keys: ', await testCreateBlockchainKeys())
-}
-
-
-const testTide = tide();
-
-async function lol() {
-    var res = await testTide.createMasterAccount(`username${Math.random() * (1000000 - 1) + 1}`, "pass", true)
-    console.log(res)
-}
-
-lol();
+const blockchainSettings = {
+    blocksBehind: 3,
+    expireSeconds: 30,
+};
