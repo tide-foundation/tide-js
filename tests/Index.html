@@ -10,6 +10,24 @@
 
 <body>
     <script src='../dist/main.js'></script>
+
+    <script>
+        function lol() {
+            var tide = new Tide([
+                'https://droplet-ork-1.azurewebsites.net',
+                'https://droplet-ork-2.azurewebsites.net',
+                'https://droplet-ork-3.azurewebsites.net'
+            ], `https://localhost:5001/api/tide`, "5145206732613769841", 'http://104.43.250.225:8888', 32, (log) => console.log());
+
+
+            var randomName = `email${Math.floor(Math.random() * (+10000 - +1)) + +1}s@gmail.com`;
+            tide.createMasterAccount(randomName, 'password', true).then(function (value) {
+                console.log(value);
+                // expected output: "foo"
+            });
+        }
+        lol();
+    </script>
 </body>
 
 </html>
