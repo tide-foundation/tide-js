@@ -466,29 +466,3 @@ const blockchainSettings = {
 };
 
 window.Tide = Tide;
-
-// var tidedd = new Tide([
-//     'https://droplet-ork-1.azurewebsites.net',
-//     'https://droplet-ork-2.azurewebsites.net',
-//     'https://droplet-ork-3.azurewebsites.net'
-// ], `https://localhost:5001/api/tide`, "5145206732613769841", 'http://104.43.250.225:8888', 32, (log) => console.log());
-
-// async function lol() {
-//     try {
-
-//         var randomName = `email${Math.floor(Math.random() * (+10000 - +1)) + +1}s@gmail.com`;
-
-//         var masterResult = await tidedd.createMasterAccount(randomName, 'password', true);
-//         console.log(masterResult)
-//         var vendorResult = await tidedd.createVendorAccount(randomName, 'password', true);
-//         console.log(vendorResult)
-//         // var result = await tidedd.getCredentials('thraksdfd222sffffmar@gmail.com', 'password');
-//         // console.log(result);
-
-//         //  console.log(result)
-//     } catch (error) {
-//         console.log(error)
-//     }
-// }
-
-// lol();
