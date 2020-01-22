@@ -1,6 +1,6 @@
 {
   "name": "tide-js",
-  "version": "1.1.9",
+  "version": "1.1.10",
   "description": "A Javascript library to manage accounts, key share and encrypt in the Tide ecosystem.",
   "main": "dist/tide.min.js",
   "scripts": {
@@ -29,7 +29,7 @@
     "axios": "^0.19.0",
     "eosjs": "^20.0.0",
     "eosjs-ecc": "^4.0.4",
-    "cryptide": "1.1.0",
+    "cryptide": "^1.2.2",
     "argon2-browser": "^1.5.3"
   }
 }
