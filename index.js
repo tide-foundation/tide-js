@@ -184,8 +184,9 @@ class Tide {
             'https://raziel-ork-1.azurewebsites.net',
             'https://raziel-ork-2.azurewebsites.net',
             'https://raziel-ork-3.azurewebsites.net',
+            'https://raziel-ork-4.azurewebsites.net'
           ],
-          'jose',
+          'admin',
         );
         flow
           .sign(message)
