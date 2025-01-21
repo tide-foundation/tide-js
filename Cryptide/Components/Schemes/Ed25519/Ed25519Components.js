@@ -1,4 +1,5 @@
 import Point from "../../../Ed25519.js";
+import { RandomBigInt } from "../../../Math.js";
 import { BigIntFromByteArray, BigIntToByteArray, StringToUint8Array } from "../../../Serialization.js";
 import { Public, Private, BaseComponent } from "../../BaseComponent.js";
 import Ed25519Scheme from "./Ed25519Scheme.js";
@@ -77,5 +78,11 @@ export class Ed25519PrivateComponent extends BaseComponent{
     }
     SerializeComponent(){
         return BigIntToByteArray(this.priv);
+    }
+    GetPublic(){
+        return new Ed25519PublicComponent(Point.g.times(this.priv));
+    }
+    static New(){
+        return new Ed25519PrivateComponent(RandomBigInt());
     }
 }

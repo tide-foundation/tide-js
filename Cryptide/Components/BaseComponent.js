@@ -74,6 +74,7 @@ export class BaseComponent{
 
     /**
     * @param {Uint8Array|string} serialized 
+    * @returns {BaseComponent}
     */
     static DeserializeComponent(serialized){
         let b = [];
