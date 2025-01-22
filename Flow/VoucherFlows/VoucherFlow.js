@@ -1,5 +1,5 @@
-import Point from "../Cryptide/Ed25519.js";
-import { prepVouchersReq } from "../Cryptide/Math.js";
+import Point from "../../Cryptide/Ed25519.js";
+import { prepVouchersReq } from "../../Cryptide/Math.js";
 import NodeClient from "../../Clients/NodeClient.js";
 import VoucherClient from "../../Clients/VoucherClient.js";
 import VoucherResponse from "../../Models/Responses/Vendor/VoucherResponse.js";

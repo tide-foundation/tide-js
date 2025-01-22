@@ -24,24 +24,20 @@ export default class SerializedField{
     /**
      * 
      * @param {Uint8Array} encData 
-     * @param {BaseComponent} C1 
      * @param {number} timestamp 
-     * @param {Uint8Array} signature
      * @param {Uint8Array} encKey
+     * @param {Uint8Array} signature
      */
-    static create(encData, C1, timestamp, signature=null, encKey=null){
-        if(C1.ComponentType != Public) throw Error("C1 must be a pubic component");
+    static create(encData, timestamp, encKey=null, signature=null){
         // version
         const versionByte = numberToUint8Array(this.version, 1); // 1 byte
         const timestampBits = numberToUint8Array(timestamp, 8); // 64 bits (8 bytes)- let's hope Tide is still around past 2038 (otherwise i could've saved 32 bits here) https://en.wikipedia.org/wiki/Year_2038_problem
-        const c1Byte = C1.Serialize().ToBytes();
 
-        const d = Serialization.CreateTideMemory(versionByte, 4 + 1 + 4 + encData.length + 4 + c1Byte.length + 4 + timestampBits.length + (signature == null ? 0 : 4 + signature.length)  + (encKey == null ? 0 : 4 + encKey.length));
+        const d = Serialization.CreateTideMemory(versionByte, 4 + 1 + 4 + encData.length + 4 + timestampBits.length + (signature == null ? 0 : 4 + signature.length)  + (encKey == null ? 0 : 4 + encKey.length));
         Serialization.WriteValue(d, 1, encData);
-        Serialization.WriteValue(d, 2, c1Byte);
         Serialization.WriteValue(d, 3, timestampBits);
-        Serialization.WriteValue(d, 4, signature == null ? new Uint8Array() : signature);
-        Serialization.WriteValue(d, 5, encKey == null ? new Uint8Array() : encKey);
+        Serialization.WriteValue(d, 4, encKey == null ? new Uint8Array() : encKey);
+        Serialization.WriteValue(d, 5, signature == null ? new Uint8Array() : signature);
 
         return d;
     }

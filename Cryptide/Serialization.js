@@ -15,7 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { CurrentTime } from "../TideJS/Tools/Utils.js";
+import { CurrentTime } from "../Tools/Utils.js";
 import { Ed25519PublicComponent } from "./Components/Schemes/Ed25519/Ed25519Components.js";
 import Point from "./Ed25519.js";
 import { SHA256_Digest } from "./Hashing/Hash.js";

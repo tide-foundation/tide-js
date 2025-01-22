@@ -1,4 +1,4 @@
-import { Point } from "../../../Cryptide/index.js";
+import { Point } from "../../../../Cryptide/index.js";
 
 export default class PreSignInEncryptResponse{
     /**

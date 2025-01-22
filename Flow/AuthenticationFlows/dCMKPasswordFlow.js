@@ -16,16 +16,13 @@
 //
 
 import NodeClient from "../../Clients/NodeClient.js";
-import {DH, Interpolation, Point} from "../Cryptide/index.js";
+import {DH, Interpolation, Point} from "../../Cryptide/index.js";
 import { AuthenticateBasicReply, AuthenticateConsentReply, CmkConvertReply, PreSignInCVKReply, PrismConvertReply, SignInCVKReply } from "../../Math/KeyAuthentication.js";
-import CMKConvertResponse from "../../Models/Responses/KeyAuth/Convert/CMKConvertResponse.js";
-import PrismConvertResponse from "../../Models/Responses/KeyAuth/Convert/PrismConvertResponse.js";
-import OrkInfo from "../../Models/Infos/OrkInfo.js";
 import { TideJWT } from "../../index.js";
-import { Math } from "../Cryptide/index.js";
+import { Math } from "../../Cryptide/index.js";
 import { Max, Threshold, WaitForNumberofORKs, sortORKs } from "../../Tools/Utils.js";
 import { RandomBigInt } from "../Cryptide/Math.js";
-import { BigIntFromByteArray, GetUID, Hex2Bytes, base64ToBytes, bitArrayToUint8Array, serializeBitArray, uint8ArrayToBitArray } from "../Cryptide/Serialization.js";
+import { BigIntFromByteArray, GetUID, Hex2Bytes, base64ToBytes, bitArrayToUint8Array, serializeBitArray, uint8ArrayToBitArray } from "../../Cryptide/Serialization.js";
 import EnclaveEntry from "../../Models/EnclaveEntry.js";
 import VoucherFlow from "../VoucherFlows/VoucherFlow.js";
 import KeyInfo from "../../Models/Infos/KeyInfo.js";

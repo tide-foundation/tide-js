@@ -28,10 +28,19 @@ export default class ElGamal {
      * @param {Point} publicKey 
      */
     static async encryptData(secretData, publicKey) {
+        return bytesToBase64(await this.encryptDataRaw(secretData, publicKey));
+    }
+
+    /**
+     * 
+     * @param {Uint8Array} secretData 
+     * @param {Point} publicKey 
+     */
+    static async encryptDataRaw(secretData, publicKey) {
         const r = RandomBigInt();
         const c1 = Point.g.times(r).toArray();
         const c2 = await encryptDataRawOutput(secretData, await SHA256_Digest(publicKey.times(r).toArray()));
-        return bytesToBase64(ConcatUint8Arrays([c1, c2]));
+        return ConcatUint8Arrays([c1, c2]);
     }
 
     /**

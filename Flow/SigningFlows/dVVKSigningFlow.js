@@ -1,10 +1,10 @@
-import { EdDSA } from "../Cryptide/index.js";
-import BaseTideRequest from "../../Models/BaseSignRequest.js";
+import { EdDSA } from "../../Cryptide/index.js";
+import BaseTideRequest from "../../Models/BaseTideRequest.js";
 import { Max, Threshold, WaitForNumberofORKs, sortORKs } from "../../Tools/Utils.js";
 import NodeClient from "../../Clients/NodeClient.js";
 import OrkInfo from "../../Models/Infos/OrkInfo.js";
 import { PreSign, Sign as SumS } from "../../Math/KeySigning.js";
-import { BigIntToByteArray, ConcatUint8Arrays, bytesToBase64, serializeBitArray } from "../Cryptide/Serialization.js";
+import { BigIntToByteArray, ConcatUint8Arrays, bytesToBase64, serializeBitArray } from "../../Cryptide/Serialization.js";
 import VoucherFlow from "../VoucherFlows/VoucherFlow.js";
 
 export default class dVVKSigningFlow{
@@ -58,7 +58,7 @@ export default class dVVKSigningFlow{
         if(GRj.length != Sj.length) throw Error("Weird amount of GRjs and Sjs");
         let sigs = [];
         for(let i = 0; i < GRj.length; i++){
-            sigs.push(bytesToBase64(ConcatUint8Arrays([GRj[i].toArray(), BigIntToByteArray(Sj[i])])));
+            sigs.push(ConcatUint8Arrays([GRj[i].toArray(), BigIntToByteArray(Sj[i])]));
         }
 
         return sigs;

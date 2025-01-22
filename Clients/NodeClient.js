@@ -24,7 +24,7 @@ import PreSignInEncryptResponse from "../Models/Responses/KeyAuth/PreSignIn/PreS
 import CMKConvertResponse from "../Models/Responses/KeyAuth/Convert/CMKConvertResponse.js";
 import { BigIntFromByteArray, ConcatUint8Arrays, StringToUint8Array, base64ToBytes, bytesToBase64 } from "../Cryptide/Serialization.js";
 import ConvertRememberedResponse from "../Models/Responses/KeyAuth/Convert/ConvertRememberedResponse.js";
-import BaseTideRequest from "../Models/BaseSignRequest.js";
+import BaseTideRequest from "../Models/BaseTideRequest.js";
 import ReservationConfirmation from "../Models/Responses/Reservation/ReservationConfirmation.js";
 import { Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
 

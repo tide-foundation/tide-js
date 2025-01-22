@@ -15,8 +15,6 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { Point } from "../../../Cryptide/index.js";
-
 export default class AuthenticateResponse{
     /**
      * 

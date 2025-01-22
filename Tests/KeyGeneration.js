@@ -14,7 +14,7 @@ import AuthRequest from "../Models/AuthRequest.js";
 import { CurrentTime, Max } from "../Tools/Utils.js";
 import { EdDSA, Point } from "../Cryptide/index.js";
 import dTestVVKSigningFlow from "../Flow/SigningFlows/dTestVVkSigningFlow.js";
-import BaseTideRequest from "../Models/BaseSignRequest.js";
+import BaseTideRequest from "../Models/BaseTideRequest.js";
 import dVVKSigningFlow from "../Flow/SigningFlows/dVVKSigningFlow.js";
 import { Ed25519PrivateComponent, Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
 import { CreateAuthorizerPackage, CreateVRKPackage } from "../Cryptide/TideMemoryObjects.js";
