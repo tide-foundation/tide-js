@@ -42,10 +42,12 @@ export default class dVVKSigningFlow{
      * @param {bool} waitForAll
      */
     async start(request, waitForAll=false){
-        const clients = await Promise.all(this.orks.map(async info => await new NodeClient(info.orkURL).EnableTideDH(this.gSessKey, this.sessKey, info.orkPublic)));
+        const pre_clients = this.orks.map(info => new NodeClient(info.orkURL).EnableTideDH(this.gSessKey, this.sessKey, info.orkPublic));
 
         const voucherFlow = new VoucherFlow(this.orks.map(o => o.orkPaymentPublic), this.voucherURL, "vendorsign");
         const {vouchers} = await voucherFlow.GetVouchers(this.getVouchersFunction);
+
+        const clients = await Promise.all(pre_clients); // to speed things up - computer shared key while grabbing vouchers
 
         const pre_PreSignResponses = clients.map((client, i) => client.PreSign(i, this.vvkid, request, vouchers.toORK(i)));
         const {fulfilledResponses, bitwise} = await WaitForNumberofORKs(this.orks, pre_PreSignResponses, "VVK", waitForAll ? Max : Threshold, null, clients);
