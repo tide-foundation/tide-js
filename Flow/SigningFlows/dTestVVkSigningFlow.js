@@ -1,12 +1,12 @@
 import { EdDSA } from "../../Cryptide/index.js";
-import BaseTideRequest from "../../Models/BaseSignRequest.js";
+import BaseTideRequest from "../../Models/BaseTideRequest.js";
 import { Threshold, WaitForNumberofORKs, sortORKs } from "../../Tools/Utils.js";
 import NodeClient from "../../Clients/NodeClient.js";
 import OrkInfo from "../../Models/Infos/OrkInfo.js";
 import { PreSign, Sign as SumS } from "../../Math/KeySigning.js";
 import { BigIntToByteArray, ConcatUint8Arrays, StringToUint8Array, base64ToBytes, bytesToBase64, serializeBitArray } from "../../Cryptide/Serialization.js";
 import VoucherFlow from "../VoucherFlows/VoucherFlow.js";
-import { TestSignatureFormat } from "../Cryptide/Signing/TideSignature.js";
+import { TestSignatureFormat } from "../../Cryptide/Signing/TideSignature.js";
 
 export default class dTestVVKSigningFlow{
     /**

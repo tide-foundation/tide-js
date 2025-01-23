@@ -1,5 +1,5 @@
 import { CreateTideMemory, writeInt64LittleEndian, WriteValue } from "./Serialization.js";
-import { Utils } from "../TideJS/index.js";
+import { Utils } from "../index.js";
 import { Ed25519PublicComponent } from "./Components/Schemes/Ed25519/Ed25519Components.js";
 import { AuthorizerSignatureFormat } from "./Signing/TideSignature.js";
 

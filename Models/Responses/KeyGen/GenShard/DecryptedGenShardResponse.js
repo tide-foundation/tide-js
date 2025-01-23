@@ -15,8 +15,8 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { Ed25519PublicComponent } from "../../../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
-import { Point } from "../../../Cryptide/index.js";
+import { Ed25519PublicComponent } from "../../../../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
+import { Point } from "../../../../Cryptide/index.js";
 export default class DecryptedGenShardResponse{
     /** 
      * @param {Point} GRi

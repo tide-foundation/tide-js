@@ -1,5 +1,5 @@
 import { Point } from "../../Cryptide/index.js";
-import { base64ToBytes, Hex2Bytes } from "../Cryptide/Serialization.js";
+import { base64ToBytes, Hex2Bytes } from "../../Cryptide/Serialization.js";
 
 export default class OrkInfo{
     /**

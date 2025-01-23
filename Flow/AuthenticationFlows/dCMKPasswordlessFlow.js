@@ -16,7 +16,7 @@
 //
 
 import NodeClient from "../../Clients/NodeClient.js";
-import { DH, Interpolation, Point } from "../Cryptide/index.js";
+import { DH, Interpolation, Point } from "../../Cryptide/index.js";
 import { AuthenticateBasicReply, CmkConvertReply, ConvertRememberedReply } from "../../Math/KeyAuthentication.js";
 import { CurrentTime, Max, Threshold, WaitForNumberofORKs, sortORKs } from "../../Tools/Utils.js";
 import EnclaveEntry from "../../Models/EnclaveEntry.js";

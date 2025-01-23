@@ -15,7 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { BigIntFromByteArray, base64ToBytes } from "../../../Cryptide/Serialization.js";
+import { BigIntFromByteArray, base64ToBytes } from "../../../../Cryptide/Serialization.js";
 
 export default class DecryptedSetShardResponse{
     /**

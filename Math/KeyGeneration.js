@@ -25,8 +25,6 @@ import AuthRequest from "../Models/AuthRequest.js";
 import { AuthorizerPack, BigIntToByteArray, Bytes2Hex, ConcatUint8Arrays, GVRK_Pack, Hex2Bytes, StringFromUint8Array, StringToUint8Array, base64ToBytes, bytesToBase64, serializeBitArray, uint8ArrayToBitArray } from "../Cryptide/Serialization.js";
 import { mod } from "../Cryptide/Math.js";
 import { Max } from "../Tools/Utils.js";
-import { Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
-import { AuthorizerSignatureFormat, PublicKeySignatureFormat } from "../Cryptide/Signing/TideSignature.js";
 import { CreateAuthorizerPackage, CreateVRKPackage } from "../Cryptide/TideMemoryObjects.js";
 /**
 * @param {GenShardResponse[]} responses Can be T amount

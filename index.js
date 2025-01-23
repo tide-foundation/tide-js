@@ -19,12 +19,8 @@
 export { default as NodeClient } from './Clients/NodeClient.js'
 export { default as SimClient } from './Clients/NetworkClient.js'
 export { default as SimulatorFlow } from './Flow/SimulatorFlow.js';
-export { default as SignUp } from './Functions-OLD/SignUp.js';
-export { default as SignIn } from './Functions-OLD/SignIn.js';
-export { default as ChangePassword } from './Functions-OLD/ChangePassword.js'
 export { default as TideJWT } from "./ModelsToSign/TideJWT.js"
 export { default as OrkInfo } from "./Models/Infos/OrkInfo.js"
-export { default as RecoverAccount } from './Functions-OLD/RecoverAccount.js'
 export { default as dKeyGenerationFlow } from './Flow/dKeyGenerationFlow.js'
 
 import * as Utils from './Tools/Utils.js';
