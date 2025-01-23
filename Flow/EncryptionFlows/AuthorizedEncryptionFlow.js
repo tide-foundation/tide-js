@@ -35,56 +35,56 @@ export function AuthorizedEncryptionFlow(config){
     encryptionFlow.voucherURL = config.voucherURL;
 
     encryptionFlow.encrypt = async function(){
-        const vvkInfo = await new NetworkClient().GetKeyInfo(this.vvkId);
+        const vvkInfo = await new NetworkClient().GetKeyInfo(this.vvkId); // NO do this somewhere elsesudo docker comp
 
-        let encReqs = [];
-        encryptionFlow.dataToEncrypt.forEach(async d => {
+        const encReqs = await Promise.all(encryptionFlow.dataToEncrypt.map(async d => {
             const d_b = StringToUint8Array(d.data);
             if(d_b.length < 32){
                 // if data is less than 32B
                 // Gr. EncryptedData 
-                const encryptedData = await ElGamal.encryptDataRaw(d.data, vvkInfo.UserPublic);
+                const encryptedData = await ElGamal.encryptDataRaw(d_b, vvkInfo.UserPublic);
 
                 const tags_b = d.tags.map(t => StringToUint8Array(t)); 
 
-                encReqs.push({
+                return {
                     encryptionToSign: encryptedData,
                     encryptedData: encryptedData,
                     tags : tags_b,
                     sizeLessThan32 : true
-                })
+                };
                 
             }else{
                 // if data is more than 32B
                 const largeDataKey = window.crypto.getRandomValues(new Uint8Array(32));
-                const encryptedData = await encryptDataRawOutput(d.data, largeDataKey);
+                const encryptedData = await encryptDataRawOutput(d_b, largeDataKey);
                 const encryptedKey = await ElGamal.encryptDataRaw(largeDataKey, vvkInfo.UserPublic);
 
                 const tags_b = d.tags.map(t => StringToUint8Array(t)); 
 
-                encReqs.push({
+                return {
                     encryptionToSign : encryptedKey,
                     encryptedData : encryptedData,
                     tags: tags_b,
                     sizeLessThan32 : false
-                })
+                };
             }
-        })
+        }));
 
         // Start signing flow to authorize this encryption
         const timestamp = CurrentTime();
         const timestamp_b = numberToUint8Array(timestamp, 8);
         const size = encReqs.reduce((sum, next) => {
             // init 4 + as we'll be creating tide memory within tide memory
-            const nsize =  4 + (4 + next.encryptionToSign.length + 4 + next.tags.reduce((sum, next) => sum + next.length, 0));
+            // + 4 again since its another index
+            const nsize =  4 + 4 + (4 + next.encryptionToSign.length + next.tags.reduce((sum, next) => sum + 4 + next.length, 0));
             return sum + nsize;
-        }, 0) + 4 + timestamp_b.length;
+        }, 0) + 4 + timestamp_b.length; 
 
         const draft = Serialization.CreateTideMemory(timestamp_b, size);
         encReqs.forEach((enc, i) => {
-            const entry = Serialization.CreateTideMemory(enc.encryptionToSign, 4 + enc.encryptionToSign.length + 4 + enc.tags.reduce((sum, next) => sum + next.length, 0));
-            enc.tags.forEach((tag, i) => {
-                Serialization.WriteValue(entry, i+1, tag);
+            const entry = Serialization.CreateTideMemory(enc.encryptionToSign, 4 + enc.encryptionToSign.length + enc.tags.reduce((sum, next) => sum + 4 + next.length, 0));
+            enc.tags.forEach((tag, j) => {
+                Serialization.WriteValue(entry, j+1, tag);
             })
             Serialization.WriteValue(draft, i+1, entry);
         })
@@ -99,6 +99,8 @@ export function AuthorizedEncryptionFlow(config){
         
         // Set the Authorization token as the authorizer for the request
         encryptionRequest.addAuthorizer(StringToUint8Array(this.token));
+        encryptionRequest.addAuthorizerCertificate(new Uint8Array());// special case where other field isn't required
+        encryptionRequest.addAuthorization(new Uint8Array()); // special case where other field isn't required
         
         // Initiate signing flow
         const sessKey = GenSessKey();

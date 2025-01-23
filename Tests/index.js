@@ -3,6 +3,7 @@ import { CMKAuth_Basic, CMKAuth_Remembered } from "./KeyAuthentication.js";
 import { EmailRecovery } from "./AccountRecovery.js";
 import { StripeLicensing, CheckLicenseAddedToPayer } from "./StripeLicensing.js"
 import { Ed25519PublicDeserialization } from "./Components.js";
+import { Encrypt_auth_by_jwt } from "./Encryption.js";
 
 export const tests = {
     StripeLicensing,
@@ -14,7 +15,8 @@ export const tests = {
     EmailRecovery,
     NewVVK,
     HealPrism,
-    Ed25519PublicDeserialization
+    Ed25519PublicDeserialization,
+    Encrypt_auth_by_jwt
 };
 
 /**

@@ -33,11 +33,11 @@ export default class SerializedField{
         const versionByte = numberToUint8Array(this.version, 1); // 1 byte
         const timestampBits = numberToUint8Array(timestamp, 8); // 64 bits (8 bytes)- let's hope Tide is still around past 2038 (otherwise i could've saved 32 bits here) https://en.wikipedia.org/wiki/Year_2038_problem
 
-        const d = Serialization.CreateTideMemory(versionByte, 4 + 1 + 4 + encData.length + 4 + timestampBits.length + (signature == null ? 0 : 4 + signature.length)  + (encKey == null ? 0 : 4 + encKey.length));
+        const d = Serialization.CreateTideMemory(versionByte, 4 + 1 + 4 + encData.length + 4 + timestampBits.length + (signature == null ? 4 : 4 + signature.length)  + (encKey == null ? 4 : 4 + encKey.length));
         Serialization.WriteValue(d, 1, encData);
-        Serialization.WriteValue(d, 3, timestampBits);
-        Serialization.WriteValue(d, 4, encKey == null ? new Uint8Array() : encKey);
-        Serialization.WriteValue(d, 5, signature == null ? new Uint8Array() : signature);
+        Serialization.WriteValue(d, 2, timestampBits);
+        Serialization.WriteValue(d, 3, encKey == null ? new Uint8Array() : encKey);
+        Serialization.WriteValue(d, 4, signature == null ? new Uint8Array() : signature);
 
         return d;
     }

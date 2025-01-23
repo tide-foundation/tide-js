@@ -5,7 +5,6 @@ import dKeyGenerationFlow from "../Flow/dKeyGenerationFlow.js";
 import OrkInfo from "../Models/Infos/OrkInfo.js";
 import HashToPoint from "../Cryptide/Hashing/H2P.js";
 import { HMAC_forHashing } from "../Cryptide/Hashing/Hash.js";
-import dKeyAuthenticationFlow from "../Flow/dKeyAuthenticationFlow-OLD.js";
 import dCMKPasswordFlow from "../Flow/AuthenticationFlows/dCMKPasswordFlow.js";
 import EnclaveEntry from "../Models/EnclaveEntry.js";
 import KeyInfo from "../Models/Infos/KeyInfo.js";
@@ -122,34 +121,39 @@ export async function NewVVK(){
         const VRK = BigInt(123456789);
         const gVRK = GetPublic(VRK);
         const VVKid = "VendorID12345";
+        window.vvkId = VVKid;
         const auth = new AuthRequest(VVKid, "NEW", gSessKey.toBase64(), BigInt(CurrentTime() + 30))
         const authSig = await EdDSA.sign(auth.toString(), VRK);
 
         // Midgard can replace this line
-        const vrkPackage = CreateVRKPackage(new Ed25519PublicComponent(gVRK), Utils.CurrentTime() + 300);
-        const authorizerPackage = CreateAuthorizerPackage("VRK:1", ["TestInit:1", "AccessTokenInit:1", "RotateVRK:1"], vrkPackage);
+        const vrkPackage = CreateVRKPackage(new Ed25519PublicComponent(gVRK), Utils.CurrentTime() + 1000000);
+        const authorizerPackage = CreateAuthorizerPackage("VRK:1", ["UserContext:1", "AccessToken:1", "RotateVRK:1"], vrkPackage); // NEVER allow UserContext to be approved by main vrk
         console.log("AUTHORIZER: " + Bytes2Hex(authorizerPackage));
 
         const genFlow = new dKeyGenerationFlow(VVKid, gVRK.toBase64(), orks, sessKey, gSessKey, "NEW", "http://localhost:3000/voucher/new");
         const {gK} = await genFlow.GenVVKShard(auth, authSig);
+        window.gK = gK;
         const signAuth = await genFlow.SetShard(Bytes2Hex(authorizerPackage), "VVK");
-
-        const testSignFlow = new dTestVVKSigningFlow(VVKid, gK, orks, sessKey, gSessKey, VRK, authorizerPackage, signAuth.VRK_SIGNATURE_TO_STORE,  "http://localhost:3000/voucher/new");
-        await testSignFlow.start();
-        
-        const req = new BaseTideRequest("AccessTokenInit", "1", "VRK:1", StringToUint8Array(""));
-        const sig = base64ToBytes(await EdDSA.sign(await req.dataToAuthorize(), VRK));
-        req.addAuthorization(sig);
-        req.addAuthorizer(authorizerPackage);
-        req.addAuthorizerCertificate(signAuth.VRK_SIGNATURE_TO_STORE);
-
-        const signFlow = new dVVKSigningFlow(VVKid, gK, orks, sessKey, gSessKey, "http://localhost:3000/voucher/new");
-        await signFlow.start(req, true);
 
         await genFlow.Commit();
 
         console.log("vrk raw: " + new Ed25519PrivateComponent(VRK).Serialize().ToString());
         console.log("authorizer cert: " + bytesToBase64(signAuth.VRK_SIGNATURE_TO_STORE))
+
+        window.VRK_SIGNATURE_TO_STORE = signAuth.VRK_SIGNATURE_TO_STORE;
+        window.AUTHORIZER = Bytes2Hex(authorizerPackage);
+        window.ORKS = orks;
+        window.VRK = VRK;
+
+        const vals = {
+            id: VVKid,
+            pub: gK.toBase64(),
+            vrk: VRK.toString(),
+            vrk_sig: bytesToBase64(signAuth.VRK_SIGNATURE_TO_STORE),
+            authorizer: Bytes2Hex(authorizerPackage)
+        }
+
+        window.localStorage.setItem("t", JSON.stringify(vals));
 
         console.log("NewVVK TEST SUCCESSFUL: " + i);
         i++;
