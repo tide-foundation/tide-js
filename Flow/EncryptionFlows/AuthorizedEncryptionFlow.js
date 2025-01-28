@@ -11,12 +11,6 @@ import SerializedField from "../../Models/SerializedField.js";
 /**
  * 
  * @param {{
- * dataToEncrypt: [
-* {
-*      data: string,
-*      tags: string[]
-* }
-* ]
  * vendorId: string,
  * token: string,
  * voucherURL: string
@@ -29,20 +23,39 @@ export function AuthorizedEncryptionFlow(config){
 
     var encryptionFlow = this;
 
-    encryptionFlow.dataToEncrypt = config.dataToEncrypt;
     encryptionFlow.vvkId = config.vendorId;
     encryptionFlow.token = config.token;
     encryptionFlow.voucherURL = config.voucherURL;
+    
+    encryptionFlow.sessKey = GenSessKey();
+    encryptionFlow.gSessKey = GetPublic(encryptionFlow.sessKey);
 
-    encryptionFlow.encrypt = async function(){
-        const vvkInfo = await new NetworkClient().GetKeyInfo(this.vvkId); // NO do this somewhere elsesudo docker comp
+    encryptionFlow.vvkInfo = null;
+    async function getVVKInfo(){
+        if(!encryptionFlow.vvkInfo){
+            encryptionFlow.vvkInfo = await new NetworkClient().GetKeyInfo(this.vvkId);
+        }
+    }
 
-        const encReqs = await Promise.all(encryptionFlow.dataToEncrypt.map(async d => {
-            const d_b = StringToUint8Array(d.data);
+    /**
+     * 
+     * @param {[
+    * {
+    *      data: Uint8Array,
+    *      tags: string[]
+    * }
+    * ]} datasToEncrypt 
+     * @returns 
+     */
+    encryptionFlow.encrypt = async function(datasToEncrypt){
+        await getVVKInfo();
+
+        const encReqs = await Promise.all(datasToEncrypt.map(async d => {
+            const d_b = d.data;
             if(d_b.length < 32){
                 // if data is less than 32B
                 // Gr. EncryptedData 
-                const encryptedData = await ElGamal.encryptDataRaw(d_b, vvkInfo.UserPublic);
+                const encryptedData = await ElGamal.encryptDataRaw(d_b, encryptionFlow.vvkInfo.UserPublic);
 
                 const tags_b = d.tags.map(t => StringToUint8Array(t)); 
 
@@ -57,7 +70,7 @@ export function AuthorizedEncryptionFlow(config){
                 // if data is more than 32B
                 const largeDataKey = window.crypto.getRandomValues(new Uint8Array(32));
                 const encryptedData = await encryptDataRawOutput(d_b, largeDataKey);
-                const encryptedKey = await ElGamal.encryptDataRaw(largeDataKey, vvkInfo.UserPublic);
+                const encryptedKey = await ElGamal.encryptDataRaw(largeDataKey, encryptionFlow.vvkInfo.UserPublic);
 
                 const tags_b = d.tags.map(t => StringToUint8Array(t)); 
 
@@ -103,9 +116,7 @@ export function AuthorizedEncryptionFlow(config){
         encryptionRequest.addAuthorization(new Uint8Array()); // special case where other field isn't required
         
         // Initiate signing flow
-        const sessKey = GenSessKey();
-        const gSessKey = GetPublic(sessKey);
-        const encryptingSigningFlow = new dVVKSigningFlow(this.vvkId, vvkInfo.UserPublic, vvkInfo.OrkInfo, sessKey, gSessKey, this.voucherURL);
+        const encryptingSigningFlow = new dVVKSigningFlow(this.vvkId, encryptionFlow.vvkInfo.UserPublic, encryptionFlow.vvkInfo.OrkInfo, encryptionFlow.sessKey, encryptionFlow.gSessKey, this.voucherURL);
         const signatures = await encryptingSigningFlow.start(encryptionRequest);
 
         // Construct final serialized payloads for client to store
