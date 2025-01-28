@@ -76,12 +76,21 @@ export function AggregatePointArrays(pointArrays){
     return pointArrays[0].map((_, i) => AggregatePoints(pointArrays.map(array => array[i])));
 }
 /**
- * Will aggregate all points and multiply by corresponding li.
+ * Will aggregate all points and multiply by corresponding li of id.
  * @param {Point[]} points 
  * @param {bigint[]} ids 
  * @returns {Point}
  */
-export function AggregatePointsWithLis(points, ids){
+export function AggregatePointsWithIds(points, ids){
     const lis = GetLis(ids);
+    return AggregatePoints(points.map((p, i) => p.times(lis[i])));
+}
+/**
+ * Will aggregate all points and multiply by corresponding li.
+ * @param {Point[]} points 
+ * @param {bigint[]} lis 
+ * @returns {Point}
+ */
+export function AggregatePointsWithLis(points, lis){
     return AggregatePoints(points.map((p, i) => p.times(lis[i])));
 }

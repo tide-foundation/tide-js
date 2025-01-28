@@ -379,6 +379,36 @@ export default class NodeClient extends ClientBase {
         return Sij;
     }
     /**
+     * @param {number} index 
+     * @param {string} vuid 
+     * @param {BaseTideRequest} request 
+     * @param {string} voucher
+     */
+    async Decrypt(index, vuid, request, voucher){
+        if (!this.enabledTideDH) throw Error("TideDH must be enabled");
+        const encrypted = await AES.encryptData(request.encode(), this.DHKey);
+        const data = this._createFormData(
+            {
+                'encrypted': encrypted,
+                'gSessKey': this.gSessKey.toBase64(),
+                'voucher': voucher
+            }
+        );
+        const response = await this._post(`/Authentication/Key/v1/Decrypt?vuid=${vuid}`, data);
+        const responseData = await this._handleError(response, 'Decrypt');
+        const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
+        if (decrypted.length % 32 != 0) throw new Error("Unexpected response legnth. Must be divisible by 32");
+        let appliedC1s = [];
+        for (let i = 0; i < decrypted.length; i += 32) {
+            appliedC1s.push(Point.from(decrypted.slice(i, i + 32)));
+        }
+        return {
+            index,
+            appliedC1s
+        }
+
+    }
+    /**
      * @param {number} i
      * @param {string} uid 
      * @param {Point} gSessKeyPub 

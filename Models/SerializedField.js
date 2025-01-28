@@ -45,27 +45,20 @@ export default class SerializedField{
      * @param {Uint8Array} serializedField 
      */
     static deserialize(serializedField){
-        let pos = 0;
-        const version = serializedField[pos];
-        pos++;
-        // check version
-        if(version != this.version) throw Error("Unsupported version");
-        const key = Point.from(serializedField.slice(pos, pos + 32));
-        pos += 32;
-        const tag = Uint8ArrayToNumber(serializedField.slice(pos, pos + 8));
-        pos += 8;
-        const sig = serializedField.slice(pos, pos + 64);
-        pos += 64;
-        const timestamp = Uint8ArrayToNumber(serializedField.slice(pos, pos + 8));
-        pos += 8;
-        const data = serializedField.slice(pos);
-        const d = {
-            data,
-            key,
-            tag,
-            timestamp,
-            sig
+        // Make sure version is 1
+        const version = Uint8ArrayToNumber(Serialization.GetValue(serializedField, 0));
+        if(version != this.version) throw Error("Serialized tide data must be version " + this.version);
+
+        const encFieldChk = Serialization.GetValue(serializedField, 1);
+        const timestamp = Serialization.GetValue(serializedField, 2); // keep as array until JS HANDLES 64 BIT NUMBERS!
+        const encKey = Serialization.GetValue(serializedField, 3);
+        const signature = Serialization.GetValue(serializedField, 4);
+
+        return {
+            encFieldChk: encFieldChk,
+            timestamp: timestamp,
+            encKey: encKey.length == 0 ? null : encKey,
+            signature: signature.length == 0 ? null : signature
         }
-        return d;
     }
 }

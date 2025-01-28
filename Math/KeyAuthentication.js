@@ -66,7 +66,7 @@ export async function GetDecryptedChallenge(convertResponses, lis, mgORKi, r1){
  */
 export async function PrismConvertReply(convertResponses, ids, mgORKi, r1, prkECDHi){    
     // ∑ gPass ⋅ r1 ⋅ PRISMi ⋅ li / r1
-    const gPassPRISM = Interpolation.AggregatePointsWithLis(convertResponses.map(resp => resp.GBlurPassPrismi), ids).unblur(r1);
+    const gPassPRISM = Interpolation.AggregatePointsWithIds(convertResponses.map(resp => resp.GBlurPassPrismi), ids).unblur(r1);
     const gPassPRISM_hashed = await gPassPRISM.hash();
 
     const prismAuthis = await DH.generateECDHi(mgORKi, gPassPRISM_hashed);
@@ -110,7 +110,7 @@ export async function CmkConvertReply(convertResponses, ids, prismAuthis, gCMK, 
         throw Error("enclave.invalidAccount");
     }
 
-    const userPRISM = Interpolation.AggregatePointsWithLis(decData.map(d => d.UserPRISMi), ids);
+    const userPRISM = Interpolation.AggregatePointsWithIds(decData.map(d => d.UserPRISMi), ids);
     const userPRISMdec = userPRISM.times(BigIntFromByteArray(await DH.computeSharedKey(qPub, blurerKPriv)));
 
     const gUserCMK = userPRISMdec.unblur(uDeObf);
@@ -142,7 +142,7 @@ export async function ConvertRememberedReply(responses, mIdORKi, gCMK, sessID, p
 
     const timestamp = Math.median(decryptedResponses.map(d => d.Timestampi));
 
-    const userPRISM = Interpolation.AggregatePointsWithLis(decryptedResponses.map(d => d.UserPRISMi), mIdORKi);
+    const userPRISM = Interpolation.AggregatePointsWithIds(decryptedResponses.map(d => d.UserPRISMi), mIdORKi);
     const userPRISMdec = userPRISM.times(BigIntFromByteArray(await DH.computeSharedKey(qPub, blurerKPriv)));
 
     const gUserCMK = userPRISMdec.unblur(uDeObf);
