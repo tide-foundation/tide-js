@@ -105,10 +105,8 @@ export function AuthorizedEncryptionFlow(config){
         const encryptionRequest = new BaseTideRequest("TideSelfEncryption", "1", "AccessToken:1", draft);
 
         // Deserialize token to retrieve vuid - if it exists
-        try{
-            const vuid = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(this.token.split(".")[1])))).vuid; // get vuid field from jwt payload in 1 line
-            encryptionRequest.dyanmicData = StringToUint8Array(vuid);
-        }catch{}
+        const vuid = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(this.token.split(".")[1])))).vuid; // get vuid field from jwt payload in 1 line
+        if(vuid) decryptionRequest.dyanmicData = StringToUint8Array(vuid);
         
         // Set the Authorization token as the authorizer for the request
         encryptionRequest.addAuthorizer(StringToUint8Array(this.token));
