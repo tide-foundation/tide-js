@@ -69,7 +69,7 @@ export function AuthorizedDecryptionFlow(config){
                 data.tags.forEach((tag, j) => {
                     Serialization.WriteValue(entry, j+3, tag); // + 3 as we start at index 3
                 })
-            return entry;
+                return entry;
             }else{
                 // decrypt data directly
                 const entry = Serialization.CreateTideMemory(data.encFieldChk, 4 + data.encFieldChk.length + 4 + data.signature.length + 4 + data.timestamp.length + data.tags.reduce((sum, next) => sum + 4 + next.length, 0));
