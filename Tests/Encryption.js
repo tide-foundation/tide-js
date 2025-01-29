@@ -1,6 +1,6 @@
 import { SimulatorFlow, Utils } from "../index.js";
 import { CreateGPrismAuth, GenSessKey, GetPublic, RandomBigInt } from "../Cryptide/Math.js";
-import { base64ToBase64Url, base64ToBytes, BigIntToByteArray, Bytes2Hex, bytesToBase64, GetUID, Hex2Bytes, StringToUint8Array } from "../Cryptide/Serialization.js";
+import { base64ToBase64Url, base64ToBytes, BigIntToByteArray, Bytes2Hex, bytesToBase64, GetUID, Hex2Bytes, StringFromUint8Array, StringToUint8Array } from "../Cryptide/Serialization.js";
 import dKeyGenerationFlow from "../Flow/dKeyGenerationFlow.js";
 
 import NetworkClient from "../Clients/NetworkClient.js";
@@ -12,9 +12,10 @@ import dVVKSigningFlow from "../Flow/SigningFlows/dVVKSigningFlow.js";
 import { Ed25519PrivateComponent, Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
 import { CreateAuthorizerPackage, CreateVRKPackage } from "../Cryptide/TideMemoryObjects.js";
 import { AuthorizedEncryptionFlow } from "../Flow/EncryptionFlows/AuthorizedEncryptionFlow.js";
+import { AuthorizedDecryptionFlow } from "../Flow/DecryptionFlows/AuthorizedDecryptionFlow.js";
 
 
-export async function Encrypt_auth_by_jwt(){
+export async function Get_Auth_By_JWT(){
     const simClient = new NetworkClient();
     const availableOrks = (await simClient.FindReservers("bl2ah"));
     const orks = (await SimulatorFlow.FilterInactiveOrks(availableOrks)).slice(0, Max);
@@ -30,12 +31,14 @@ export async function Encrypt_auth_by_jwt(){
 
     // Generate signed usercontext
     const userContext = StringToUint8Array(JSON.stringify({
-        "resource_access":{
-            "dob":{
-                "roles":[
-                    "encrypt"
-                ]
-            }
+        "realm_access":{
+            "roles":[
+                "_tide_dob.selfdecrypt",
+                "_tide_dob.selfencrypt",
+                "_tide_name.selfdecrypt",
+                "_tide_name.selfencrypt",
+                "_tide_other.selfencrypt"
+            ]
         }
     }));
     const userContextDraft = Serialization.CreateTideMemory(new Uint8Array([0]), 4 + 1 + 4 + userContext.length);
@@ -52,20 +55,17 @@ export async function Encrypt_auth_by_jwt(){
 
     // Generate signed jwt
     let requestsedJwt = "eyJhbGciOiJFZERTQSIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJVbnNrdGp5dlNabnhlbTBpaEYwNTQ2NjlEdHdFMjV0dkJ2Y1lSZVBVNUo0In0." + base64ToBase64Url(bytesToBase64(StringToUint8Array(JSON.stringify({
-        "resource_access":{
-            "dob":{
-                "roles":[
-                    "encrypt"
-                ]
-            },
-            "name":{
-                "roles":[
-                    "encrypt"
-                ]
-            }
+        "realm_access":{
+            "roles":[
+                "_tide_dob.selfdecrypt",
+                "_tide_dob.selfencrypt",
+                "_tide_name.selfdecrypt",
+                "_tide_name.selfencrypt",
+                "_tide_other.selfencrypt"
+            ]
         },
         // below is so the orks don't reject the jwt
-        "exp": CurrentTime() + 100,
+        "exp": CurrentTime() + 10000,
         "sid": "testtttt",
         "iat": CurrentTime()
     }))));
@@ -80,33 +80,102 @@ export async function Encrypt_auth_by_jwt(){
     const jwtSigningFlow = new dVVKSigningFlow(vvkId, gVVK, orks, sessKey, gSessKey, "http://localhost:3000/voucher/new");
     requestsedJwt = requestsedJwt + "." + base64ToBase64Url(bytesToBase64((await jwtSigningFlow.start(jwtRequest))[0]));
 
+    
+
+    // store here for encrypt/decrypt
+    window.localStorage.setItem("e", JSON.stringify({
+        id: vvkId,
+        token: requestsedJwt
+    }));
+
+    console.log('SUCCESS. Feel free to test encryption and decryption');
+}
+
+export async function Encrypt(){
+    const e = JSON.parse(window.localStorage.getItem("e"));
+    const vvkId = e.id;
+    const token = e.token;
+
     // Test encryption
     console.time('Execution Time');
     const encryptionFlow = new AuthorizedEncryptionFlow({
-        dataToEncrypt: [
-            {
-                "data": "0",
-                "tags": ["dob"]
-            },
-            {
-                "data": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-                "tags": ["dob",]
-            },
-            {
-                "data": "0",
-                "tags": ["dob", "name"]
-            },
-            {
-                "data": "0",
-                "tags": ["name"]
-            }
-        ],
         vendorId: vvkId,
-        token: requestsedJwt,
+        token: token,
         voucherURL: "http://localhost:3000/voucher/new"
     });
-    const encrypted = await encryptionFlow.encrypt();
+    const encrypted = await encryptionFlow.encrypt([
+        {
+            "data": StringToUint8Array("0"),
+            "tags": ["dob", "other"]
+        },
+        {
+            "data": StringToUint8Array("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+            "tags": ["dob"]
+        },
+        {
+            "data": StringToUint8Array("0"),
+            "tags": ["dob", "name"]
+        },
+        {
+            "data": StringToUint8Array("0"),
+            "tags": ["name"]
+        }
+    ]);
     console.timeEnd('Execution Time');
     console.log(encrypted);
     console.log("Encrypt TEST SUCCESSFUL");
+}
+
+export async function Decrypt(){
+    const e = JSON.parse(window.localStorage.getItem("e"));
+    const vvkId = e.id;
+    const token = e.token;
+
+    // encrypt first
+    const encryptionFlow = new AuthorizedEncryptionFlow({
+        vendorId: vvkId,
+        token: token,
+        voucherURL: "http://localhost:3000/voucher/new"
+    });
+    const encrypted = await encryptionFlow.encrypt([
+        {
+            "data": StringToUint8Array("a"),
+            "tags": ["dob"]
+        },
+        {
+            "data": StringToUint8Array("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+            "tags": ["dob"]
+        },
+        {
+            "data": StringToUint8Array("ab"),
+            "tags": ["dob", "name"]
+        },
+        {
+            "data": StringToUint8Array("abc"),
+            "tags": ["name"]
+        }
+    ]);
+
+    // now decrypt
+    console.time('Execution Time');
+    const decrpytionFlow = new AuthorizedDecryptionFlow({
+        vendorId: vvkId,
+        token: token,
+        voucherURL: "http://localhost:3000/voucher/new"
+    });
+    const decrypted = await decrpytionFlow.decrypt([
+        {
+            "encrypted": encrypted[1],
+            "tags": ["dob"]
+        },
+        {
+            "encrypted": encrypted[3],
+            "tags": ["name"]
+        }
+    ])
+    console.timeEnd('Execution Time');
+
+
+    console.log(decrypted.map(d => StringFromUint8Array(d)));
+    console.log("Decryption SUCCESSFUL");
 }

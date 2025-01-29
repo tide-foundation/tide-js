@@ -33,7 +33,7 @@ export function AuthorizedEncryptionFlow(config){
     encryptionFlow.vvkInfo = null;
     async function getVVKInfo(){
         if(!encryptionFlow.vvkInfo){
-            encryptionFlow.vvkInfo = await new NetworkClient().GetKeyInfo(this.vvkId);
+            encryptionFlow.vvkInfo = await new NetworkClient().GetKeyInfo(encryptionFlow.vvkId);
         }
     }
 
@@ -102,7 +102,7 @@ export function AuthorizedEncryptionFlow(config){
             Serialization.WriteValue(draft, i+1, entry);
         })
 
-        const encryptionRequest = new BaseTideRequest("TideEncryption", "1", "AccessToken:1", draft);
+        const encryptionRequest = new BaseTideRequest("TideSelfEncryption", "1", "AccessToken:1", draft);
 
         // Deserialize token to retrieve vuid - if it exists
         try{
