@@ -13,7 +13,8 @@ import SerializedField from "../../Models/SerializedField.js";
  * @param {{
  * vendorId: string,
  * token: string,
- * voucherURL: string
+ * voucherURL: string,
+ * homeOrkUrl: string | null
  * }} config 
  */
 export function AuthorizedEncryptionFlow(config){
@@ -33,7 +34,7 @@ export function AuthorizedEncryptionFlow(config){
     encryptionFlow.vvkInfo = null;
     async function getVVKInfo(){
         if(!encryptionFlow.vvkInfo){
-            encryptionFlow.vvkInfo = await new NetworkClient().GetKeyInfo(encryptionFlow.vvkId);
+            encryptionFlow.vvkInfo = await new NetworkClient(config.homeOrkUrl).GetKeyInfo(encryptionFlow.vvkId);
         }
     }
 
@@ -106,7 +107,7 @@ export function AuthorizedEncryptionFlow(config){
 
         // Deserialize token to retrieve vuid - if it exists
         const vuid = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(this.token.split(".")[1])))).vuid; // get vuid field from jwt payload in 1 line
-        if(vuid) decryptionRequest.dyanmicData = StringToUint8Array(vuid);
+        if(vuid) encryptionRequest.dyanmicData = StringToUint8Array(vuid);
         
         // Set the Authorization token as the authorizer for the request
         encryptionRequest.addAuthorizer(StringToUint8Array(this.token));
