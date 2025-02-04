@@ -12,7 +12,6 @@ import dVVKSigningFlow from "../Flow/SigningFlows/dVVKSigningFlow.js";
 import { Ed25519PrivateComponent, Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
 import { CreateAuthorizerPackage, CreateVRKPackage } from "../Cryptide/TideMemoryObjects.js";
 import { AuthorizedEncryptionFlow } from "../Flow/EncryptionFlows/AuthorizedEncryptionFlow.js";
-import { AuthorizedDecryptionFlow } from "../Flow/DecryptionFlows/AuthorizedDecryptionFlow.js";
 
 
 export async function Get_Auth_By_JWT(){
@@ -158,7 +157,7 @@ export async function Decrypt(){
 
     // now decrypt
     console.time('Execution Time');
-    const decrpytionFlow = new AuthorizedDecryptionFlow({
+    const decrpytionFlow = new AuthorizedEncryptionFlow({
         vendorId: vvkId,
         token: token,
         voucherURL: "http://localhost:3000/voucher/new"
