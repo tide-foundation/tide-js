@@ -75,7 +75,7 @@ export default class dKeyGenerationFlow{
         const reserveClients = reservers.map(r => new NodeClient(r.orkURL));
 
         const pre_ReserveResponses = reserveClients.map((client, i) => client.ReserveUID(i, uid, 'SESSIONID', vouchers.toORK(i), gSessKeyPub))
-        const {fulfilledResponses} = await WaitForNumberofORKs(reservers, pre_ReserveResponses, "NEW", 1);
+        const {fulfilledResponses} = await WaitForNumberofORKs(reservers, pre_ReserveResponses, "NEW", 5, null, null, 1000);
         const lowestProximityresConf = fulfilledResponses.reduce((prev, curr) => (curr.proximity < prev.proximity ? curr : prev)); // get closest proximity
 
         return {
