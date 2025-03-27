@@ -1,3 +1,4 @@
+import { Serialization } from "../Cryptide/index.js";
 import { base64ToBytes, base64UrlToBase64, GetValue, StringFromUint8Array, TryGetValue } from "../Cryptide/Serialization.js";
 import InitializationCertificate from "./InitializationCertificate.js";
 
@@ -73,15 +74,16 @@ class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder{ // this is 
     static _name = "CardanoTx";
     static _version = "1";
     constructor(data, expiry){
-        throw Error("Not implemented");
+        //throw Error("Not implemented");
         super(data, expiry);
     }
     getHumanReadableObject(){
         // deserialize draft here and return a pretty object for user
         
+        return StringFromUint8Array(this._data)
+        
     }
 }
-
 const modelBuildersMap = {
     [UserContextSignRequestBuilder._name + ":" + UserContextSignRequestBuilder._version]: UserContextSignRequestBuilder,
     [CardanoTxSignRequestBuilder._name + ":" + CardanoTxSignRequestBuilder._version]: CardanoTxSignRequestBuilder

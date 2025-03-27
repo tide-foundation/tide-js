@@ -64,10 +64,10 @@ export function AuthorizedSigningFlow(config) {
         const data = Serialization.base64ToBytes(dataToSign);
         console.log(dataToSign)
         // Start signing flow to authorize this cardano transaction
-        const size = 4 + 4 + emptyUint8Array.length + data.length
+        const size = 4 + data.length
 
-        const draft = CreateTideMemory(emptyUint8Array, size);
-        WriteValue(draft, 1, data)
+        const draft = CreateTideMemory(data, 4 + data.length);
+        // WriteValue(draft, 1, data)
 
         const cardanoTxSignReq = new BaseTideRequest("CardanoTx", "1", "BlindSig:1", draft);
         cardanoTxSignReq.setCustomExpiry(expiry);
@@ -83,6 +83,8 @@ export function AuthorizedSigningFlow(config) {
         cardanoTxSignReq.addAuthorization(AuthorizerApprovals); // special case where other field isn't required
         cardanoTxSignReq.addRules(Serialization.StringToUint8Array(JSON.stringify(ruleSettings.rules)))
         cardanoTxSignReq.addRulesCert(Serialization.base64ToBytes(ruleSettings.rulesCert))
+
+        console.log(cardanoTxSignReq.dataToAuthorize)
 
         // Initiate signing flow
         const cardanoTxSigningFlow = new dVVKSigningFlow(this.vvkId, signingFlow.vvkInfo.UserPublic, signingFlow.vvkInfo.OrkInfo, signingFlow.sessKey, signingFlow.gSessKey, this.voucherURL);
