@@ -37,32 +37,39 @@ export function AuthorizedSigningFlow(config) {
         }
     }
 
-    signingFlow.sign = async function (dataToSign, authorizationPack, expiry, ruleSettings) {
+    signingFlow.sign = async function (dataToSign, authorizationPacks, expiry, ruleSettings) {
         await getVVKInfo();
         console.log(ruleSettings)
 
-        const authPack = AdminAuthorization.fromString(authorizationPack);
+        const authPacks = authorizationPacks.map(auth => {
+            return AdminAuthorization.fromString(auth)
+        })
 
         // authorizer
         const emptyUint8Array = new Uint8Array(0);
 
-        const encodedContext = authPack.encodeContext()
-        const authorizerSize = 4 + 4 + emptyUint8Array.length + encodedContext.length
+        const authorizerSize = 4 + 4 + emptyUint8Array.length + authPacks.reduce((sum, a) => sum + (a.encodeContext().length + 4), 0);
         const Authorizer = CreateTideMemory(emptyUint8Array, authorizerSize);
-        WriteValue(Authorizer, 1, encodedContext);
+        for (let i = 0; i < authPacks.length; i++){
+            WriteValue(Authorizer, i + 1, authPacks[i].encodeContext());
+        }
 
         // data to authenticate authorizer
-        const authorizerSigSize = 4 + 4 + emptyUint8Array.length + authPack.getAdminCert().length
+        const authorizerSigSize = 4 + 4 + emptyUint8Array.length + authPacks.reduce((sum, a) => sum + (a.getAdminCert().length + 4), 0)
 
         const AuthorizerSignatures = CreateTideMemory(emptyUint8Array, authorizerSigSize)
-        WriteValue(AuthorizerSignatures, 1, authPack.getAdminCert())
+        
+        for (let i = 0; i < authPacks.length; i++){
+            WriteValue(AuthorizerSignatures, i + 1, authPacks[i].getAdminCert());
+        }
 
         // data to verify the approval
-        const AuthorizerApprovals = CreateTideMemory(authPack.encodeApproval(), 4 + authPack.encodeApproval().length)
-
+        const AuthorizerApprovals = CreateTideMemory(authPacks[0].encodeApproval(), authPacks.reduce((sum, a) => sum + (a.encodeApproval().length + 4), 0))
+        for (let i = 1; i < authPacks.length; i++){
+            WriteValue(AuthorizerApprovals, i, authPacks[i].encodeApproval());
+        }
 
         const data = Serialization.base64ToBytes(dataToSign);
-        console.log(dataToSign)
         // Start signing flow to authorize this cardano transaction
         const size = 4 + data.length
 
