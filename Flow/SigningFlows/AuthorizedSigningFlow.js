@@ -48,24 +48,24 @@ export function AuthorizedSigningFlow(config) {
         // authorizer
         const emptyUint8Array = new Uint8Array(0);
 
-        const authorizerSize = 4 + 4 + emptyUint8Array.length + authPacks.reduce((sum, a) => sum + (a.encodeContext().length + 4), 0);
+        const authorizerSize = authPacks.reduce((sum, a) => sum + (a.encodeContext().length + 4), 0);
         const Authorizer = CreateTideMemory(emptyUint8Array, authorizerSize);
-        for (let i = 0; i < authPacks.length; i++){
+        for (let i = 0; i < authPacks.length; i++) {
             WriteValue(Authorizer, i + 1, authPacks[i].encodeContext());
         }
 
         // data to authenticate authorizer
-        const authorizerSigSize = 4 + 4 + emptyUint8Array.length + authPacks.reduce((sum, a) => sum + (a.getAdminCert().length + 4), 0)
+        const authorizerSigSize = authPacks.reduce((sum, a) => sum + (a.getAdminCert().length + 4), 0)
 
-        const AuthorizerSignatures = CreateTideMemory(emptyUint8Array, authorizerSigSize)
-        
-        for (let i = 0; i < authPacks.length; i++){
-            WriteValue(AuthorizerSignatures, i + 1, authPacks[i].getAdminCert());
+        const AuthorizerSignatures = CreateTideMemory(authPacks[0].getAdminCert(), authorizerSigSize)
+
+        for (let i = 1; i < authPacks.length; i++) {
+            WriteValue(AuthorizerSignatures, i, authPacks[i].getAdminCert());
         }
 
         // data to verify the approval
         const AuthorizerApprovals = CreateTideMemory(authPacks[0].encodeApproval(), authPacks.reduce((sum, a) => sum + (a.encodeApproval().length + 4), 0))
-        for (let i = 1; i < authPacks.length; i++){
+        for (let i = 1; i < authPacks.length; i++) {
             WriteValue(AuthorizerApprovals, i, authPacks[i].encodeApproval());
         }
 
