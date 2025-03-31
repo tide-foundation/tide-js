@@ -1,6 +1,6 @@
 import { WriteValue } from "../../Cryptide/Serialization.js";
-import { StringToUint8Array, CreateTideMemory } from "../Cryptide/Serialization.js";
-import BaseTideRequest from "./BaseTideRequest.js";
+import { StringToUint8Array, CreateTideMemory } from "../../Cryptide/Serialization.js";
+import BaseTideRequest from "../BaseTideRequest.js";
 
 export default class RuleSettingSignRequest extends BaseTideRequest {
     /**

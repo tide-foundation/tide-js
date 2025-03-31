@@ -1,5 +1,5 @@
 import { AdminAuthorization } from "./AdminAuthorization";
-import BaseTideRequest from "../../Models/BaseTideRequest.js";
+import BaseTideRequest from "../Models/BaseTideRequest.js";
 
 
 export default class AuthorizationBuilder {

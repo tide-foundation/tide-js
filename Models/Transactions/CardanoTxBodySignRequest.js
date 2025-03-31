@@ -1,8 +1,8 @@
-import { SHA512_Digest } from "../Cryptide/Hashing/Hash.js";
-import { Serialization } from "../Cryptide/index.js";
-import { bytesToBase64, numberToUint8Array, StringToUint8Array, StringFromUint8Array, CreateTideMemory } from "../Cryptide/Serialization.js";
-import { CurrentTime } from "../Tools/Utils.js";
-import BaseTideRequest from "./BaseTideRequest.js";
+import { SHA512_Digest } from "../../Cryptide/Hashing/Hash.js";
+import { Serialization } from "../../Cryptide/index.js";
+import { bytesToBase64, numberToUint8Array, StringToUint8Array, StringFromUint8Array, CreateTideMemory } from "../../Cryptide/Serialization.js";
+import { CurrentTime } from "../../Tools/Utils.js";
+import BaseTideRequest from "../BaseTideRequest.js";
 
 export default class CardanoTxBodySignRequest extends BaseTideRequest {
     /**
