@@ -46,12 +46,10 @@ export function AuthorizedSigningFlow(config) {
         })
 
         // authorizer
-        const emptyUint8Array = new Uint8Array(0);
-
         const authorizerSize = authPacks.reduce((sum, a) => sum + (a.encodeContext().length + 4), 0);
-        const Authorizer = CreateTideMemory(emptyUint8Array, authorizerSize);
-        for (let i = 0; i < authPacks.length; i++) {
-            WriteValue(Authorizer, i + 1, authPacks[i].encodeContext());
+        const Authorizer = CreateTideMemory(authPacks[0], authorizerSize);
+        for (let i = 1; i < authPacks.length; i++) {
+            WriteValue(Authorizer, 1, authPacks[i].encodeContext());
         }
 
         // data to authenticate authorizer
@@ -70,9 +68,6 @@ export function AuthorizedSigningFlow(config) {
         }
 
         const data = Serialization.base64ToBytes(dataToSign);
-        // Start signing flow to authorize this cardano transaction
-        const size = 4 + data.length
-
         const draft = CreateTideMemory(data, 4 + data.length);
         // WriteValue(draft, 1, data)
 
