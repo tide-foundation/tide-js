@@ -40,20 +40,18 @@ export default class RuleSettingSignRequest extends BaseTideRequest {
      */
     serializeDraft() {
         if (this.draft.length === 0) {   
-            const ruleSettingsToSign = StringToUint8Array(this.ruleSettings)
-
             if(this.previousRuleSetting !== null) {
                 const markPreviousRulePresent = new Uint8Array([1])
-                const draft = CreateTideMemory(markPreviousRulePresent, 4 + markPreviousRulePresent.length + 4 + prevRuleSetting.length + 4 + this.previousRuleSettingCert.length + 4 + txBodyToSign.length)
-
-                const prevRuleSetting = StringToUint8Array(this.prevRuleSetting)
-                const prevRuleSettingCert = StringToUint8Array(this.prevRuleSettingCert)
-                WriteValue(draft, 1, prevRuleSetting);
-                WriteValue(draft, 2, prevRuleSettingCert)
-                WriteValue(draft, 3, ruleSettingsToSign);
+                const draft = CreateTideMemory(markPreviousRulePresent, 4 + markPreviousRulePresent.length + 4 + this.previousRuleSetting.length + 4 + this.previousRuleSettingCert.length + 4 + this.ruleSettings.length)
+                WriteValue(draft, 1, this.previousRuleSetting);
+                WriteValue(draft, 2, this.previousRuleSettingCert)
+                WriteValue(draft, 3, this.ruleSettings);
                 this.draft = draft;
             } else {
-                this.draft = CreateTideMemory(ruleSettingsToSign, 4 + ruleSettingsToSign.length)
+                const markPreviousNotRulePresent = new Uint8Array([0])
+                const draft = CreateTideMemory(markPreviousNotRulePresent, 4 + markPreviousNotRulePresent.length + 4 + this.ruleSettings.length)
+                WriteValue(draft, 1, this.ruleSettings);
+                this.draft = draft;
             }
         }
     }

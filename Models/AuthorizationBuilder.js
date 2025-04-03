@@ -1,5 +1,6 @@
 import { AdminAuthorization } from "./AdminAuthorization";
-import BaseTideRequest from "../Models/BaseTideRequest.js";
+import BaseTideRequest from "./BaseTideRequest.js";
+import { WriteValue, StringToUint8Array, CreateTideMemory, base64ToBytes } from "../Cryptide/Serialization.js";
 
 
 export default class AuthorizationBuilder {
@@ -55,14 +56,12 @@ export default class AuthorizationBuilder {
             WriteValue(AuthorizerApprovals, i, authPacks[i].encodeApproval());
         }
 
-        tideRequest.addAuthorizer(Authorizer);
-        tideRequest.addAuthorizerCertificate(AuthorizerSignatures);// special case where other field isn't required
-        tideRequest.addAuthorization(AuthorizerApprovals); // special case where other field isn't required
+        this.tideRequest.addAuthorizer(Authorizer);
+        this.tideRequest.addAuthorizerCertificate(AuthorizerSignatures);
+        this.tideRequest.addAuthorization(AuthorizerApprovals);
         if(this.ruleSettings !== null) {
-            tideRequest.addRules(Serialization.StringToUint8Array(JSON.stringify(ruleSettings.rules)))
-            tideRequest.addRulesCert(Serialization.base64ToBytes(ruleSettings.rulesCert))
+            this.tideRequest.addRules(StringToUint8Array(JSON.stringify(this.ruleSettings.rules)))
+            this.tideRequest.addRulesCert(base64ToBytes(this.ruleSettings.rulesCert))
         }
-
-        return this.tideRequest;
     }
 }

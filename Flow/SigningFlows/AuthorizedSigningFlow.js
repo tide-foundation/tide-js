@@ -1,6 +1,6 @@
-import { CreateTideMemory, WriteValue } from "../../Cryptide/Serialization";
+import { CreateTideMemory, GetValue, WriteValue } from "../../Cryptide/Serialization";
 import { AdminAuthorization } from "../../Models/AdminAuthorization";
-import { numberToUint8Array } from "../../Cryptide/Serialization.js";
+import { numberToUint8Array, bytesToBase64 } from "../../Cryptide/Serialization.js";
 import { CurrentTime } from "../../Tools/Utils.js";
 import BaseTideRequest from "../../Models/BaseTideRequest.js";
 import NetworkClient from "../../Clients/NetworkClient.js";
@@ -39,15 +39,13 @@ export function AuthorizedSigningFlow(config) {
 
     signingFlow.sign = async function (dataToSign, authorizationPacks, expiry, ruleSettings) {
         await getVVKInfo();
-        console.log(ruleSettings)
-
         const authPacks = authorizationPacks.map(auth => {
             return AdminAuthorization.fromString(auth)
         })
 
         // authorizer
         const authorizerSize = authPacks.reduce((sum, a) => sum + (a.encodeContext().length + 4), 0);
-        const Authorizer = CreateTideMemory(authPacks[0], authorizerSize);
+        const Authorizer = CreateTideMemory(authPacks[0].encodeContext(), authorizerSize);
         for (let i = 1; i < authPacks.length; i++) {
             WriteValue(Authorizer, 1, authPacks[i].encodeContext());
         }
@@ -86,9 +84,7 @@ export function AuthorizedSigningFlow(config) {
         cardanoTxSignReq.addRules(Serialization.StringToUint8Array(JSON.stringify(ruleSettings.rules)))
         cardanoTxSignReq.addRulesCert(Serialization.base64ToBytes(ruleSettings.rulesCert))
 
-        console.log(cardanoTxSignReq.dataToAuthorize)
 
-        // Initiate signing flow
         const cardanoTxSigningFlow = new dVVKSigningFlow(this.vvkId, signingFlow.vvkInfo.UserPublic, signingFlow.vvkInfo.OrkInfo, signingFlow.sessKey, signingFlow.gSessKey, this.voucherURL);
         const signatures = await cardanoTxSigningFlow.start(cardanoTxSignReq);
 

@@ -22,8 +22,8 @@ export default class BaseTideRequest {
         this.authorizerCert = null;
         this.authorizer = null;
         this.expiry = BigInt(CurrentTime() + 30); // default is 30s
-        this.rules = null;
-        this.rulesCert = null;
+        this.rules = new Uint8Array();
+        this.rulesCert = new Uint8Array();
     }
 
     /**
@@ -105,7 +105,7 @@ export default class BaseTideRequest {
         Serialization.WriteValue(req, 7, this.authorization);
         Serialization.WriteValue(req, 8, this.authorizerCert); // should every request be authenticated with vrk?
         Serialization.WriteValue(req, 9, this.rules);
-        Serialization.WriteValue(req, 10, this.rulesCert); // should every request be authenticated with vrk?
+        Serialization.WriteValue(req, 10, this.rulesCert);
 
 
         return req;
