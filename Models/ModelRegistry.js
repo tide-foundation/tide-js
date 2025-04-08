@@ -2,6 +2,8 @@ import { Serialization } from "../Cryptide/index.js";
 import { base64ToBytes, base64UrlToBase64, GetValue, StringFromUint8Array, TryGetValue } from "../Cryptide/Serialization.js";
 import InitializationCertificate from "./InitializationCertificate.js";
 import RuleSettings from "./Rules/RuleSettings.js";
+import CardanoTransaction from "./Cardano/CardanoTxBody.js"
+import CardanoTxBody from "./Cardano/CardanoTxBody.js";
 
 export class ModelRegistry{
     /**
@@ -80,8 +82,8 @@ class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder{ // this is 
     }
     getHumanReadableObject(){
         // deserialize draft here and return a pretty object for user
-        
-        return StringFromUint8Array(this._data)
+        const txBytes = GetValue(this._data, 0);
+        return new CardanoTxBody(txBytes).toPrettyObject();
         
     }
 }
