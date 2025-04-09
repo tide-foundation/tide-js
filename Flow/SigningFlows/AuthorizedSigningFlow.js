@@ -1,7 +1,5 @@
-import { CreateTideMemory, GetValue, WriteValue } from "../../Cryptide/Serialization";
+import { CreateTideMemory, WriteValue } from "../../Cryptide/Serialization";
 import { AdminAuthorization } from "../../Models/AdminAuthorization";
-import { numberToUint8Array, bytesToBase64 } from "../../Cryptide/Serialization.js";
-import { CurrentTime } from "../../Tools/Utils.js";
 import BaseTideRequest from "../../Models/BaseTideRequest.js";
 import NetworkClient from "../../Clients/NetworkClient.js";
 import dVVKSigningFlow from "../SigningFlows/dVVKSigningFlow.js";
@@ -67,20 +65,13 @@ export function AuthorizedSigningFlow(config) {
 
         const data = Serialization.base64ToBytes(dataToSign);
         const draft = CreateTideMemory(data, 4 + data.length);
-        // WriteValue(draft, 1, data)
 
         const cardanoTxSignReq = new BaseTideRequest("CardanoTx", "1", "BlindSig:1", draft);
         cardanoTxSignReq.setCustomExpiry(expiry);
 
-        // Deserialize token to retrieve vuid - if it exists
-        // const vuid = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(this.token.split(".")[1])))).vuid; // get vuid field from jwt payload in 1 line
-        // if (vuid) cardanoTxSignReq.dyanmicData = StringToUint8Array(vuid);
-
-        // Set the Authorization token as the authorizer for the request
-        console.log(JSON.stringify(ruleSettings.rules));
         cardanoTxSignReq.addAuthorizer(Authorizer);
-        cardanoTxSignReq.addAuthorizerCertificate(AuthorizerSignatures);// special case where other field isn't required
-        cardanoTxSignReq.addAuthorization(AuthorizerApprovals); // special case where other field isn't required
+        cardanoTxSignReq.addAuthorizerCertificate(AuthorizerSignatures);
+        cardanoTxSignReq.addAuthorization(AuthorizerApprovals);
         cardanoTxSignReq.addRules(Serialization.StringToUint8Array(JSON.stringify(ruleSettings.rules)))
         cardanoTxSignReq.addRulesCert(Serialization.base64ToBytes(ruleSettings.rulesCert))
 
