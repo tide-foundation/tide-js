@@ -43,7 +43,6 @@ export default class dVVKSigningFlow {
      */
     async start(request, waitForAll = false) {
 
-        console.log(request)
         const pre_clients = this.orks.map(info => new NodeClient(info.orkURL).EnableTideDH(this.gSessKey, this.sessKey, info.orkPublic));
 
         const voucherFlow = new VoucherFlow(this.orks.map(o => o.orkPaymentPublic), this.voucherURL, "vendorsign");
