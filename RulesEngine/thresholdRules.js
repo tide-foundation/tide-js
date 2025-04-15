@@ -87,8 +87,9 @@ export default function processThresholdRules(key, id, ruleSettings, draftJson) 
     // Sort candidates by the lowest processable value.
     evaluatedCandidates.sort((a, b) => a.minProcessableValue - b.minProcessableValue);
     const selected = evaluatedCandidates[0].candidate;
+    const allowedRoles = evaluatedCandidates.map(c => c.candidate.role)
     return {
-      roles: [selected.role],
+      roles: allowedRoles,
       threshold: selected.threshold
     };
   } else {
