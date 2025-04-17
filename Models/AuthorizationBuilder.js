@@ -36,7 +36,7 @@ export default class AuthorizationBuilder {
 
         // add authorizer
         const authorizerSize = authPacks.reduce((sum, a) => sum + (a.encodeContext().length + 4), 0);
-        const Authorizer = CreateTideMemory(authPacks[0], authorizerSize);
+        const Authorizer = CreateTideMemory(authPacks[0].encodeContext(), authorizerSize);
         for (let i = 1; i < authPacks.length; i++) {
             WriteValue(Authorizer, 1, authPacks[i].encodeContext());
         }
