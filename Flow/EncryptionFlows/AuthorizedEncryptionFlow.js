@@ -114,6 +114,8 @@ export function AuthorizedEncryptionFlow(config){
         encryptionRequest.addAuthorizer(StringToUint8Array(this.token));
         encryptionRequest.addAuthorizerCertificate(new Uint8Array());// special case where other field isn't required
         encryptionRequest.addAuthorization(new Uint8Array()); // special case where other field isn't required
+        encryptionRequest.addRules(new Uint8Array()); // not required
+        encryptionRequest.addRulesCert(new Uint8Array());// not required
         
         // Initiate signing flow
         const encryptingSigningFlow = new dVVKSigningFlow(this.vvkId, encryptionFlow.vvkInfo.UserPublic, encryptionFlow.vvkInfo.OrkInfo, encryptionFlow.sessKey, encryptionFlow.gSessKey, this.voucherURL);
