@@ -46,6 +46,8 @@ export async function Get_Auth_By_JWT(){
     userContextRequest.addAuthorizer(authorizer);
     userContextRequest.addAuthorizerCertificate(vrk_sig);
     userContextRequest.addAuthorization(base64ToBytes(await EdDSA.sign(await userContextRequest.dataToAuthorize(), vrk)));
+    userContextRequest.addRules(new Uint8Array());
+    userContextRequest.addRulesCert(new Uint8Array());
 
     const sessKey = GenSessKey();
     const gSessKey = GetPublic(sessKey);
