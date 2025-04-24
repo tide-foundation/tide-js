@@ -1,4 +1,4 @@
-import { AdminAuthorization } from "./AdminAuthorization";
+import { AdminAuthorization } from "./AdminAuthorization.js";
 import BaseTideRequest from "./BaseTideRequest.js";
 import { WriteValue, StringToUint8Array, CreateTideMemory, base64ToBytes } from "../Cryptide/Serialization.js";
 
