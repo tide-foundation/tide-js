@@ -1,5 +1,7 @@
-import { base64ToBytes, base64UrlToBase64, GetValue, StringFromUint8Array, TryGetValue } from "../Cryptide/Serialization.js";
+import { GetValue, StringFromUint8Array } from "../Cryptide/Serialization.js";
 import InitializationCertificate from "./InitializationCertificate.js";
+import RuleSettings from "./Rules/RuleSettings.js";
+import CardanoTxBody from "./Cardano/CardanoTxBody.js";
 
 export class ModelRegistry{
     /**
@@ -73,16 +75,55 @@ class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder{ // this is 
     static _name = "CardanoTx";
     static _version = "1";
     constructor(data, expiry){
-        throw Error("Not implemented");
+        //throw Error("Not implemented");
         super(data, expiry);
     }
     getHumanReadableObject(){
         // deserialize draft here and return a pretty object for user
+        const txBytes = GetValue(this._data, 0);
+        return new CardanoTxBody(txBytes).toPrettyObject();
+        
+    }
+}
+
+class RuleSettingSignRequestBuilder extends HumanReadableModelBuilder{ // this is an example class
+    static _name = "Rules";
+    static _version = "1";
+    constructor(data, expiry){
+        //throw Error("Not implemented");
+        super(data, expiry);
+    }
+    getHumanReadableObject(){
+        // deserialize draft here and return a pretty object for user
+        let prettyObject = {};
+
+        let draftIndex = 0;
+        const previousRulesPresent = GetValue(this._data, 0)[0];
+        draftIndex++;
+
+        // determine if InitCert is present
+        switch(previousRulesPresent){
+            case 0:
+                break;
+            case 1:
+                const previousRuleSettings = GetValue(this._data, draftIndex);
+                prettyObject.RuleSettingToRevoke = new RuleSettings(StringFromUint8Array(previousRuleSettings)).toPrettyObject();
+                draftIndex += 2;
+                break;
+            default:
+                throw Error("Unexpected value");
+        }
+
+        const newRuleSettings = GetValue(this._data, draftIndex);
+        prettyObject.NewRuleSetting = new RuleSettings(StringFromUint8Array(newRuleSettings)).toPrettyObject(); 
+        return prettyObject;
         
     }
 }
 
 const modelBuildersMap = {
     [UserContextSignRequestBuilder._name + ":" + UserContextSignRequestBuilder._version]: UserContextSignRequestBuilder,
-    [CardanoTxSignRequestBuilder._name + ":" + CardanoTxSignRequestBuilder._version]: CardanoTxSignRequestBuilder
+    [CardanoTxSignRequestBuilder._name + ":" + CardanoTxSignRequestBuilder._version]: CardanoTxSignRequestBuilder,
+    [RuleSettingSignRequestBuilder._name + ":" + RuleSettingSignRequestBuilder._version]: RuleSettingSignRequestBuilder
+
 }
