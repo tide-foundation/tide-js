@@ -1,4 +1,4 @@
-import RuleEngineService from "./RuleEngineService";
+import RuleEngineService from "./RuleEngineService.js";
 
 /**
  * Process the rule settings for the specified key.
