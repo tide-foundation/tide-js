@@ -15,7 +15,8 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { Point } from "../../../../Cryptide/index.js";
+import { Point } from "../../../../Cryptide/Ed25519.js";
+
 
 export default class DecryptedConvertRememberedResponse{
     /** 
@@ -24,12 +25,12 @@ export default class DecryptedConvertRememberedResponse{
      */
     constructor(UserPRISMi, Timestampi){
         this.UserPRISMi = UserPRISMi
-        this.Timestampi = Timestampi
+        this.timestampi = Timestampi
     }
     static from(data){
         const obj = JSON.parse(data);
-        const timestamp = BigInt(obj.Timestampi);
-        const UserPRISMi = Point.fromB64(obj.UserPRISMi);
+        const timestamp = BigInt(obj.timestampi);
+        const UserPRISMi = Point.fromBase64(obj.UserPRISMi);
         return new DecryptedConvertRememberedResponse(UserPRISMi, timestamp);
     }
 }

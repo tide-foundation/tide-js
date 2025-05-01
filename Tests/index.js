@@ -27,8 +27,8 @@ export const tests = {
     "gVRK": "17ffad8068dc0de9935d36636f3ad1b5de6de3413b12388e453b05f2a4c1d3db"
  }
  */
-//console.log(Bytes2Hex(Point.g.times(BigInt("123456789")).toArray()));
-//const obfg = Bytes2Hex((await HashToPoint(Point.g.toArray())).times(BigIntFromByteArray(await SHA256_Digest(BigIntToByteArray(BigInt("123456789"))))).toArray())
+//console.log(Bytes2Hex(Point.BASE.mul(BigInt("123456789")).toRawBytes()));
+//const obfg = Bytes2Hex((await HashToPoint(Point.BASE.toRawBytes())).mul(BigIntFromByteArray(await SHA256_Digest(BigIntToByteArray(BigInt("123456789"))))).toRawBytes())
 //console.log(obfg);
-//console.log(Bytes2Hex((await HashToPoint(Point.g.toArray())).toArray()));
+//console.log(Bytes2Hex((await HashToPoint(Point.BASE.toRawBytes())).toRawBytes()));
 window.tests = tests;

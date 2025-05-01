@@ -1,5 +1,5 @@
 import { RandomBigInt, mod, mod_inv } from "../Math.js";
-import Point from "../Ed25519.js";
+import { Point } from "../Ed25519.js";
 import { SHA256_Digest, SHA512_Digest } from "../Hashing/Hash.js";
 import { BigIntFromByteArray, BigIntToByteArray, ConcatUint8Arrays, bytesToBase64 } from "../Serialization.js";
 import { EdDSA } from "../index.js";
@@ -12,8 +12,8 @@ import { EdDSA } from "../index.js";
  */
 export async function genBlindMessage(gR, pub, message, multiplier){
     const blur = RandomBigInt();
-    const gRMul = gR.times(mod_inv(blur));
-    const eddsaH = mod(BigIntFromByteArray(await SHA512_Digest(ConcatUint8Arrays([gRMul.toArray(), pub.toArray(), message]))));
+    const gRMul = gR.mul(mod_inv(blur));
+    const eddsaH = mod(BigIntFromByteArray(await SHA512_Digest(ConcatUint8Arrays([gRMul.toRawBytes(), pub.toRawBytes(), message]))));
     const blurHCMKMul = mod(eddsaH * multiplier * blur);
 
     return {blurHCMKMul, blur, gRMul};
@@ -49,5 +49,5 @@ export async function verifyBlindSignature(S, noncePublic, pub, message){
  * @param {Point} noncePublic 
  */
 export function serializeBlindSig(S, noncePublic){
-    return ConcatUint8Arrays([BigIntToByteArray(S), noncePublic.toArray()]);
+    return ConcatUint8Arrays([BigIntToByteArray(S), noncePublic.toRawBytes()]);
 }

@@ -1,4 +1,4 @@
-import { Point } from "../../Cryptide/index.js";
+import { Point } from "../../Cryptide/Ed25519.js";
 import { base64ToBytes, Hex2Bytes } from "../../Cryptide/Serialization.js";
 
 export default class OrkInfo{
@@ -35,13 +35,13 @@ export default class OrkInfo{
     }
 
     static fromNativeTypeObject(json){
-        return new OrkInfo(json.Id, Point.fromB64(json.PublicKey), json.URL, Point.fromB64(json.PaymentPublicKey));
+        return new OrkInfo(json.Id, Point.fromBase64(json.PublicKey), json.URL, Point.fromBase64(json.PaymentPublicKey));
     }
 
     static from(json) {
         const { publickey, paymentpublickey, id, url } = normalizeKeys(json);
-        const pub = Point.from(Hex2Bytes(publickey).slice(3));
-        const paymentPub = Point.from(Hex2Bytes(paymentpublickey).slice(3));
+        const pub = Point.fromBytes(Hex2Bytes(publickey).slice(3));
+        const paymentPub = Point.fromBytes(Hex2Bytes(paymentpublickey).slice(3));
         return new OrkInfo(id, pub, url, paymentPub);
     }
 }

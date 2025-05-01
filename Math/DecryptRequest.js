@@ -1,8 +1,8 @@
-import { Point } from "../Cryptide/index.js";
 import SerializedField from "../Models/SerializedField.js";
 import { encryptData, decryptData, decryptDataRawOutput } from "../Cryptide/Encryption/AES.js";
 import { SHA256_Digest } from "../Cryptide/Hashing/Hash.js";
 import { bytesToBase64 } from "../Cryptide/Serialization.js";
+import { Point } from "../Cryptide/Ed25519.js";
 
 export default class DecryptRequest{
     /**
@@ -41,9 +41,9 @@ export default class DecryptRequest{
         const pre_decryptedData = encryptedFieldKeys.map(async (encK, i) => JSON.parse(await decryptData(encK, ECDHi[i])));
         const decryptedData = await Promise.all(pre_decryptedData);
 
-        const fieldKeys = encryptedFields.map((_, i) => decryptedData.reduce((sum, next, j) => sum.add(Point.fromB64(next.AppliedFieldKeys[i]).times(lis[j])), Point.infinity)); // main loop over amount of encrypted datas
+        const fieldKeys = encryptedFields.map((_, i) => decryptedData.reduce((sum, next, j) => sum.add(Point.fromBase64(next.AppliedFieldKeys[i]).mul(lis[j])), Point.ZERO)); // main loop over amount of encrypted datas
 
-        const pre_decryptedFields = fieldKeys.map(async (fk, i) => decryptDataRawOutput(encryptedFields[i], await SHA256_Digest(fk.toArray())));
+        const pre_decryptedFields = fieldKeys.map(async (fk, i) => decryptDataRawOutput(encryptedFields[i], await SHA256_Digest(fk.toRawBytes())));
         const decryptedFields = await Promise.all(pre_decryptedFields);
         return decryptedFields;
     }

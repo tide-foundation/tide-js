@@ -1,6 +1,6 @@
 import ClientBase from "./ClientBase.js";
-import { Point } from "../Cryptide/index.js";
 import VoucherResponse from "../Models/Responses/Vendor/VoucherResponse.js";
+import { Point } from "../Cryptide/Ed25519.js";
 
 export default class VoucherClient extends ClientBase{
     /**

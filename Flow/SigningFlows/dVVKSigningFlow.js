@@ -61,7 +61,7 @@ export default class dVVKSigningFlow {
         if (GRj.length != Sj.length) throw Error("Weird amount of GRjs and Sjs");
         let sigs = [];
         for (let i = 0; i < GRj.length; i++) {
-            sigs.push(ConcatUint8Arrays([GRj[i].toArray(), BigIntToByteArray(Sj[i])]));
+            sigs.push(ConcatUint8Arrays([GRj[i].toRawBytes(), BigIntToByteArray(Sj[i])]));
         }
 
         return sigs;

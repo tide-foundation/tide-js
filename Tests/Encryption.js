@@ -6,12 +6,12 @@ import dKeyGenerationFlow from "../Flow/dKeyGenerationFlow.js";
 import NetworkClient from "../Clients/NetworkClient.js";
 import AuthRequest from "../Models/AuthRequest.js";
 import { CurrentTime, Max } from "../Tools/Utils.js";
-import { EdDSA, Point, Serialization } from "../Cryptide/index.js";
 import BaseTideRequest from "../Models/BaseTideRequest.js";
 import dVVKSigningFlow from "../Flow/SigningFlows/dVVKSigningFlow.js";
 import { Ed25519PrivateComponent, Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
 import { CreateAuthorizerPackage, CreateVRKPackage } from "../Cryptide/TideMemoryObjects.js";
 import { AuthorizedEncryptionFlow } from "../Flow/EncryptionFlows/AuthorizedEncryptionFlow.js";
+import { Point } from "../Cryptide/Ed25519.js";
 
 
 export async function Get_Auth_By_JWT(){
@@ -23,7 +23,7 @@ export async function Get_Auth_By_JWT(){
     const vals = JSON.parse(v);
 
     const vvkId = vals.id;
-    const gVVK = Point.fromB64(vals.pub);
+    const gVVK = Point.fromBase64(vals.pub);
     const vrk = BigInt(vals.vrk);
     const vrk_sig = base64ToBytes(vals.vrk_sig);
     const authorizer = Hex2Bytes(vals.authorizer);

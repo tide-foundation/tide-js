@@ -1,9 +1,11 @@
-import Point from "../../Cryptide/Ed25519.js";
+import { Point } from "../../Cryptide/Ed25519.js";
 import { prepVouchersReq } from "../../Cryptide/Math.js";
 import NodeClient from "../../Clients/NodeClient.js";
 import VoucherClient from "../../Clients/VoucherClient.js";
 import VoucherResponse from "../../Models/Responses/Vendor/VoucherResponse.js";
 import { Max, Threshold, WaitForNumberofORKs } from "../../Tools/Utils.js";
+import TideKey from "../../Cryptide/TideKey.js";
+import Ed25519Scheme from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.js";
 
 export default class VoucherFlow{
     
@@ -23,34 +25,22 @@ export default class VoucherFlow{
      * @returns 
      */
     async GetVouchers(clientFunction = null){
+        let vouchers = undefined;
+        const k = await TideKey.NewKey(Ed25519Scheme);
+        const blurKeyPub = k.prepVouchersReq(this.orkPaymentPublics);
         if(clientFunction == null){
             // get vouchers
-            const {blurKeyPub, k} = await prepVouchersReq(this.orkPaymentPublics);
             const vendorClient = new VoucherClient(this.voucherURL);
-            const vouchers = await vendorClient.GetVouchers(blurKeyPub, this.action, k.GetPublicKey());
-
-            return {vouchers, k};
+            vouchers = await vendorClient.GetVouchers(blurKeyPub, this.action, k.get_public_component().public);
         }else{
-            return this.GetVouchersWithAnotherClient(clientFunction);
+            const request = JSON.stringify({
+                BlurPORKi: blurKeyPub.map(blur => blur.toBase64()),
+                ActionRequest: this.action,
+                BlurerK: k.get_public_component().public.toBase64()
+            });
+            const response = await clientFunction(request);
+            vouchers = VoucherResponse.from(response, k.get_public_component().public.toBase64());
         }
-        
-    }
-
-    /**
-     * I'm making this so I can use keycloak's client that has all of the keycloak's authorization built in.
-     * @param {(request: string) => Promise<string>} clientFunction 
-     * @returns 
-     */
-    async GetVouchersWithAnotherClient(clientFunction){
-        // get vouchers
-        const {blurKeyPub, k} = await prepVouchersReq(this.orkPaymentPublics);
-        const request = JSON.stringify({
-            BlurPORKi: blurKeyPub.map(blur => blur.toBase64()),
-            ActionRequest: this.action,
-            BlurerK: k.GetPublicKey().toBase64()
-        });
-        const response = await clientFunction(request);
-        const vouchers = VoucherResponse.from(response, k.GetPublicKey().toBase64());
-        return {vouchers, k};
+        return {vouchers, k}
     }
 }

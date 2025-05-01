@@ -16,13 +16,14 @@
 //
 
 import NodeClient from "../../Clients/NodeClient.js";
-import { DH, Interpolation, Point } from "../../Cryptide/index.js";
+import { DH, Interpolation } from "../../Cryptide/index.js";
 import { AuthenticateBasicReply, CmkConvertReply, ConvertRememberedReply } from "../../Math/KeyAuthentication.js";
 import { CurrentTime, Max, Threshold, WaitForNumberofORKs, sortORKs } from "../../Tools/Utils.js";
 import EnclaveEntry from "../../Models/EnclaveEntry.js";
 import { base64ToBytes, BigIntFromByteArray, Hex2Bytes, serializeBitArray, uint8ArrayToBitArray } from "../../Cryptide/Serialization.js";
 import { GetPublic } from "../../Cryptide/Math.js";
 import VoucherFlow from "../VoucherFlows/VoucherFlow.js";
+import { Point } from "../../Cryptide/Ed25519.js";
 
 export default class dCMKPasswordlessFlow {
     /**
@@ -68,9 +69,9 @@ export default class dCMKPasswordlessFlow {
                 this.userPublic,
                 this.sessID,
                 prkECDHi,
-                Point.from(Hex2Bytes(vouchers.qPub).slice(-32)), // to translate between tide component and native object
+                Point.fromBytes(Hex2Bytes(vouchers.qPub).slice(-32)), // to translate between tide component and native object
                 BigIntFromByteArray(base64ToBytes(vouchers.UDeObf).slice(-32)), // to translate between tide component and native object
-                k.GetPrivateKey())
+                k.get_private_component().priv)
         }
         return {
             VUID: this.cState.VUID
