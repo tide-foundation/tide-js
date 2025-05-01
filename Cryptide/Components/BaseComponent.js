@@ -1,5 +1,6 @@
 import { base64ToBytes, Bytes2Hex, bytesToBase64, ConcatUint8Arrays, getBytesFromInt16, Hex2Bytes } from "../Serialization.js";
 import { Registery } from "./ComponentRegistry.js";
+import BaseScheme from "./Schemes/BaseScheme.js";
 import { SchemeType } from "./Schemes/SchemeRegistry.js";
 
 export class BaseComponent{
@@ -53,8 +54,10 @@ export class BaseComponent{
     ModComponent(){ throw Error("Mod not implemented"); }
     ModInvComponent(){ throw Error("Mod inv not implemented"); }
     SerializeComponent(){ throw Error("Serialize not implemented"); }
-    Scheme;
-    ComponentType;
+    /**@returns {BaseScheme} */
+    get Scheme() { throw Error("Not implemented"); }
+    /**@returns {string} */
+    get ComponentType() { throw Error("Not implemented"); }
 
     /**
      * 
@@ -96,6 +99,26 @@ export class BaseComponent{
         let component = Registery[scheme.Name][keyType];
         return component.Create(b.slice(3));
     }
+}
+
+export class BaseSeedComponent extends BaseComponent{
+    get ComponentType() { return Seed; }
+    static async New() { throw Error("Not implemented"); }
+    async GetPublic() { throw Error("Not implemented"); }
+    async GetPrivate() { throw Error("Not implemented"); }
+    get rawBytes() { throw Error("Not implemented"); }
+}
+
+export class BasePrivateComponent extends BaseComponent{
+    get ComponentType() { return Private; }
+    static async New() { throw Error("Not implemented"); }
+    async GetPublic() { throw Error("Not implemented"); }
+    get priv() { throw Error("Not implemented"); }
+}
+
+export class BasePublicComponent extends BaseComponent{
+    get ComponentType() { return Public; }
+    get public() { throw Error("Not implemented"); }
 }
 
 export class SerializedComponent{
