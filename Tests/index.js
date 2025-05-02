@@ -4,6 +4,7 @@ import { EmailRecovery } from "./AccountRecovery.js";
 import { StripeLicensing, CheckLicenseAddedToPayer } from "./StripeLicensing.js"
 import { Ed25519PublicDeserialization } from "./Components.js";
 import { Decrypt, Encrypt, Get_Auth_By_JWT } from "./Encryption.js";
+import Tide_Key from "./TideKey.js";
 
 export const tests = {
     StripeLicensing,
@@ -18,7 +19,8 @@ export const tests = {
     Ed25519PublicDeserialization,
     Get_Auth_By_JWT,
     Encrypt,
-    Decrypt
+    Decrypt,
+    Tide_Key
 };
 
 /**

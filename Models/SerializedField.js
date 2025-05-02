@@ -17,7 +17,7 @@
 
 import { BaseComponent, Public } from "../Cryptide/Components/BaseComponent.js";
 import { BigIntToByteArray, ConcatUint8Arrays, Uint8ArrayToNumber, numberToUint8Array } from "../Cryptide/Serialization.js";
-import { Point, Serialization } from "../Cryptide/index.js";
+import {  Serialization } from "../Cryptide/index.js";
 
 export default class SerializedField{
     static version = 1;

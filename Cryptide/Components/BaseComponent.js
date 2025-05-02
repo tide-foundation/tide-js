@@ -103,16 +103,16 @@ export class BaseComponent{
 
 export class BaseSeedComponent extends BaseComponent{
     get ComponentType() { return Seed; }
-    static async New() { throw Error("Not implemented"); }
-    async GetPublic() { throw Error("Not implemented"); }
-    async GetPrivate() { throw Error("Not implemented"); }
+    static New() { throw Error("Not implemented"); }
+    GetPublic() { throw Error("Not implemented"); }
+    GetPrivate() { throw Error("Not implemented"); }
     get rawBytes() { throw Error("Not implemented"); }
 }
 
 export class BasePrivateComponent extends BaseComponent{
     get ComponentType() { return Private; }
-    static async New() { throw Error("Not implemented"); }
-    async GetPublic() { throw Error("Not implemented"); }
+    static New() { throw Error("Not implemented"); }
+    GetPublic() { throw Error("Not implemented"); }
     get priv() { throw Error("Not implemented"); }
 }
 

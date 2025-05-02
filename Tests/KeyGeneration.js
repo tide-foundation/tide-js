@@ -11,7 +11,7 @@ import KeyInfo from "../Models/Infos/KeyInfo.js";
 import NetworkClient from "../Clients/NetworkClient.js";
 import AuthRequest from "../Models/AuthRequest.js";
 import { CurrentTime, Max } from "../Tools/Utils.js";
-import { EdDSA, Point } from "../Cryptide/index.js";
+import { EdDSA } from "../Cryptide/index.js";
 import dTestVVKSigningFlow from "../Flow/SigningFlows/dTestVVkSigningFlow.js";
 import BaseTideRequest from "../Models/BaseTideRequest.js";
 import dVVKSigningFlow from "../Flow/SigningFlows/dVVKSigningFlow.js";

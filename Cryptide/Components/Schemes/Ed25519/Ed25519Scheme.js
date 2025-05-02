@@ -9,7 +9,7 @@ export default class Ed25519Scheme extends BaseScheme{
      * WITHOUT DETERMINISM. Prefix is generated via randomisation.
      * @returns 
      */
-    GetSigningFunction = () => {
+    static GetSigningFunction = () => {
         const signingFunc = (msg, component) => {
             if(msg instanceof Uint8Array && component instanceof Ed25519PrivateComponent){
                 return signNonDeterministicAsync(msg, component.priv);
@@ -18,12 +18,13 @@ export default class Ed25519Scheme extends BaseScheme{
         }
         return signingFunc;
     }
-    GetVerifyingFunction = () => {
-        const verifyingFunc = (msg, signature, component) => {
+    static GetVerifyingFunction = () => {
+        const verifyingFunc = async (msg, signature, component) => {
             if(msg instanceof Uint8Array && signature instanceof Uint8Array && component instanceof Ed25519PublicComponent){
-                return verifyAsync(signature, msg, component.rawBytes);
+                const valid = await verifyAsync(signature, msg, component.rawBytes);
+                if(!valid) throw Error("Signature validation failed");
             }
-            throw Error("Mismatch of expected types (Uint8Array, Uint8Array, Ed25519PublicComponent)");
+            else throw Error("Mismatch of expected types (Uint8Array, Uint8Array, Ed25519PublicComponent)");
         }
         return verifyingFunc;
     }

@@ -80,7 +80,7 @@ class Point {
     }
     static fromAffine(p) { return new Point(p.x, p.y, 1n, M(p.x * p.y)); }
     /** RFC8032 5.1.3: hex / Uint8Array to Point. */
-    static fromHex(hex, zip215 = false) {
+    static fromHex(hex) {
         hex = toU8(hex, 32);
         return this.fromBytes(hex);
     }
@@ -88,7 +88,7 @@ class Point {
         if(isS(b64string)) return this.fromBytes(base64ToBytes(b64string));
         else err("Point.fromBase64 not provided with a string");
     }
-    static fromBytes(bytes){
+    static fromBytes(bytes, zip215 = false){
         const { d } = CURVE;
         const normed = bytes.slice(); // copy the array to not mess it up
         const lastByte = bytes[31];
@@ -353,7 +353,7 @@ const hash2extK = (hashed) => {
 // RFC8032 5.1.5; getPublicKey async, sync. Hash priv key and extract point.
 const getExtendedPublicKeyAsync = (priv) => sha512a(toU8(priv, 32)).then(hash2extK);
 const getExtendedNonDeterministicPublicKeyAsync = (priv) => {
-    const prefix = modL_LE(etc.randomBytes(32)); // private key "prefix"
+    const prefix = etc.randomBytes(32); // private key "prefix"
     const point = G.mul(priv); // public key point
     const pointBytes = point.toRawBytes(); // point serialized to Uint8Array
     return { head: undefined, prefix, scalar: priv, point, pointBytes }; // head is undefined as we didn't hash the priv

@@ -15,7 +15,6 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { Point } from "../Cryptide/index.js"
 import KeyInfo from "../Models/Infos/KeyInfo.js";
 import OrkInfo from "../Models/Infos/OrkInfo.js";
 import ClientBase from "./ClientBase.js"

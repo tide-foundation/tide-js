@@ -89,18 +89,18 @@ export class Ed25519PrivateComponent extends BasePrivateComponent{
     constructor(rawData){
         super();
         if(typeof rawData == "bigint"){
-            this.p = rawData;
+            this.#p = rawData;
         }else if(rawData instanceof Uint8Array){
-            this.p = BigIntFromByteArray(rawData);
+            this.#rB = rawData;
         }else{ throw Error("unexpected type;") }
     }
     SerializeComponent(){
         return this.#rB.slice();
     }
-    async GetPublic(){
+    GetPublic(){
         return new Ed25519PublicComponent(Point.BASE.mul(this.#p));
     }
-    static async New(){
+    static New(){
         return Ed25519SeedComponent.New().GetPrivate();
     }
 }
@@ -119,8 +119,9 @@ export class Ed25519SeedComponent extends BaseSeedComponent{
     }
 
     constructor(rawData){
+        super();
         if(rawData instanceof Uint8Array) this.#rB = rawData.slice();
-        else if(!rawData) this.#rB = etc.randomBytes(32); // if nothing provided - self instanciate
+        else if(!rawData) this.#rB = Ed25519SeedComponent.#GenerateSeed(); // if nothing provided - self instanciate
         else throw Error("Expecting Uint8Array or nothing for constructor");
     }
 
@@ -128,23 +129,22 @@ export class Ed25519SeedComponent extends BaseSeedComponent{
         return this.#rB.slice();
     }
 
-    async #GeneratePrivate(){
-        const hashed = await SHA512_Digest(this.#rB);
-        const head = hashed.slice(0, 32); // slice creates a copy, unlike subarray
+    static #GenerateSeed(){
+        const head = etc.randomBytes(32);
         head[0] &= 248; // Clamp bits: 0b1111_1000,
         head[31] &= 127; // 0b0111_1111,
         head[31] |= 64; // 0b0100_0000
         return mod(BigIntFromByteArray(head));
     }
 
-    async GetPrivate(){
-        return new Ed25519PrivateComponent(await this.#GeneratePrivate());
+    GetPrivate(){
+        return new Ed25519PrivateComponent(this.#rB);
     }
 
-    async GetPublic(){
-        return new Ed25519PublicComponent(Point.BASE.mul(await this.#GeneratePrivate()));
+    GetPublic(){
+        return this.GetPrivate().GetPublic();
     }
     static async New(){
-        return new Ed25519SeedComponent(etc.randomBytes(32));
+        return new Ed25519SeedComponent(this.#GenerateSeed());
     }
 }

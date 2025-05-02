@@ -9,15 +9,19 @@ import { BigIntFromByteArray, BigIntToByteArray, Bytes2Hex, bytesToBase64 } from
 
 export default class TideKey{
 
-    static async NewKey(scheme){
-        let s = SchemeType.find(scheme);
-        if(!s) throw Error("Could not find scheme: " + scheme);
-        const seedFactory = Registery[s][Seed];
+    static NewKey(scheme){
+        const seedFactory = Registery[scheme.Name][Seed];
         return new TideKey(seedFactory.Create(undefined));
+    }
+
+    static FromSerializedComponent(c){
+        return new TideKey(BaseComponent.DeserializeComponent(c));
     }
     
     /**@type { BaseComponent } */
     #component = undefined;
+    #privateComponent;
+    #publicComponent;
 
     constructor(c){
         if(c instanceof BaseComponent) this.#component = c;
@@ -25,12 +29,14 @@ export default class TideKey{
     }
 
     get_private_component(){
-        if(!hasOwnInstanceMethod(this.#component, "GetPrivate") || this.#component instanceof BasePrivateComponent) throw Error("Cannot generate or find private component");
-        return this.#component instanceof BasePrivateComponent ? this.#component : this.#component.GetPrivate();
+        if(!hasOwnInstanceMethod(this.#component, "GetPrivate") && !(this.#component instanceof BasePrivateComponent)) throw Error("Cannot generate or find private component");
+        this.#privateComponent = this.#component instanceof BasePrivateComponent ? this.#component : this.#component.GetPrivate();
+        return this.#privateComponent;
     }
     get_public_component(){
-        if(!hasOwnInstanceMethod(this.#component, "GetPublic") || this.#component instanceof BasePublicComponent) throw Error("Cannot generate or find public component");
-        return this.#component instanceof BasePublicComponent ? this.#component : this.#component.GetPublic();
+        if(!hasOwnInstanceMethod(this.#component, "GetPublic") && !(this.#component instanceof BasePublicComponent)) throw Error("Cannot generate or find public component");
+        this.#publicComponent = this.#component instanceof BasePublicComponent ? this.#component : this.#component.GetPublic();
+        return this.#publicComponent;
     }
 
     async sign(message){
