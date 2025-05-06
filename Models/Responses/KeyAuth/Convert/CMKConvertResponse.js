@@ -15,7 +15,8 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { Point } from "../../../../Cryptide/index.js";
+import { Point } from "../../../../Cryptide/Ed25519.js";
+
 export default class CMKConvertResponse{
     /** 
      * @param {string} EncRequesti
@@ -27,7 +28,7 @@ export default class CMKConvertResponse{
     }
     static from(data){
         const obj = JSON.parse(data);
-        const gCMKRi = Point.fromB64(obj.GCMKRi)
+        const gCMKRi = Point.fromBase64(obj.GCMKRi)
         return new CMKConvertResponse(obj.EncRequesti, gCMKRi);
     }
 }

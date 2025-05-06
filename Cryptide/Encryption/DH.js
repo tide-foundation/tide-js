@@ -15,7 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import Point from "../Ed25519.js";
+import { Point } from "../Ed25519.js";
 import { SHA256_Digest } from "../Hashing/Hash.js";
 import { BigIntFromByteArray, base64ToBytes } from "../Serialization.js";
 
@@ -32,7 +32,7 @@ export async function computeSharedKey(pub, priv){
     }else if(typeof(priv) == "bigint"){
         privNum = priv;
     }else throw Error("Unknown Type");
-    return await SHA256_Digest(pub.times(privNum).toArray());
+    return await SHA256_Digest(pub.mul(privNum).toRawBytes());
 }
 
 /**

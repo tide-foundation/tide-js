@@ -15,7 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { Point } from "../../../../Cryptide/index.js";
+import { Point } from "../../../../Cryptide/Ed25519.js";
 
 export default class DecryptedCMKConvertResponse{
     /** 
@@ -26,7 +26,7 @@ export default class DecryptedCMKConvertResponse{
     }
     static from(data){
         const obj = JSON.parse(data);
-        const userPRISMi= Point.fromB64(obj.UserPRISMi)
+        const userPRISMi= Point.fromBase64(obj.UserPRISMi)
         return new DecryptedCMKConvertResponse(userPRISMi);
     }
 }

@@ -15,7 +15,6 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-export { default as Point } from "./Ed25519.js"
 export { default as ElGamal } from "./Encryption/ElGamal.js"
 
 import * as AES from "./Encryption/AES.js"

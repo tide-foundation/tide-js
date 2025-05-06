@@ -15,7 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import Point from "../Ed25519.js";
+import { Point, CURVE } from "../Ed25519.js";
 import { SHA512_Digest } from "../Hashing/Hash.js";
 import { RandomBigInt, mod } from "../Math.js";
 import { base64ToBytes, BigIntFromByteArray, BigIntToByteArray, bytesToBase64, ConcatUint8Arrays, StringToUint8Array } from "../Serialization.js";
@@ -24,7 +24,7 @@ import { base64ToBytes, BigIntFromByteArray, BigIntToByteArray, bytesToBase64, C
 /**
  * Sign the msg with a private key in non-standard way as it uses a random number generator. Non-deterministic.
  * @param {string | Uint8Array} msg 
- * @param {bigint} priv // Most likely the CVK
+ * @param {bigint} priv
  * @returns A base64 encoding of the signature
  */
 export async function sign(msg, priv){
@@ -32,9 +32,9 @@ export async function sign(msg, priv){
         msg = StringToUint8Array(msg);
     }
 
-    const A = Point.g.times(priv).toArray();
+    const A = Point.BASE.mul(priv).toRawBytes();
     const r = RandomBigInt();
-    const R = Point.g.times(r).toArray();
+    const R = Point.BASE.mul(r).toRawBytes();
 
     const to_hash2 = ConcatUint8Arrays([R, A, msg]);
     const k = mod(BigIntFromByteArray(await SHA512_Digest(to_hash2)));
@@ -60,9 +60,9 @@ export async function verify(sig, pub, msg){
         const sig_bytes = base64ToBytes(sig);
         if(sig_bytes.length != 64) return false;
     
-        const R = Point.from(sig_bytes.slice(0, 32));
+        const R = Point.fromBytes(sig_bytes.slice(0, 32));
         const S = BigIntFromByteArray(sig_bytes.slice(-32));
-        const A = typeof(pub) === 'string' ? Point.fromB64(pub) : pub;
+        const A = typeof(pub) === 'string' ? Point.fromBase64(pub) : pub;
         
         return await verifyRaw(S, R, A, msg)
     }catch{
@@ -78,11 +78,11 @@ export async function verify(sig, pub, msg){
  * @param {Uint8Array} M 
  */
 export async function verifyRaw(S, R, A, M){
-    if(S < BigInt(0) || S >= Point.order){
+    if(S < BigInt(0) || S >= CURVE.n){
         return false;
     } 
 
-    const to_hash = ConcatUint8Arrays([R.toArray(), A.toArray(), M]);
+    const to_hash = ConcatUint8Arrays([R.toRawBytes(), A.toRawBytes(), M]);
     const k = mod(BigIntFromByteArray(await SHA512_Digest(to_hash)));
-    return Point.g.times(S).times(BigInt(8)).isEqual(R.times(BigInt(8)).add(A.times(k).times(BigInt(8))));
+    return Point.BASE.mul(S).mul(BigInt(8)).equals(R.mul(BigInt(8)).add(A.mul(k).mul(BigInt(8))));
 }

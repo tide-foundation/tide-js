@@ -1,4 +1,4 @@
-import { Point } from "../../Cryptide/index.js";
+import { Point } from "../../Cryptide/Ed25519.js";
 import OrkInfo from "./OrkInfo.js";
 
 export default class KeyInfo{
@@ -36,12 +36,12 @@ export default class KeyInfo{
 
     static from(data){
         const json = JSON.parse(data);
-        const pub = Point.fromB64(json.UserPublic);
+        const pub = Point.fromBase64(json.UserPublic);
         const orkInfo = json.OrkInfos.map(orkInfo => OrkInfo.from(orkInfo));
         return new KeyInfo(json.UserId, pub, json.UserM, orkInfo);
     }
 
     static fromNativeTypeObject(json){
-        return new KeyInfo(json.UserId, Point.fromB64(json.UserPublic), json.UserM, json.OrkInfos.map(o => OrkInfo.fromNativeTypeObject(o)));
+        return new KeyInfo(json.UserId, Point.fromBase64(json.UserPublic), json.UserM, json.OrkInfos.map(o => OrkInfo.fromNativeTypeObject(o)));
     }
 }

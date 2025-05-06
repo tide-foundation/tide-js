@@ -1,7 +1,6 @@
 import OrkInfo from "../Models/Infos/OrkInfo.js";
 import HashToPoint from "../Cryptide/Hashing/H2P.js";
 import { HMAC_forHashing } from "../Cryptide/Hashing/Hash.js";
-import { Point } from "../Cryptide/index.js";
 import { Serialization } from "../Cryptide/index.js";
 import { Math } from "../Cryptide/index.js";
 import dKeyGenerationFlow from "../Flow/dKeyGenerationFlow.js";
@@ -11,6 +10,7 @@ import EnclaveEntry from "../Models/EnclaveEntry.js";
 import { CreateGPrismAuth } from "../Cryptide/Math.js";
 import KeyInfo from "../Models/Infos/KeyInfo.js";
 import PollingClient from "../Clients/PollingClient.js";
+import { Point } from "../Cryptide/Ed25519.js";
 
 
 export async function EmailRecovery(){
@@ -51,7 +51,7 @@ export async function EmailRecovery(){
         const { channelId, status: startAccountRecoveryStatus } = await recoveryFlow.StartAccountRecovery(homeOrkUrl, pollingClient, signal);
 
         await recoveryFlow.RetrieveEmailAuths(channelId, () => {}, pollingClient, signal);
-        await recoveryFlow.GenerateNewPrism(GK, newgPass, Point.g);
+        await recoveryFlow.GenerateNewPrism(GK, newgPass, Point.BASE);
     }
 
     await create();

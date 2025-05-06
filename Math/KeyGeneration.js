@@ -18,7 +18,7 @@
 import GenShardResponse from "../Models/Responses/KeyGen/GenShard/GenShardResponse.js";
 import SetShardResponse from "../Models/Responses/KeyGen/SetShard/SetShardResponse.js";
 import { SHA256_Digest } from "../Cryptide/Hashing/Hash.js";
-import { AES, EdDSA, Interpolation, Math, Serialization, Point, ElGamal } from "../Cryptide/index.js";
+import { AES, EdDSA, Interpolation, Math, Serialization, ElGamal } from "../Cryptide/index.js";
 import DecryptedGenShardResponse from "../Models/Responses/KeyGen/GenShard/DecryptedGenShardResponse.js";
 import DecryptedSetShardResponse from "../Models/Responses/KeyGen/SetShard/DecryptedSetShardResponse.js";
 import AuthRequest from "../Models/AuthRequest.js";
@@ -26,6 +26,7 @@ import { AuthorizerPack, BigIntToByteArray, Bytes2Hex, ConcatUint8Arrays, GVRK_P
 import { mod } from "../Cryptide/Math.js";
 import { Max } from "../Tools/Utils.js";
 import { CreateAuthorizerPackage, CreateVRKPackage } from "../Cryptide/TideMemoryObjects.js";
+import { Point } from "../Cryptide/Ed25519.js";
 /**
 * @param {GenShardResponse[]} responses Can be T amount
 * @param {(0 | 1)[]} bitwise
@@ -39,7 +40,7 @@ export async function ProcessShards(responses, bitwise, sessKey, vrkSigning=fals
 
     const gMultiplied = Interpolation.AggregatePublicComponentArrays(decryptedResponses.map(resp => resp.GMultiplied));
     const gR = Interpolation.AggregatePoints(decryptedResponses.map(resp => resp.GRi));
-    const gK = Interpolation.AggregatePublicComponents(decryptedResponses.map(resp => resp.GK1i))?.point;
+    const gK = Interpolation.AggregatePublicComponents(decryptedResponses.map(resp => resp.GK1i))?.public;
     const timestamp = Math.median(decryptedResponses.map(resp => resp.Timestampi));
     const VRK_gR = vrkSigning ? Interpolation.AggregatePointArrays(decryptedResponses.map(resp => resp.VRK_GR)) : null;
 
@@ -76,7 +77,7 @@ export async function CommitShardPrep(keyId, sendShardResponses, mgORKi, timesta
         const main_vrk_valid = await EdDSA.verifyRaw(VRK_S_MainVRK, vrk_gR[0], gK1, Hex2Bytes(authorizer_package));
         if(!main_vrk_valid) throw Error("Main VRK validation failed");
 
-        main_vrkSignatureToStore = ConcatUint8Arrays([vrk_gR[0].toArray(), BigIntToByteArray(VRK_S_MainVRK)]);
+        main_vrkSignatureToStore = ConcatUint8Arrays([vrk_gR[0].toRawBytes(), BigIntToByteArray(VRK_S_MainVRK)]);
 
         // First admin VRK sig verification -----
         // Construct firstAdmin VRK from MainVRK
@@ -88,7 +89,7 @@ export async function CommitShardPrep(keyId, sendShardResponses, mgORKi, timesta
         const firstAdmin_vrk_valid = await EdDSA.verifyRaw(VRK_S_FirstAdmin, vrk_gR[1], gK1, first_admin_authorizer);
         if(!firstAdmin_vrk_valid) throw Error("First Admin VRK validation failed");
 
-        firstAdmin_vrkSignatureToStore = ConcatUint8Arrays([vrk_gR[1].toArray(), BigIntToByteArray(VRK_S_FirstAdmin)]);
+        firstAdmin_vrkSignatureToStore = ConcatUint8Arrays([vrk_gR[1].toRawBytes(), BigIntToByteArray(VRK_S_FirstAdmin)]);
         firstAdmin_gvrk_ToStore = Bytes2Hex(first_admin_authorizer);
     }
 
@@ -100,7 +101,7 @@ export async function CommitShardPrep(keyId, sendShardResponses, mgORKi, timesta
 
     const M_data_to_hash = ConcatUint8Arrays([serializeBitArray(participatingBitwise), permissionMessage.toUint8Array()]);
     const M = await SHA256_Digest(M_data_to_hash);
-    const mgORKs = mgORKi.reduce((sum, next, i) => participatingBitwise[i] == true ? sum.add(next) : sum, Point.infinity);
+    const mgORKs = mgORKi.reduce((sum, next, i) => participatingBitwise[i] == true ? sum.add(next) : sum, Point.ZERO);
 
     const accountableKey = gK1.add(mgORKs);
 

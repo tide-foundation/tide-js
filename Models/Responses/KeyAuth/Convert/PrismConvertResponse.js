@@ -15,7 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { Point } from "../../../../Cryptide/index.js";
+import { Point } from "../../../../Cryptide/Ed25519.js";
 
 export default class PrismConvertResponse{
     /** 
@@ -28,7 +28,7 @@ export default class PrismConvertResponse{
     }
     static from(data){
         const obj = JSON.parse(data);
-        const gBlurPassPRISMi = Point.fromB64(obj.GBlurPassPrismi)
+        const gBlurPassPRISMi = Point.fromBase64(obj.GBlurPassPrismi)
         return new PrismConvertResponse(obj.EncRequesti, gBlurPassPRISMi);
     }
 }

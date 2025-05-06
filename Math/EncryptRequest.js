@@ -1,10 +1,11 @@
 import { SHA256_Digest } from "../Cryptide/Hashing/Hash.js";
 import { ConcatUint8Arrays, bytesToBase64, numberToUint8Array } from "../Cryptide/Serialization.js";
 import { RandomBigInt, mod } from "../Cryptide/Math.js";
-import { Point, EdDSA } from "../Cryptide/index.js";
+import { EdDSA } from "../Cryptide/index.js";
 import { decryptData, encryptData, encryptDataRawOutput } from "../Cryptide/Encryption/AES.js";
 import Datum from "../Models/Datum.js";
 import SerializedField from "../Models/SerializedField.js";
+import { Point } from "../Cryptide/Ed25519.js";
 
 export default class EncryptRequest{
     /**
@@ -15,11 +16,11 @@ export default class EncryptRequest{
      */
     static async generatePartialRequest(gCVK, fieldDatum, timestamp){
         const ephKey = RandomBigInt(); // not to be stored
-        const fieldKey = await SHA256_Digest((gCVK.times(ephKey).toArray())); // not to be stored
+        const fieldKey = await SHA256_Digest((gCVK.mul(ephKey).toRawBytes())); // not to be stored
         const encField = await encryptDataRawOutput(fieldDatum, fieldKey);
 
         const data = {
-            C1: Point.g.times(ephKey),
+            C1: Point.BASE.mul(ephKey),
             EncField: encField,
             EncFieldChk: await SHA256_Digest(encField),
             timestamp: timestamp
@@ -77,7 +78,7 @@ export default class EncryptRequest{
         for(let i = 0; i < plainRequest.C1s.length; i++){
             const M = await SHA256_Digest(ConcatUint8Arrays([
                 plainRequest.EncFieldChks[i],
-                plainRequest.C1s[i].toArray(),
+                plainRequest.C1s[i].toRawBytes(),
                 numberToUint8Array(plainRequest.Tags[i], 8),
                 numberToUint8Array(plainRequest.Timestamp, 8)
             ]));

@@ -19,7 +19,6 @@
 export { default as NodeClient } from './Clients/NodeClient.js'
 export { default as SimClient } from './Clients/NetworkClient.js'
 export { default as SimulatorFlow } from './Flow/SimulatorFlow.js';
-export { default as TideJWT } from "./ModelsToSign/TideJWT.js"
 export { default as OrkInfo } from "./Models/Infos/OrkInfo.js"
 export { default as dKeyGenerationFlow } from './Flow/dKeyGenerationFlow.js'
 
