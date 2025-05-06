@@ -19,38 +19,38 @@ export default class TideKey{
     }
     
     /**@type { BaseComponent } */
-    #component = undefined;
-    #privateComponent;
-    #publicComponent;
+    component = undefined;
+    privateComponent;
+    publicComponent;
 
     constructor(c){
-        if(c instanceof BaseComponent) this.#component = c;
+        if(c instanceof BaseComponent) this.component = c;
         else throw Error("Expecting object derived from BaseComponent");
     }
 
     get_private_component(){
-        if(!hasOwnInstanceMethod(this.#component, "GetPrivate") && !(this.#component instanceof BasePrivateComponent)) throw Error("Cannot generate or find private component");
-        this.#privateComponent = this.#component instanceof BasePrivateComponent ? this.#component : this.#component.GetPrivate();
-        return this.#privateComponent;
+        if(!hasOwnInstanceMethod(this.component, "GetPrivate") && !(this.component instanceof BasePrivateComponent)) throw Error("Cannot generate or find private component");
+        this.privateComponent = this.component instanceof BasePrivateComponent ? this.component : this.component.GetPrivate();
+        return this.privateComponent;
     }
     get_public_component(){
-        if(!hasOwnInstanceMethod(this.#component, "GetPublic") && !(this.#component instanceof BasePublicComponent)) throw Error("Cannot generate or find public component");
-        this.#publicComponent = this.#component instanceof BasePublicComponent ? this.#component : this.#component.GetPublic();
-        return this.#publicComponent;
+        if(!hasOwnInstanceMethod(this.component, "GetPublic") && !(this.component instanceof BasePublicComponent)) throw Error("Cannot generate or find public component");
+        this.publicComponent = this.component instanceof BasePublicComponent ? this.component : this.component.GetPublic();
+        return this.publicComponent;
     }
 
     async sign(message){
-        const f = this.#component.Scheme.GetSigningFunction();
+        const f = this.component.Scheme.GetSigningFunction();
         return await f(message, this.get_private_component());
     }
     async verify(message, signature){
-        const f = this.#component.Scheme.GetVerifyingFunction();
+        const f = this.component.Scheme.GetVerifyingFunction();
         return await f(message, signature, this.get_public_component());
     }
 
     async prepVouchersReq(gORKn){
         // Ensure scheme is Ed25519 for tide vouchers
-        if(this.#component.Scheme === Ed25519Scheme) throw Error("Cannot execute prepVouchersReq on a non Ed25519 key");
+        if(this.component.Scheme === Ed25519Scheme) throw Error("Cannot execute prepVouchersReq on a non Ed25519 key");
         let blurKeyPub = [];
         for(let i = 0; i< gORKn.length; i++){
             const z = BigIntFromByteArray(await computeSharedKey(gORKn[i], this.get_private_component().priv));
