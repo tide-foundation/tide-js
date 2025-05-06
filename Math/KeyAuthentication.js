@@ -112,7 +112,7 @@ export async function CmkConvertReply(convertResponses, ids, prismAuthis, gCMK, 
     }
 
     const userPRISM = Interpolation.AggregatePointsWithIds(decData.map(d => d.UserPRISMi), ids);
-    const userPRISMdec = userPRISM.mul(BigIntFromByteArray(await DH.computeSharedKey(qPub, blurerKPriv)));
+    const userPRISMdec = userPRISM.mul(mod(BigIntFromByteArray(await DH.computeSharedKey(qPub, blurerKPriv))));
 
     const gUserCMK = userPRISMdec.divide(uDeObf);
     const gUserCMK_Hash = await Hash.SHA512_Digest(gUserCMK.toRawBytes());
@@ -141,10 +141,10 @@ export async function ConvertRememberedReply(responses, mIdORKi, gCMK, sessID, p
     const pre_decryptedResonses = responses.map((async(resp, i) => DecryptedConvertRememberedResponse.from(await AES.decryptData(resp.EncRequesti, prkECDHi[i]))));
     const decryptedResponses = await Promise.all(pre_decryptedResonses);
 
-    const timestamp = Math.median(decryptedResponses.map(d => d.Timestampi));
+    const timestamp = Math.median(decryptedResponses.map(d => d.timestampi));
 
     const userPRISM = Interpolation.AggregatePointsWithIds(decryptedResponses.map(d => d.UserPRISMi), mIdORKi);
-    const userPRISMdec = userPRISM.mul(BigIntFromByteArray(await DH.computeSharedKey(qPub, blurerKPriv)));
+    const userPRISMdec = userPRISM.mul(mod(BigIntFromByteArray(await DH.computeSharedKey(qPub, blurerKPriv))));
 
     const gUserCMK = userPRISMdec.divide(uDeObf);
     const gUserCMK_Hash = await Hash.SHA512_Digest(gUserCMK.toRawBytes());

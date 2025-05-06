@@ -25,8 +25,8 @@ export default class VoucherFlow{
      */
     async GetVouchers(clientFunction = null){
         let vouchers = undefined;
-        const k = await TideKey.NewKey(Ed25519Scheme);
-        const blurKeyPub = k.prepVouchersReq(this.orkPaymentPublics);
+        const k = TideKey.NewKey(Ed25519Scheme);
+        const blurKeyPub = await k.prepVouchersReq(this.orkPaymentPublics);
         if(clientFunction == null){
             // get vouchers
             const vendorClient = new VoucherClient(this.voucherURL);

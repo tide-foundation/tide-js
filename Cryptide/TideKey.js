@@ -4,7 +4,7 @@ import { Ed25519SeedComponent } from "./Components/Schemes/Ed25519/Ed25519Compon
 import Ed25519Scheme from "./Components/Schemes/Ed25519/Ed25519Scheme.js";
 import { SchemeType } from "./Components/Schemes/SchemeRegistry.js";
 import { computeSharedKey } from "./Encryption/DH.js";
-import { GetPublic, RandomBigInt } from "./Math.js";
+import { GetPublic, mod, RandomBigInt } from "./Math.js";
 import { BigIntFromByteArray, BigIntToByteArray, Bytes2Hex, bytesToBase64 } from "./Serialization.js";
 
 export default class TideKey{
@@ -50,10 +50,10 @@ export default class TideKey{
 
     async prepVouchersReq(gORKn){
         // Ensure scheme is Ed25519 for tide vouchers
-        if(this.component.Scheme === Ed25519Scheme) throw Error("Cannot execute prepVouchersReq on a non Ed25519 key");
+        if(this.component.Scheme !== Ed25519Scheme) throw Error("Cannot execute prepVouchersReq on a non Ed25519 key");
         let blurKeyPub = [];
         for(let i = 0; i< gORKn.length; i++){
-            const z = BigIntFromByteArray(await computeSharedKey(gORKn[i], this.get_private_component().priv));
+            const z = mod(BigIntFromByteArray(await computeSharedKey(gORKn[i], this.get_private_component().priv)));
             blurKeyPub[i] = gORKn[i].mul(z);
         }
         return blurKeyPub;

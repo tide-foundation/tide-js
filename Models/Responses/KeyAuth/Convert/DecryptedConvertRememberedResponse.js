@@ -29,7 +29,7 @@ export default class DecryptedConvertRememberedResponse{
     }
     static from(data){
         const obj = JSON.parse(data);
-        const timestamp = BigInt(obj.timestampi);
+        const timestamp = BigInt(obj.Timestampi);
         const UserPRISMi = Point.fromBase64(obj.UserPRISMi);
         return new DecryptedConvertRememberedResponse(UserPRISMi, timestamp);
     }
