@@ -5,6 +5,7 @@ import { StripeLicensing, CheckLicenseAddedToPayer } from "./StripeLicensing.js"
 import { Ed25519PublicDeserialization } from "./Components.js";
 import { Decrypt, Encrypt, Get_Auth_By_JWT } from "./Encryption.js";
 import Tide_Key from "./TideKey.js";
+import { Matt_Test } from "./bEd25531.js";
 
 export const tests = {
     StripeLicensing,
@@ -20,7 +21,8 @@ export const tests = {
     Get_Auth_By_JWT,
     Encrypt,
     Decrypt,
-    Tide_Key
+    Tide_Key,
+    Matt_Test
 };
 
 /**
