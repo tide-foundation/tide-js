@@ -67,8 +67,33 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder{
             catch{cont = false;}
         }
 
+        // Create summary
+        let summary = [];
+        summary.push(["Creating new admin group", initCertPresent == 1 ? "YES" : "no"]);
+        // Get the clients involved in this approval
+        // All clients will be either realm-management or under resource_management
+        let clients = [];
+        prettyObject.UserContexts.map(c => {
+            if(c.realm_access) clients.push("realm_access");
+            if(typeof c.resource_access === "object"){
+                clients.push(...Object.keys(c.resource_access));
+            }
+        })
+        clients = [...new Set(clients)];
+        if(clients.length > 5){
+            for (let i = 0; i < clients.length; i += 5) {
+                const chunk = clients.slice(i, i + 5);
+                summary.push([`Clients involved [${i}]`, chunk.join(", ")]);
+              }
+        }else{
+            summary.push(["Clients involved", clients.join(", ")]);
+        }
+
         // return a nice object of InitCert? and usercontexts
-        return prettyObject;
+        return {
+            summary: summary,
+            pretty: prettyObject
+        }
     }
 }
 class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder{ // this is an example class
@@ -81,8 +106,18 @@ class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder{ // this is 
     getHumanReadableObject(){
         // deserialize draft here and return a pretty object for user
         const txBytes = GetValue(this._data, 0);
-        return new CardanoTxBody(txBytes).toPrettyObject();
-        
+        const body = new CardanoTxBody(txBytes);
+
+        let summary = [];
+        body.transaction.outputs.map(o => {
+            summary.push([`Outgoing ada to ${o.address}`, (o.amount / 1_000_000n).toString()]);
+        })
+        summary.push(["Fee", body.transaction.fee.toString()])
+
+        return {
+            summary: summary,
+            pretty: body.toPrettyObject()
+        }
     }
 }
 
@@ -116,8 +151,10 @@ class RuleSettingSignRequestBuilder extends HumanReadableModelBuilder{ // this i
 
         const newRuleSettings = GetValue(this._data, draftIndex);
         prettyObject.NewRuleSetting = new RuleSettings(StringFromUint8Array(newRuleSettings)).toPrettyObject(); 
-        return prettyObject;
-        
+        return {
+            summary: [["No summary for RuleSettings"]],
+            pretty: prettyObject
+        }
     }
 }
 
