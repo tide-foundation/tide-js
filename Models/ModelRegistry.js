@@ -31,8 +31,10 @@ export class HumanReadableModelBuilder{
 
 // MODELS ----------------------------------------------------------------
 class UserContextSignRequestBuilder extends HumanReadableModelBuilder{
-    static _name = "UserContext";
-    static _version = "1";
+    _name = "UserContext";
+    _version = "1";
+    get _id() { return this._name + ":" + this._version; }
+
     constructor(data, expiry){
         super(data, expiry);
     }
@@ -69,7 +71,7 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder{
 
         // Create summary
         let summary = [];
-        summary.push(["Creating new admin group", initCertPresent == 1 ? "YES" : "no"]);
+        summary.push(["Admin related", initCertPresent == 1 ? "YES" : "no"]);
         // Get the clients involved in this approval
         // All clients will be either realm-management or under resource_management
         let clients = [];
@@ -80,14 +82,8 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder{
             }
         })
         clients = [...new Set(clients)];
-        if(clients.length > 5){
-            for (let i = 0; i < clients.length; i += 5) {
-                const chunk = clients.slice(i, i + 5);
-                summary.push([`Clients involved [${i}]`, chunk.join(", ")]);
-              }
-        }else{
-            summary.push(["Clients involved", clients.join(", ")]);
-        }
+        summary.push(["Applications affected", clients.join(", ")]);
+        
 
         // return a nice object of InitCert? and usercontexts
         return {
@@ -97,8 +93,10 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder{
     }
 }
 class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder{ // this is an example class
-    static _name = "CardanoTx";
-    static _version = "1";
+    _name = "CardanoTx";
+    _version = "1";
+    get _id() { return this._name + ":" + this._version; }
+
     constructor(data, expiry){
         //throw Error("Not implemented");
         super(data, expiry);
@@ -122,8 +120,10 @@ class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder{ // this is 
 }
 
 class RuleSettingSignRequestBuilder extends HumanReadableModelBuilder{ // this is an example class
-    static _name = "Rules";
-    static _version = "1";
+    _name = "Rules";
+    _version = "1";
+    get _id() { return this._name + ":" + this._version; }
+
     constructor(data, expiry){
         //throw Error("Not implemented");
         super(data, expiry);
@@ -159,8 +159,8 @@ class RuleSettingSignRequestBuilder extends HumanReadableModelBuilder{ // this i
 }
 
 const modelBuildersMap = {
-    [UserContextSignRequestBuilder._name + ":" + UserContextSignRequestBuilder._version]: UserContextSignRequestBuilder,
-    [CardanoTxSignRequestBuilder._name + ":" + CardanoTxSignRequestBuilder._version]: CardanoTxSignRequestBuilder,
-    [RuleSettingSignRequestBuilder._name + ":" + RuleSettingSignRequestBuilder._version]: RuleSettingSignRequestBuilder
+    [new UserContextSignRequestBuilder()._id]: UserContextSignRequestBuilder,
+    [new CardanoTxSignRequestBuilder()._id]: CardanoTxSignRequestBuilder,
+    [new RuleSettingSignRequestBuilder()._id]: RuleSettingSignRequestBuilder
 
 }
