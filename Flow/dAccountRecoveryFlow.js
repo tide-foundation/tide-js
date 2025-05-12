@@ -3,7 +3,7 @@ import NodeClient from "../Clients/NodeClient.js";
 import OrkInfo from "../Models/Infos/OrkInfo.js";
 import { CurrentTime, WaitForNumberofORKs } from "../Tools/Utils.js";
 import { dKeyGenerationFlow } from "../index.js";
-import Point from "../Cryptide/Ed25519.js";
+import { Point } from "../Cryptide/Ed25519.js";
 import { ElGamal } from "../Cryptide/index.js";
 import { bytesToBase64 } from "../Cryptide/Serialization.js";
 import { CreateGPrismAuth } from "../Cryptide/Math.js";
@@ -102,7 +102,7 @@ export default class dAccountRecoveryFlow {
         );
         const { gMultiplied } = await newPrismFlow.GenShard(1, [newGPass]);
         const newGPrismAuth = await CreateGPrismAuth(gMultiplied[0]);
-        const keyM = await newPrismFlow.SetShard(newGPrismAuth, "Prism");
+        const keyM = await newPrismFlow.SetShard(newGPrismAuth.toBase64(), "Prism");
         const keyInfo = new KeyInfo(this.uid, currentUserPublic, keyM, this.orks);
 
         // test new account

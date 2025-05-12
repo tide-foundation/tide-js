@@ -15,7 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import Point from "../Ed25519.js";
+import { Point } from "../Ed25519.js";
 import { RandomBigInt } from "../Math.js";
 import { encryptDataRawOutput, decryptData, decryptDataRawOutput } from "./AES.js";
 import { SHA256_Digest } from "../Hashing/Hash.js";
@@ -38,8 +38,8 @@ export default class ElGamal {
      */
     static async encryptDataRaw(secretData, publicKey) {
         const r = RandomBigInt();
-        const c1 = Point.g.times(r).toArray();
-        const c2 = await encryptDataRawOutput(secretData, await SHA256_Digest(publicKey.times(r).toArray()));
+        const c1 = Point.BASE.mul(r).toRawBytes();
+        const c2 = await encryptDataRawOutput(secretData, await SHA256_Digest(publicKey.mul(r).toRawBytes()));
         return ConcatUint8Arrays([c1, c2]);
     }
 
@@ -53,8 +53,8 @@ export default class ElGamal {
         const c1 = b.slice(0, 32);
         const c2 = b.slice(32);
 
-        const c1Point = Point.from(c1);
-        const decrypted = await decryptDataRawOutput(c2, await SHA256_Digest(c1Point.times(priv).toArray()));
+        const c1Point = Point.fromBytes(c1);
+        const decrypted = await decryptDataRawOutput(c2, await SHA256_Digest(c1Point.mul(priv).toRawBytes()));
         return decrypted;
     }
 }

@@ -16,9 +16,8 @@
 //
 
 import NodeClient from "../../Clients/NodeClient.js";
-import {DH, Interpolation, Point} from "../../Cryptide/index.js";
-import { AuthenticateBasicReply, AuthenticateConsentReply, CmkConvertReply, PreSignInCVKReply, PrismConvertReply, SignInCVKReply } from "../../Math/KeyAuthentication.js";
-import { TideJWT } from "../../index.js";
+import {DH, Interpolation} from "../../Cryptide/index.js";
+import { AuthenticateBasicReply, AuthenticateConsentReply, CmkConvertReply, PrismConvertReply  } from "../../Math/KeyAuthentication.js";
 import { Math } from "../../Cryptide/index.js";
 import { Max, Threshold, WaitForNumberofORKs, sortORKs } from "../../Tools/Utils.js";
 import { RandomBigInt } from "../../Cryptide/Math.js";
@@ -26,6 +25,7 @@ import { BigIntFromByteArray, GetUID, Hex2Bytes, base64ToBytes, bitArrayToUint8A
 import EnclaveEntry from "../../Models/EnclaveEntry.js";
 import VoucherFlow from "../VoucherFlows/VoucherFlow.js";
 import KeyInfo from "../../Models/Infos/KeyInfo.js";
+import { Point } from "../../Cryptide/Ed25519.js";
 
 export default class dCMKPasswordFlow{
     /**
@@ -62,7 +62,7 @@ export default class dCMKPasswordFlow{
         const {vouchers, k} = await voucherFlow.GetVouchers();
 
         const r1 = Math.RandomBigInt();
-        const gBlurPass = gPass.blur(r1);
+        const gBlurPass = gPass.mul(r1);
 
         // Here we also find out which ORKs are up
         const pre_ConvertResponses = clients.map((client, i) => client.Convert(i, this.keyInfo.UserId, gBlurPass, gSessKeyPub, rememberMe, vouchers.toORK(i), this.keyInfo.UserM, this.cmkCommitted, this.prismCommitted));
@@ -93,9 +93,9 @@ export default class dCMKPasswordFlow{
                 timestampi, 
                 this.sessID, 
                 this.purpose,
-                Point.from(Hex2Bytes(vouchers.qPub).slice(-32)), // to translate between tide component and native object
+                Point.fromBytes(Hex2Bytes(vouchers.qPub).slice(-32)), // to translate between tide component and native object
                 BigIntFromByteArray(base64ToBytes(vouchers.UDeObf).slice(-32)), // to translate between tide component and native object
-                k.GetPrivateKey()
+                k.get_private_component().priv
             )
         }
         return {
@@ -112,7 +112,7 @@ export default class dCMKPasswordFlow{
         if(this.cState != undefined) throw Error("This function must be called as a standlone in this flow");
 
         const r1 = RandomBigInt();
-        const gBlurPass = gPass.blur(r1);
+        const gBlurPass = gPass.mul(r1);
 
         const clients = this.keyInfo.OrkInfo.map(ork => new NodeClient(ork.orkURL)) // create node clients
 

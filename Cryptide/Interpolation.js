@@ -16,7 +16,7 @@
 //
 
 import { mod, mod_inv } from "./Math.js";
-import Point from "./Ed25519.js";
+import { Point, CURVE } from "./Ed25519.js";
 import { Ed25519PublicComponent } from "./Components/Schemes/Ed25519/Ed25519Components.js";
 
 /**
@@ -25,7 +25,7 @@ import { Ed25519PublicComponent } from "./Components/Schemes/Ed25519/Ed25519Comp
  * @param {bigint} m 
  * @returns {bigint}
  */
-export function GetLi(xi, xs, m = Point.order) {
+export function GetLi(xi, xs, m = CURVE.n) {
     var li = xs.filter(xj => xj != xi)
         .map(xj => mod(mod_inv(xj-xi, m) * xj), m)
         .reduce((li, num) => mod(li * num, m));
@@ -36,7 +36,7 @@ export function GetLi(xi, xs, m = Point.order) {
  * @param {bigint[]} ids 
  */
 export function GetLis(ids){
-	return ids.map(id => GetLi(id, ids, Point.order));
+	return ids.map(id => GetLi(id, ids, CURVE.n));
 }
 
 /**
@@ -45,7 +45,7 @@ export function GetLis(ids){
  */
 export function AggregatePoints(points){
     if(points.every(p => p == null)) return null;
-    else return points.reduce((sum, next) => next == null ? sum : sum.add(next), Point.infinity);
+    else return points.reduce((sum, next) => next == null ? sum : sum.add(next), Point.ZERO);
 }
 /**
  * 
@@ -53,7 +53,7 @@ export function AggregatePoints(points){
  */
 export function AggregatePublicComponents(points){
     if(points.every(p => p == null)) return null;
-    else return points.reduce((sum, next) => next == null ? sum : sum.AddComponent(next), new Ed25519PublicComponent(Point.infinity));
+    else return points.reduce((sum, next) => next == null ? sum : sum.AddComponent(next), new Ed25519PublicComponent(Point.ZERO));
 }
 
 /**
@@ -83,7 +83,7 @@ export function AggregatePointArrays(pointArrays){
  */
 export function AggregatePointsWithIds(points, ids){
     const lis = GetLis(ids);
-    return AggregatePoints(points.map((p, i) => p.times(lis[i])));
+    return AggregatePoints(points.map((p, i) => p.mul(lis[i])));
 }
 /**
  * Will aggregate all points and multiply by corresponding li.
@@ -92,5 +92,5 @@ export function AggregatePointsWithIds(points, ids){
  * @returns {Point}
  */
 export function AggregatePointsWithLis(points, lis){
-    return AggregatePoints(points.map((p, i) => p.times(lis[i])));
+    return AggregatePoints(points.map((p, i) => p.mul(lis[i])));
 }

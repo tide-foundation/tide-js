@@ -17,7 +17,7 @@
 
 import { CurrentTime } from "../Tools/Utils.js";
 import { Ed25519PublicComponent } from "./Components/Schemes/Ed25519/Ed25519Components.js";
-import Point from "./Ed25519.js";
+import { etc, Point } from "./Ed25519.js";
 import { SHA256_Digest } from "./Hashing/Hash.js";
 import { EdDSA } from "./index.js";
 import { CreateVRKPackage } from "./TideMemoryObjects.js";
@@ -228,7 +228,7 @@ export function TryGetValue(a, index, returnObj){
 }
 
 export function DeserializeNetworkKey(data){
-	return Point.from(Hex2Bytes(data.toLowerCase()));
+	return Point.fromBytes(Hex2Bytes(data.toLowerCase()));
 }
 
 /**
@@ -238,7 +238,7 @@ export function DeserializeNetworkKey(data){
 export async function EdPointToJWK(p){
 	return JSON.stringify({
 		"kty": "OKP",
-		"kid": Bytes2Hex(await SHA256_Digest(p.toArray())),
+		"kid": Bytes2Hex(await SHA256_Digest(p.toRawBytes())),
 		"alg": "EdDSA",
 		"crv": "Ed25519",
 		"x": base64ToBase64Url(p.toBase64())
@@ -267,8 +267,7 @@ export async function GetUID(str){
  * @returns {Uint8Array}
  */
 export function BigIntToByteArray(num) {
-	const hex = num.toString(16).padStart(32 * 2, '0');
-	return Hex2Bytes(hex).reverse();
+	return etc.bigIntToBytes(num);
 }
 
 /**
@@ -276,9 +275,7 @@ export function BigIntToByteArray(num) {
  * @returns {bigint}
  */
 export function BigIntFromByteArray(bytes) {
-	const b = bytes.slice();
-	const hex = Bytes2Hex(b.reverse());
-	return BigInt("0x" + hex);
+	return etc.bytesToBigInt(bytes);
 }
 
 /**

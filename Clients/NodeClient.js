@@ -15,18 +15,18 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { AES, DH, Point } from "../Cryptide/index.js";
+import { AES, DH } from "../Cryptide/index.js";
 import GenShardResponse from "../Models/Responses/KeyGen/GenShard/GenShardResponse.js";
 import ClientBase from "./ClientBase.js";
 import SetShardResponse from "../Models/Responses/KeyGen/SetShard/SetShardResponse.js";
 import PrismConvertResponse from "../Models/Responses/KeyAuth/Convert/PrismConvertResponse.js";
-import PreSignInEncryptResponse from "../Models/Responses/KeyAuth/PreSignIn/PreSignInEncryptResponse.js";
 import CMKConvertResponse from "../Models/Responses/KeyAuth/Convert/CMKConvertResponse.js";
 import { BigIntFromByteArray, ConcatUint8Arrays, StringToUint8Array, base64ToBytes, bytesToBase64 } from "../Cryptide/Serialization.js";
 import ConvertRememberedResponse from "../Models/Responses/KeyAuth/Convert/ConvertRememberedResponse.js";
 import BaseTideRequest from "../Models/BaseTideRequest.js";
 import ReservationConfirmation from "../Models/Responses/Reservation/ReservationConfirmation.js";
 import { Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
+import { Point } from "../Cryptide/Ed25519.js";
 
 export default class NodeClient extends ClientBase {
     /**
@@ -343,7 +343,7 @@ export default class NodeClient extends ClientBase {
         if (decrypted.length % 32 != 0) throw new Error("Unexpected response legnth. Must be divisible by 32");
         let GRis = [];
         for (let i = 0; i < decrypted.length; i += 32) {
-            GRis.push(Point.from(decrypted.slice(i, i + 32)));
+            GRis.push(Point.fromBytes(decrypted.slice(i, i + 32)));
         }
         return {
             index,
@@ -360,7 +360,7 @@ export default class NodeClient extends ClientBase {
      */
     async Sign(vuid, request, GRs, bitwise) {
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
-        const payload = ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toArray()), request.encode()]);
+        const payload = ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes()), request.encode()]);
         const encrypted = await AES.encryptData(payload, this.DHKey);
         const data = this._createFormData(
             {
@@ -400,7 +400,7 @@ export default class NodeClient extends ClientBase {
         if (decrypted.length % 32 != 0) throw new Error("Unexpected response legnth. Must be divisible by 32");
         let appliedC1s = [];
         for (let i = 0; i < decrypted.length; i += 32) {
-            appliedC1s.push(Point.from(decrypted.slice(i, i + 32)));
+            appliedC1s.push(Point.fromBytes(decrypted.slice(i, i + 32)));
         }
         return {
             index,

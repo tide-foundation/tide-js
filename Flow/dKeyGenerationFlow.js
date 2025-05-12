@@ -21,7 +21,7 @@ import OrkInfo from "../Models/Infos/OrkInfo.js";
 import { CommitShardPrep, ProcessShards } from "../Math/KeyGeneration.js";
 import { CurrentTime, Max, Threshold, WaitForNumberofORKs, randomiseEmails, sortORKs } from "../Tools/Utils.js";
 import { RandomBigInt } from "../Cryptide/Math.js";
-import Point from "../Cryptide/Ed25519.js";
+import { Point } from "../Cryptide/Ed25519.js";
 import { bitArrayAND, bitArrayToUint8Array, bytesToBase64, deserializeBitArray, serializeBitArray, uint8ArrayToBitArray } from "../Cryptide/Serialization.js";
 import { AES, DH } from "../Cryptide/index.js";
 import VoucherFlow from "./VoucherFlows/VoucherFlow.js";
@@ -48,7 +48,7 @@ export default class dKeyGenerationFlow{
         if(expired != null) if(expired < CurrentTime()) throw Error("Time has expired. Try again");
         if(orks.length < Max) throw Error("Not enough orks available to create an account");
         this.uid = uid;
-        this.gVRK = Point.fromB64(gVRK);
+        this.gVRK = Point.fromBase64(gVRK);
         this.bitwise = bitwise == null ? null : bitwise;
         this.orks = sortORKs(orks);
         this.selfRequesti = selfRequesti;
@@ -113,7 +113,7 @@ export default class dKeyGenerationFlow{
             if(gMul != null){
                 const b = RandomBigInt();
                 blurs.push(b);
-                return gMul.blur(b);
+                return gMul.mul(b);
             }else{
                 blurs.push(null);
                 return null;
@@ -159,7 +159,7 @@ export default class dKeyGenerationFlow{
 
         const UnblurredGMultipled = this.gState.gMultiplied.map((gMultiplied, i) => {
             if(gMultiplied != null){
-                return gMultiplied._point().unblur(blurs[i]);
+                return gMultiplied.public.divide(blurs[i]);
             }else{
                 return null;
             }

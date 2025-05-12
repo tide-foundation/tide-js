@@ -15,7 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import Point from "./Ed25519.js";
+import { CURVE, Point } from "./Ed25519.js";
 import { BigIntFromByteArray, BigIntToByteArray } from "../Cryptide/Serialization.js"
 import { SHA256_Digest } from "./Hashing/Hash.js";
 import TideKey from "./TideKey.js";
@@ -30,7 +30,7 @@ const _2n = BigInt(2);
  * @param {bigint} b 
  * @returns {bigint}
  */
-export function mod(a, b = Point.order) {
+export function mod(a, b = CURVE.n) {
 	var res = a % b;
 	return res >= BigInt(0) ? res : b + res;
 }
@@ -57,7 +57,7 @@ export function median(numbers) {
 export function RandomBigInt() {
 	const buf = new Uint8Array(32);
 	window.crypto.getRandomValues(buf);
-	return mod(BigIntFromByteArray(buf), Point.order);
+	return mod(BigIntFromByteArray(buf), CURVE.n);
 }
 
 export function GenSessKey(){
@@ -68,7 +68,7 @@ export function GenSessKey(){
  * @returns 
  */
 export async function CreateGPrismAuth(gPassPRISM){
-	return Point.g.times(await gPassPRISM.hash());
+	return Point.BASE.mul(await gPassPRISM.hash());
 }
 
 /**
@@ -77,7 +77,7 @@ export async function CreateGPrismAuth(gPassPRISM){
  */
 export function GetPublic(a){
 	let num = typeof(a) == 'bigint'? a : BigIntFromByteArray(a);
-	return Point.g.times(num);
+	return Point.BASE.mul(num);
 }
 
 /**
@@ -101,7 +101,7 @@ export function Min(arr){
  * @param {bigint} modulo 
  * @returns {bigint}
  */
-export function mod_inv(number, modulo = Point.order) {
+export function mod_inv(number, modulo = CURVE.n) {
 	if (number === _0n || modulo <= _0n) {
 		throw new Error(`invert: expected positive integers, got n=${number} mod=${modulo}`);
 	}
@@ -128,18 +128,4 @@ export function mod_inv(number, modulo = Point.order) {
 */
 export function SumPoints(points) {
 	return points.reduce((sum, next) => sum.add(next));
-}
-
-/**
- * 
- * @param {Point[]} gORKn 
- */
-export async function prepVouchersReq(gORKn){
-	const k = TideKey.NewKey();
-	let blurKeyPub = [];
-	for(let i = 0; i< gORKn.length; i++){
-		const z = BigIntFromByteArray(await computeSharedKey(gORKn[i], k.priv));
-		blurKeyPub[i] = gORKn[i].times(z);
-	}
-	return {blurKeyPub, k};
 }

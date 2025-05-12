@@ -1,4 +1,3 @@
-import { Point } from "../Cryptide/index.js";
 import OrkInfo from "../Models/Infos/OrkInfo.js";
 import HashToPoint from "../Cryptide/Hashing/H2P.js";
 import { Serialization } from "../Cryptide/index.js";

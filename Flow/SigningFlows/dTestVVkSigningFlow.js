@@ -60,7 +60,7 @@ export default class dTestVVKSigningFlow{
         const Sj = SumS(SignResponses);
 
         if(GRj.length != Sj.length) throw Error("Weird amount of GRjs and Sjs");
-        const testSig = bytesToBase64(ConcatUint8Arrays([GRj[0].toArray(), BigIntToByteArray(Sj[0])]));
+        const testSig = bytesToBase64(ConcatUint8Arrays([GRj[0].toRawBytes(), BigIntToByteArray(Sj[0])]));
 
         const toVerify = "This msg was previously authorized <-mix-> New log in";
         const valid = await EdDSA.verify(testSig, this.vvkPublic, new TestSignatureFormat(toVerify).format());

@@ -39,7 +39,7 @@
 // THE SOFTWARE.
 // 
 
-import Point from "../Ed25519.js";
+import { Point } from "../Ed25519.js";
 import { ConcatUint8Arrays, BigIntFromByteArray } from "../Serialization.js";
 import { mod, mod_inv } from "../Math.js";
 import { SHA512_Digest } from "./Hash.js";
@@ -235,9 +235,9 @@ export default async function HashToPoint(msg){
     const u = await hashtofield(arr)
     const x0y0 = map_to_curve_elligator2_edwards25519_(u[0][0]);
     const x1y1 = map_to_curve_elligator2_edwards25519_(u[1][0]);
-    const p0 = new Point(x0y0['x'],x0y0['y']);
-    const p1 = new Point(x1y1['x'],x1y1['y']);
-    const P = p0.add(p1).times(BigInt('8'));
+    const p0 = Point.fromAffine(x0y0);
+    const p1 = Point.fromAffine(x1y1);
+    const P = p0.add(p1).clearCofactor();
     return P;
 }; //hashtofield takes an Uint8array encoded message and gives back 2 values. the map_to_curve function then uses those values to generate 2 x and y values
 // 2 Points are created using the x and y values. The points are added to each other and then are muliplied by 8 to give the final point.
