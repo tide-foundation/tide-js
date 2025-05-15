@@ -95,10 +95,10 @@ export class Ed25519PrivateComponent extends BasePrivateComponent{
         }else{ throw Error("unexpected type;") }
     }
     SerializeComponent(){
-        return this.rB.slice();
+        return this.rawBytes.slice();
     }
     GetPublic(){
-        return new Ed25519PublicComponent(Point.BASE.mul(this.p));
+        return new Ed25519PublicComponent(Point.BASE.mul(this.priv));
     }
     static New(){
         return Ed25519SeedComponent.New().GetPrivate();
@@ -138,7 +138,7 @@ export class Ed25519SeedComponent extends BaseSeedComponent{
     }
 
     GetPrivate(){
-        return new Ed25519PrivateComponent(this.rB);
+        return new Ed25519PrivateComponent(this.rawBytes);
     }
 
     GetPublic(){

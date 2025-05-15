@@ -24,6 +24,7 @@ import { base64ToBytes, BigIntFromByteArray, Hex2Bytes, serializeBitArray, uint8
 import { GetPublic } from "../../Cryptide/Math.js";
 import VoucherFlow from "../VoucherFlows/VoucherFlow.js";
 import { Point } from "../../Cryptide/Ed25519.js";
+import TideKey from "../../Cryptide/TideKey.js";
 
 export default class dCMKPasswordlessFlow {
     /**
@@ -40,8 +41,7 @@ export default class dCMKPasswordlessFlow {
         this.bitwise = flowInitData.orksBitwise;
         this.orks = sortORKs(flowInitData.userInfo.OrkInfo).filter((_, i) => this.bitwise[i] == 1);
         this.userPublic = flowInitData.userInfo.UserPublic;
-        this.sessKey = flowInitData.sessKey;
-        this.gSessKeyPub = GetPublic(this.sessKey);
+        this.sessKey = TideKey.FromSerializedComponent(flowInitData.sessKey);
         this.voucherURL = voucherURL;
 
         this.cState = undefined;
@@ -57,7 +57,7 @@ export default class dCMKPasswordlessFlow {
         const pre_ConvertAuthnResponses = clients.map((client, i) => client.ConvertRemembered(i, this.uid, this.selfRequesti[i], vouchers.toORK(i)));
 
         // To save time
-        const prkECDHi = await DH.generateECDHi(this.orks.map(o => o.orkPublic), this.sessKey);
+        const prkECDHi = await DH.generateECDHi(this.orks.map(o => o.orkPublic), this.sessKey.get_private_component().rawBytes);
 
         const { fulfilledResponses, bitwise } = await WaitForNumberofORKs(this.orks, pre_ConvertAuthnResponses, "CMK", Threshold, this.bitwise, prkECDHi);
 
@@ -71,7 +71,9 @@ export default class dCMKPasswordlessFlow {
                 prkECDHi,
                 Point.fromBytes(Hex2Bytes(vouchers.qPub).slice(-32)), // to translate between tide component and native object
                 BigIntFromByteArray(base64ToBytes(vouchers.UDeObf).slice(-32)), // to translate between tide component and native object
-                k.get_private_component().priv)
+                k.get_private_component().priv,
+                this.sessKey.get_public_component()
+            )
         }
         return {
             VUID: this.cState.VUID
