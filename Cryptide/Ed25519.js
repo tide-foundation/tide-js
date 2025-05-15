@@ -39,6 +39,8 @@
 // THE SOFTWARE.
 // 
 import { base64ToBytes, bytesToBase64 } from "./Serialization.js";
+import { SHA256_Digest } from "./Hashing/Hash.js";
+
 
 const P = 2n ** 255n - 19n; // ed25519 is twisted edwards curve
 const N = 2n ** 252n + 27742317777372353535851937790883648493n; // curve's (group) order
@@ -232,7 +234,7 @@ class Point {
     }
     toHex() { return b2h(this.toRawBytes()); } // encode to hex string
     toBase64(){ return bytesToBase64(this.toRawBytes()); }
-    async hash(){ return M(b2n_LE(await sha512a(this.toRawBytes())), CURVE.n); }
+    async hash(){ return M(b2n_LE(await SHA256_Digest(this.toRawBytes())), CURVE.n); }
 }
 /** Generator / Base point */
 Point.BASE = new Point(Gx, Gy, 1n, M(Gx * Gy));
