@@ -69,7 +69,7 @@ export default class NodeClient extends ClientBase {
      * @param {number} index
      * @param {string} uid 
      * @param {Point} gBlurPass
-     * @param {Point} gSessKeyPub
+     * @param {Ed25519PublicComponent} gSessKeyPub
      * @param {boolean} rememberMe
      * @param {boolean} cmkCommitted
      * @param {boolean} prismCommitted
@@ -80,7 +80,7 @@ export default class NodeClient extends ClientBase {
     async Convert(index, uid, gBlurPass, gSessKeyPub, rememberMe, voucher, m, cmkCommitted = true, prismCommitted = true) {
         const data = this._createFormData({
             'gBlurPass': gBlurPass.toBase64(),
-            'gSessKeyPub': gSessKeyPub.toBase64(),
+            'gSessKeyPub': gSessKeyPub.Serialize().ToString(),
             'rememberMe': rememberMe,
             'cmkCommitted': cmkCommitted,
             'prismCommitted': prismCommitted,
@@ -103,14 +103,14 @@ export default class NodeClient extends ClientBase {
      * @param {number} index 
      * @param {string} uid 
      * @param {Point} gBlurPass 
-     * @param {Point} gSessKeyPub 
+     * @param {Ed25519PublicComponent} gSessKeyPub 
      * @param {string} voucher
      * @param {string} m
      */
     async ConvertPass(index, uid, gBlurPass, gSessKeyPub, voucher, m) {
         const data = this._createFormData({
             'gBlurPass': gBlurPass.toBase64(),
-            'gSessKeyPub': gSessKeyPub.toBase64(),
+            'gSessKeyPub': gSessKeyPub.Serialize().ToString(),
             'voucher': voucher,
             'M': m
         })

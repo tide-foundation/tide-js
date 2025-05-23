@@ -27,6 +27,7 @@ import { mod } from "../Cryptide/Math.js";
 import { Max } from "../Tools/Utils.js";
 import { CreateAuthorizerPackage, CreateVRKPackage } from "../Cryptide/TideMemoryObjects.js";
 import { Point } from "../Cryptide/Ed25519.js";
+import { Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
 /**
 * @param {GenShardResponse[]} responses Can be T amount
 * @param {(0 | 1)[]} bitwise
@@ -97,8 +98,7 @@ export async function CommitShardPrep(keyId, sendShardResponses, mgORKi, timesta
     const S = mod(decryptedResponses.reduce((sum, next) =>  next.Si + sum, BigInt(0)));
 
     // Prepare the signature message
-    const permissionMessage = AuthRequest.new(keyId, purpose, gSessKeyPub.toBase64(), timestamp + BigInt(30));
-
+    const permissionMessage = AuthRequest.new(keyId, purpose, new Ed25519PublicComponent(gSessKeyPub).Serialize().ToString(), timestamp + BigInt(30));
     const M_data_to_hash = ConcatUint8Arrays([serializeBitArray(participatingBitwise), permissionMessage.toUint8Array()]);
     const M = await SHA256_Digest(M_data_to_hash);
     const mgORKs = mgORKi.reduce((sum, next, i) => participatingBitwise[i] == true ? sum.add(next) : sum, Point.ZERO);

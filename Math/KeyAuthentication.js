@@ -32,6 +32,7 @@ import DecryptedConvertRememberedResponse from "../Models/Responses/KeyAuth/Conv
 import ConvertRememberedResponse from "../Models/Responses/KeyAuth/Convert/ConvertRememberedResponse.js";
 import VendorData from "../Models/VendorData.js";
 import { Point } from "../Cryptide/Ed25519.js";
+import { Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
 /**
  * For use in change password flow
  * @param {PrismConvertResponse[]} convertResponses 
@@ -101,8 +102,9 @@ export async function PrismConvertReply(convertResponses, ids, mgORKi, r1, prkEC
  * @param {Point} qPub
  * @param {bigint} uDeObf
  * @param {bigint} blurerKPriv
+ * @param {Ed25519PublicComponent} gSessKeyPub
  */
-export async function CmkConvertReply(convertResponses, ids, prismAuthis, gCMK, timestampi, sessID, purpose, qPub, uDeObf, blurerKPriv){
+export async function CmkConvertReply(convertResponses, ids, prismAuthis, gCMK, timestampi, sessID, purpose, qPub, uDeObf, blurerKPriv, gSessKeyPub){
     let decData;
     try{
         const pre_decData = convertResponses.map(async (resp, i) => DecryptedCMKConvertResponse.from(await AES.decryptData(resp.EncChallengei, prismAuthis[i])));
@@ -121,8 +123,7 @@ export async function CmkConvertReply(convertResponses, ids, prismAuthis, gCMK, 
     const VUID = Bytes2Hex(gUserCMK_Hash.slice(-32));
     const gCMKAuth = gCMK.mul(CMKMul);
     const gCMKR = Interpolation.AggregatePoints(convertResponses.map(resp => resp.GCMKRi));
-    const authToken = AuthRequest.new(VUID, purpose, sessID, timestampi + randBetween(30, 90));
-
+    const authToken = AuthRequest.new(VUID, purpose, gSessKeyPub.Serialize().ToString(), timestampi + randBetween(30, 90), sessID);
     const {blurHCMKMul, blur, gRMul} = await genBlindMessage(gCMKR, gCMKAuth, authToken.toUint8Array(), CMKMul);
 
     return {VUID: VUID, blurHCMKMul, r4: blur, gCMKAuth, authToken, gRMul}
@@ -136,8 +137,9 @@ export async function CmkConvertReply(convertResponses, ids, prismAuthis, gCMK, 
  * @param {Point} qPub
  * @param {bigint} uDeObf
  * @param {bigint} blurerKPriv
+ * @param {Ed25519PublicComponent} gSessKeyPub
  */
-export async function ConvertRememberedReply(responses, mIdORKi, gCMK, sessID, prkECDHi, qPub, uDeObf, blurerKPriv){
+export async function ConvertRememberedReply(responses, mIdORKi, gCMK, sessID, prkECDHi, qPub, uDeObf, blurerKPriv, gSessKeyPub){
     const pre_decryptedResonses = responses.map((async(resp, i) => DecryptedConvertRememberedResponse.from(await AES.decryptData(resp.EncRequesti, prkECDHi[i]))));
     const decryptedResponses = await Promise.all(pre_decryptedResonses);
 
@@ -154,7 +156,7 @@ export async function ConvertRememberedReply(responses, mIdORKi, gCMK, sessID, p
     const gCMKAuth = gCMK.mul(CMKMul);
     const gCMKR = Interpolation.AggregatePoints(responses.map(resp => resp.GCMKRi));
 
-    const authToken = AuthRequest.new(VUID, "auth", sessID, timestamp + randBetween(30, 90));
+    const authToken = AuthRequest.new(VUID, "auth", gSessKeyPub.Serialize().ToString(), timestamp + randBetween(30, 90), sessID);
 
     const {blurHCMKMul, blur: r4, gRMul} = await genBlindMessage(gCMKR, gCMKAuth, authToken.toUint8Array(), CMKMul);
     return {

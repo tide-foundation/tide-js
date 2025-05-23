@@ -26,6 +26,7 @@ import EnclaveEntry from "../../Models/EnclaveEntry.js";
 import VoucherFlow from "../VoucherFlows/VoucherFlow.js";
 import KeyInfo from "../../Models/Infos/KeyInfo.js";
 import { Point } from "../../Cryptide/Ed25519.js";
+import TideKey from "../../Cryptide/TideKey.js";
 
 export default class dCMKPasswordFlow{
     /**
@@ -49,13 +50,13 @@ export default class dCMKPasswordFlow{
 }
 
     /**
-     * @param {bigint} sessKey
+     * @param {TideKey} sessKey
      * @param {Point} gSessKeyPub
      * @param {Point} gPass 
      * @param {Point} gCMK
      * @param {boolean} rememberMe
      */
-    async Convert(sessKey, gSessKeyPub, gPass, gCMK, rememberMe){
+    async Convert(sessKey, gPass, gCMK, rememberMe){
         const clients = this.keyInfo.OrkInfo.map(ork => new NodeClient(ork.orkURL)) // create node clients
 
         const voucherFlow = new VoucherFlow(this.keyInfo.OrkInfo.map(o => o.orkPaymentPublic), this.voucherURL, "signin");
@@ -65,10 +66,10 @@ export default class dCMKPasswordFlow{
         const gBlurPass = gPass.mul(r1);
 
         // Here we also find out which ORKs are up
-        const pre_ConvertResponses = clients.map((client, i) => client.Convert(i, this.keyInfo.UserId, gBlurPass, gSessKeyPub, rememberMe, vouchers.toORK(i), this.keyInfo.UserM, this.cmkCommitted, this.prismCommitted));
+        const pre_ConvertResponses = clients.map((client, i) => client.Convert(i, this.keyInfo.UserId, gBlurPass, sessKey.get_public_component(), rememberMe, vouchers.toORK(i), this.keyInfo.UserM, this.cmkCommitted, this.prismCommitted));
         
         // To save time
-        const prkECDHi = await DH.generateECDHi(this.keyInfo.OrkInfo.map(o => o.orkPublic), sessKey);
+        const prkECDHi = await DH.generateECDHi(this.keyInfo.OrkInfo.map(o => o.orkPublic), sessKey.get_private_component().rawBytes);
         
         const {fulfilledResponses, bitwise} = await WaitForNumberofORKs(this.keyInfo.OrkInfo, pre_ConvertResponses, "CMK", Threshold, null, prkECDHi);
 
@@ -95,7 +96,8 @@ export default class dCMKPasswordFlow{
                 this.purpose,
                 Point.fromBytes(Hex2Bytes(vouchers.qPub).slice(-32)), // to translate between tide component and native object
                 BigIntFromByteArray(base64ToBytes(vouchers.UDeObf).slice(-32)), // to translate between tide component and native object
-                k.get_private_component().priv
+                k.get_private_component().priv,
+                sessKey.get_public_component()
             )
         }
         return {
@@ -104,11 +106,11 @@ export default class dCMKPasswordFlow{
     }
     /**
      * 
-     * @param {Uint8Array} sessKey 
+     * @param {TideKey} sessKey 
      * @param {Point} gSessKeyPub 
      * @param {Point} gPass 
      */
-    async ConvertPassword(sessKey, gSessKeyPub, gPass){
+    async ConvertPassword(sessKey, gPass){
         if(this.cState != undefined) throw Error("This function must be called as a standlone in this flow");
 
         const r1 = RandomBigInt();
@@ -119,10 +121,10 @@ export default class dCMKPasswordFlow{
         const voucherFlow = new VoucherFlow(this.keyInfo.OrkInfo.map(o => o.orkPaymentPublic), this.voucherURL, "updateaccount");
         const {vouchers} = await voucherFlow.GetVouchers();
 
-        const pre_convertPassResponses = clients.map((client, i) => client.ConvertPass(i, this.keyInfo.UserId, gBlurPass, gSessKeyPub, vouchers.toORK(i), this.keyInfo.UserM));
+        const pre_convertPassResponses = clients.map((client, i) => client.ConvertPass(i, this.keyInfo.UserId, gBlurPass, sessKey.get_public_component(), vouchers.toORK(i), this.keyInfo.UserM));
         
         // To save time
-        const prkECDHi = await DH.generateECDHi(this.keyInfo.OrkInfo.map(o => o.orkPublic), sessKey);
+        const prkECDHi = await DH.generateECDHi(this.keyInfo.OrkInfo.map(o => o.orkPublic), sessKey.get_private_component().rawBytes);
         
         const { fulfilledResponses, bitwise } = await WaitForNumberofORKs(this.keyInfo.OrkInfo, pre_convertPassResponses, "CMK", Threshold, null, prkECDHi);
 

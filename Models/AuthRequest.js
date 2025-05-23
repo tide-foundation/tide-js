@@ -23,12 +23,14 @@ export default class AuthRequest{
      * @param {string} purpose 
      * @param {string} keyPub 
      * @param {bigint} expiry 
+     * @param {string} sessionId
      */
-    constructor(keyId, purpose, keyPub, expiry){
+    constructor(keyId, purpose, keyPub, expiry, sessionId=null){
         this.keyId = keyId
         this.purpose = purpose
         this.keyPub = keyPub
         this.expiry = expiry // in seconds
+        this.sessionId = sessionId
     }
 
     toUint8Array(){
@@ -39,7 +41,8 @@ export default class AuthRequest{
             'User': this.keyId,
             'Purpose': this.purpose,
             'Key': this.keyPub,
-            'Expiry': this.expiry.toString()
+            'Expiry': this.expiry.toString(),
+            'SessionId': !this.sessionId ? "" : this.sessionId // SessionId is optional (although mandatory for apps like keycloak)
         };
         return JSON.stringify(json);
     }
@@ -49,14 +52,15 @@ export default class AuthRequest{
      * @param {string} purpose 
      * @param {string} clientKey 
      * @param {bigint} expiry 
+     * @param {string} sessionId
      * @returns 
      */
-    static new(keyId, purpose, clientKey, expiry){
-        return new AuthRequest(keyId, purpose, clientKey, expiry); // 30 seconds
+    static new(keyId, purpose, clientKey, expiry, sessionId=null){
+        return new AuthRequest(keyId, purpose, clientKey, expiry, sessionId); // 30 seconds
     }
 
     static from(data){
         const json = JSON.parse(data);
-        return new AuthRequest(json.User, json.Purpose, json.Key, BigInt(json.Expiry));
+        return new AuthRequest(json.User, json.Purpose, json.Key, BigInt(json.Expiry), json.SessionId);
     }
 }
