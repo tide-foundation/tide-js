@@ -31,7 +31,8 @@ export class HumanReadableModelBuilder{
 
 // MODELS ----------------------------------------------------------------
 class UserContextSignRequestBuilder extends HumanReadableModelBuilder{
-    _name = "UserContext";
+    _name = "UserContext"; // Model ID
+    _humanReadableName = "Change Request";
     _version = "1";
     get _id() { return this._name + ":" + this._version; }
 
@@ -83,8 +84,8 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder{
         })
         clients = [...new Set(clients)];
         summary.push(["Applications affected", clients.join(", ")]);
+        summary.push(["Expiry", unixSecondsToLocaleString(this._expiry)])
         
-
         // return a nice object of InitCert? and usercontexts
         return {
             summary: summary,
@@ -93,7 +94,7 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder{
     }
 }
 class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder{ // this is an example class
-    _name = "CardanoTx";
+    _name = "CardanoTx"; // Model ID
     _version = "1";
     get _id() { return this._name + ":" + this._version; }
 
@@ -120,7 +121,7 @@ class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder{ // this is 
 }
 
 class RuleSettingSignRequestBuilder extends HumanReadableModelBuilder{ // this is an example class
-    _name = "Rules";
+    _name = "Rules"; // Model ID
     _version = "1";
     get _id() { return this._name + ":" + this._version; }
 
@@ -162,5 +163,18 @@ const modelBuildersMap = {
     [new UserContextSignRequestBuilder()._id]: UserContextSignRequestBuilder,
     [new CardanoTxSignRequestBuilder()._id]: CardanoTxSignRequestBuilder,
     [new RuleSettingSignRequestBuilder()._id]: RuleSettingSignRequestBuilder
-
 }
+
+const unixSecondsToLocaleString = (unixSeconds) => {
+  const milliseconds = unixSeconds * 1000;
+  const date = new Date(milliseconds);
+
+  return date.toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+};
