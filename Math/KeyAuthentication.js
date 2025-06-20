@@ -190,8 +190,13 @@ export async function AuthenticateBasicReply(vuid, prkECDHi, encSigi, gCMKAuth, 
     if(!blindSigValid) throw Error("Blind Signature Failed");
     const blindSig = bytesToBase64(serializeBlindSig(sig, gRMul));
 
-    const VendorEncryptedData = await ElGamal.encryptData(StringToUint8Array(new VendorData(vuid, gCMKAuth, blindSig, authToken).toString()), gVRK);
-    return VendorEncryptedData;
+    if(gVRK == null){
+        const vendorData = new VendorData(vuid, gCMKAuth, blindSig, authToken).toString();
+        return vendorData;
+    }else{
+        const VendorEncryptedData = await ElGamal.encryptData(StringToUint8Array(new VendorData(vuid, gCMKAuth, blindSig, authToken).toString()), gVRK);
+        return VendorEncryptedData;
+    }
 }
 
 /**
