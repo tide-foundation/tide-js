@@ -21,7 +21,7 @@ import ClientBase from "./ClientBase.js";
 import SetShardResponse from "../Models/Responses/KeyGen/SetShard/SetShardResponse.js";
 import PrismConvertResponse from "../Models/Responses/KeyAuth/Convert/PrismConvertResponse.js";
 import CMKConvertResponse from "../Models/Responses/KeyAuth/Convert/CMKConvertResponse.js";
-import { BigIntFromByteArray, ConcatUint8Arrays, StringToUint8Array, base64ToBytes, bytesToBase64 } from "../Cryptide/Serialization.js";
+import { BigIntFromByteArray, ConcatUint8Arrays, CreateTideMemory, CreateTideMemoryFromArray, StringToUint8Array, base64ToBytes, bytesToBase64 } from "../Cryptide/Serialization.js";
 import ConvertRememberedResponse from "../Models/Responses/KeyAuth/Convert/ConvertRememberedResponse.js";
 import BaseTideRequest from "../Models/BaseTideRequest.js";
 import ReservationConfirmation from "../Models/Responses/Reservation/ReservationConfirmation.js";
@@ -329,7 +329,7 @@ export default class NodeClient extends ClientBase {
      */
     async PreSign(index, vuid, request, voucher) {
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
-        const encrypted = await AES.encryptData(request.encode(), this.DHKey);
+        const encrypted = await AES.encryptData(CreateTideMemoryFromArray([request.encode()]), this.DHKey);
         const data = this._createFormData(
             {
                 'encrypted': encrypted,
@@ -360,7 +360,10 @@ export default class NodeClient extends ClientBase {
      */
     async Sign(vuid, request, GRs, bitwise) {
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
-        const payload = ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes()), request.encode()]);
+        const payload = CreateTideMemoryFromArray([
+            request.encode(),
+            ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes())])]
+        );
         const encrypted = await AES.encryptData(payload, this.DHKey);
         const data = this._createFormData(
             {
@@ -386,7 +389,7 @@ export default class NodeClient extends ClientBase {
      */
     async Decrypt(index, vuid, request, voucher){
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
-        const encrypted = await AES.encryptData(request.encode(), this.DHKey);
+        const encrypted = await AES.encryptData(CreateTideMemoryFromArray([request.encode()]), this.DHKey);
         const data = this._createFormData(
             {
                 'encrypted': encrypted,

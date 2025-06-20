@@ -119,6 +119,17 @@ export function CreateTideMemory(initialValue, totalLength, version = 1) {
     return buffer;
 }
 /**
+ * @param {Uint8Array[]} datas 
+ */
+export function CreateTideMemoryFromArray(datas){
+    const length = datas.reduce((sum, next) => sum + 4 + next.length, 0);
+    const mem = CreateTideMemory(datas[0], length);
+    for(let i = 1; i < datas.length; i++){
+        WriteValue(mem, i, datas[i]);
+    }
+    return mem;
+}
+/**
  * 
  * @param {Uint8Array} memory 
  * @param {number} index 
