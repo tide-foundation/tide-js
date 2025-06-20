@@ -1,7 +1,7 @@
 import { Utils } from "..";
 import { BaseComponent } from "../Cryptide/Components/BaseComponent";
 import { Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components";
-import { base64ToBytes, base64UrlToBase64, DeserializeTIDE_KEY, StringFromUint8Array } from "../Cryptide/Serialization";
+import { base64ToBytes, base64UrlToBase64, DeserializeTIDE_KEY, StringFromUint8Array, StringToUint8Array } from "../Cryptide/Serialization";
 import TideKey from "../Cryptide/TideKey";
 
 /**
@@ -15,11 +15,11 @@ export function Doken(data){
 
     const parts = data.split(".");
     if(parts.length != 3) throw Error("Doken must be a 3 part token (including signature)");
-    const dataRef = data.slice(0);
+    this.dataRef = data.slice(0);
 
-    const header = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(parts[0]))));
-    const payload = new DokenPayload(JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(parts[1])))));
-    const signature = base64ToBytes(base64UrlToBase64(parts[1]));
+    this.header = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(parts[0]))));
+    this.payload = new DokenPayload(JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(parts[1])))));
+    this.signature = base64ToBytes(base64UrlToBase64(parts[1]));
 
     /**
      * 
@@ -39,6 +39,13 @@ export function Doken(data){
         if(sessionKeyToCheck){
             if(!sessionKeyToCheck.get_public_component().Equals(payload.sessionKey)) return {success: false, reason: "sessionkey mismatch"};
         }
+    }
+    /**
+     * 
+     * @param {Ed25519PublicComponent} vendorPublic 
+     */
+    this.verify = async function (vendorPublic){
+        return new TideKey(vendorPublic).verify(StringToUint8Array(this.dataRef), this.signature);
     }
 
     class DokenPayload{
