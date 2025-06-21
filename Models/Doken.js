@@ -1,7 +1,7 @@
 import { Utils } from "..";
 import { BaseComponent } from "../Cryptide/Components/BaseComponent";
 import { Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components";
-import { base64ToBytes, base64UrlToBase64, DeserializeTIDE_KEY, StringFromUint8Array, StringToUint8Array } from "../Cryptide/Serialization";
+import { base64ToBase64Url, base64ToBytes, base64UrlToBase64, bytesToBase64, DeserializeTIDE_KEY, StringFromUint8Array, StringToUint8Array } from "../Cryptide/Serialization";
 import TideKey from "../Cryptide/TideKey";
 
 /**
@@ -48,6 +48,16 @@ export function Doken(data){
         return new TideKey(vendorPublic).verify(StringToUint8Array(this.dataRef), this.signature);
     }
 
+    this.serialize = function(changed=true){
+        if(changed){
+            return base64ToBase64Url(bytesToBase64(StringToUint8Array(JSON.stringify(this.header)))) 
+            + "." + base64ToBase64Url(bytesToBase64(StringToUint8Array(this.payload.serialize())))
+            + "." + base64ToBase64Url(bytesToBase64(this.signature))
+        }else{
+            return this.dataRef;
+        }
+    }
+
     class DokenPayload{
         constructor(json){
             var s = BaseComponent.DeserializeComponent(json["t.ssk"]);
@@ -63,7 +73,8 @@ export function Doken(data){
             if( typeof json.vuid === "string") this.vuid = json.vuid;
             else throw Error("Expected vuid to be string");
 
-            // We don't need to deserialize user home ork here (enclave will never user it? it's for the client to know which ork to use)
+            if( typeof json["t.uho"] === "string") this.homeOrk = json["t.uho"];
+            else throw Error("Expected user home to be string");
 
             // Will be affected by 2032 problem
             if( typeof json.exp === "number") this.exp = json.exp;
@@ -79,6 +90,19 @@ export function Doken(data){
             if( typeof json.resource_access === "object") this.resource_access = json.resource_access;
             else if(!json.resource_access) this.resource_access = null;
             else throw Error("Expected resource_access to be string");
+        }
+
+        serialize(){
+            return ("{" +
+				`\"t.ssk\":\"${this.sessionKey.Serialize().ToString()}\",` +
+				`"\"tideuserkey\":\"${this.tideuserkey.Serialize().ToString()}\",` +
+				`\"vuid\":\"${this.vuid}\",` +
+				(this.homeOrk ? `\"t.uho\":\"${this.homeOrk}\",` : "") +
+				`\"exp\":${this.exp},` +
+				`\"aud\":\"${this.aud}\"` + // vvkid
+				(this.realm_access ? `,\"realm_access\":${JSON.stringify(this.realm_access)}` : "") +
+				(this.resource_access  ? `,\"resource_access\":${JSON.stringify(this.resource_access)}` : "") +
+            "}")
         }
     }
 }
