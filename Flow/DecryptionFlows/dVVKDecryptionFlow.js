@@ -34,11 +34,18 @@ export default class dVVKDecryptionFlow{
         return this;
     }
     /**
+     * 
+     * @param {string} doken 
+     */
+    setDoken(doken){
+        this.doken = doken;
+    }
+    /**
      * @param {BaseTideRequest} request 
      * @param {bool} waitForAll
      */
     async start(request, waitForAll=false){
-        const pre_clients = this.orks.map(info => new NodeClient(info.orkURL).EnableTideDH(this.gSessKey, this.sessKey, info.orkPublic));
+        const pre_clients = this.orks.map(info => new NodeClient(info.orkURL).AddBearerAuthorization(this.doken).EnableTideDH(this.gSessKey, this.sessKey, info.orkPublic));
         
         const voucherFlow = new VoucherFlow(this.orks.map(o => o.orkPaymentPublic), this.voucherURL, "vendordecrypt");
         const {vouchers} = await voucherFlow.GetVouchers(this.getVouchersFunction);

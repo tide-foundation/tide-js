@@ -5,6 +5,8 @@ import NetworkClient from "../../Clients/NetworkClient.js";
 import dVVKSigningFlow from "../SigningFlows/dVVKSigningFlow.js";
 import { GenSessKey, GetPublic } from "../../Cryptide/Math.js";
 import { Serialization } from "../../Cryptide/index.js";
+import TideKey from "../../Cryptide/TideKey.js";
+import Ed25519Scheme from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.js";
 
 /**
  * 
@@ -25,8 +27,7 @@ export function AuthorizedSigningFlow(config) {
     signingFlow.token = config.token;
     signingFlow.voucherURL = config.voucherURL;
 
-    signingFlow.sessKey = GenSessKey();
-    signingFlow.gSessKey = GetPublic(signingFlow.sessKey);
+    signingFlow.sessKey = TideKey.NewKey(Ed25519Scheme);
 
     signingFlow.vvkInfo = null;
     async function getVVKInfo() {
@@ -35,7 +36,27 @@ export function AuthorizedSigningFlow(config) {
         }
     }
 
+    /**
+     * @param {TideKey} key 
+     */
+    signingFlow.setSessionKey = function(key){
+        signingFlow.sessKey = key;
+    }
+
+    /**
+     * @param {Uint8Array} tideSerializedRequest 
+     */
+    signingFlow.signv2 = async function(tideSerializedRequest){
+        await getVVKInfo();
+
+        const flow = new dVVKSigningFlow(this.vvkId, signingFlow.vvkInfo.UserPublic, signingFlow.vvkInfo.OrkInfo, signingFlow.sessKey.get_private_component().rawBytes, signingFlow.sessKey.get_public_component().public, this.voucherURL);
+        flow.setDoken(signingFlow.token);
+        return flow.start(tideSerializedRequest);
+    }
+
     signingFlow.sign = async function (dataToSign, authorizationPacks, expiry, ruleSettings) {
+        signingFlow.sessKey = GenSessKey();
+        signingFlow.gSessKey = GetPublic(signingFlow.sessKey);
         await getVVKInfo();
         const authPacks = authorizationPacks.map(auth => {
             return AdminAuthorization.fromString(auth)

@@ -27,6 +27,8 @@ export default class dVVKSigningFlow {
         this.getVouchersFunction = null;
 
         this.voucherURL = voucherURL;
+
+        this.doken = null;
     }
     /**
      * @param {(request: string) => Promise<string> } getVouchersFunction
@@ -38,12 +40,20 @@ export default class dVVKSigningFlow {
     }
 
     /**
+     * 
+     * @param {string} doken 
+     */
+    setDoken(doken){
+        this.doken = doken;
+    }
+
+    /**
      * @param {BaseTideRequest} request 
      * @param {bool} waitForAll
      */
     async start(request, waitForAll = false) {
 
-        const pre_clients = this.orks.map(info => new NodeClient(info.orkURL).EnableTideDH(this.gSessKey, this.sessKey, info.orkPublic));
+        const pre_clients = this.orks.map(info => new NodeClient(info.orkURL).AddBearerAuthorization(this.doken).EnableTideDH(this.gSessKey, this.sessKey, info.orkPublic));
 
         const voucherFlow = new VoucherFlow(this.orks.map(o => o.orkPaymentPublic), this.voucherURL, "vendorsign");
         const { vouchers } = await voucherFlow.GetVouchers(this.getVouchersFunction);

@@ -3,6 +3,7 @@ import { BaseComponent } from "../Cryptide/Components/BaseComponent";
 import { Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components";
 import { base64ToBase64Url, base64ToBytes, base64UrlToBase64, bytesToBase64, DeserializeTIDE_KEY, StringFromUint8Array, StringToUint8Array } from "../Cryptide/Serialization";
 import TideKey from "../Cryptide/TideKey";
+import { CurrentTime } from "../Tools/Utils";
 
 /**
  * 
@@ -21,6 +22,9 @@ export function Doken(data){
     this.payload = new DokenPayload(JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(parts[1])))));
     this.signature = base64ToBytes(base64UrlToBase64(parts[1]));
 
+    this.isExpired = function(){
+        return this.payload.exp < CurrentTime();
+    }
     /**
      * 
      * @param {TideKey} sessionKeyToCheck 

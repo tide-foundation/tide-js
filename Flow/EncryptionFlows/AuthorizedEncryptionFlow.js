@@ -104,14 +104,14 @@ export function AuthorizedEncryptionFlow(config){
             Serialization.WriteValue(draft, i+1, entry);
         })
 
-        const encryptionRequest = new BaseTideRequest("TideSelfEncryption", "1", "AccessToken:1", draft);
+        const encryptionRequest = new BaseTideRequest("TideSelfEncryption", "1", "Doken:1", draft);
 
         // Deserialize token to retrieve vuid - if it exists
         const vuid = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(this.token.split(".")[1])))).vuid; // get vuid field from jwt payload in 1 line
         if(vuid) encryptionRequest.dyanmicData = StringToUint8Array(vuid);
         
         // Set the Authorization token as the authorizer for the request
-        encryptionRequest.addAuthorizer(StringToUint8Array(this.token));
+        encryptionRequest.addAuthorizer(new Uint8Array());
         encryptionRequest.addAuthorizerCertificate(new Uint8Array());// special case where other field isn't required
         encryptionRequest.addAuthorization(new Uint8Array()); // special case where other field isn't required
         encryptionRequest.addRules(new Uint8Array()); // not required
@@ -119,6 +119,7 @@ export function AuthorizedEncryptionFlow(config){
         
         // Initiate signing flow
         const encryptingSigningFlow = new dVVKSigningFlow(this.vvkId, encryptionFlow.vvkInfo.UserPublic, encryptionFlow.vvkInfo.OrkInfo, encryptionFlow.sessKey, encryptionFlow.gSessKey, this.voucherURL);
+        encryptingSigningFlow.setDoken(this.token);
         const signatures = await encryptingSigningFlow.start(encryptionRequest);
 
         // Construct final serialized payloads for client to store
@@ -183,20 +184,21 @@ export function AuthorizedEncryptionFlow(config){
                 Serialization.WriteValue(draft, i, entries[i]);
             }
     
-            const decryptionRequest = new BaseTideRequest("SelfDecrypt", "1", "AccessToken:1", draft);
+            const decryptionRequest = new BaseTideRequest("SelfDecrypt", "1", "Doken:1", draft);
     
             // Deserialize token to retrieve vuid - if it exists
             const vuid = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(this.token.split(".")[1])))).vuid; // get vuid field from jwt payload in 1 line
             if(vuid) decryptionRequest.dyanmicData = StringToUint8Array(vuid);
             
             // Set the Authorization token as the authorizer for the request
-            decryptionRequest.addAuthorizer(StringToUint8Array(this.token));
+            decryptionRequest.addAuthorizer(new Uint8Array());
             decryptionRequest.addAuthorizerCertificate(new Uint8Array());// special case where other field isn't required
             decryptionRequest.addAuthorization(new Uint8Array()); // special case where other field isn't required
     
             await pre_info;
     
             const flow = new dVVKDecryptionFlow(this.vvkId, this.vvkInfo.UserPublic, this.vvkInfo.OrkInfo, this.sessKey, this.gSessKey, this.voucherURL);
+            flow.setDoken(this.token);
             const dataKeys = await flow.start(decryptionRequest);
     
             // Decrypt all datas
