@@ -56,7 +56,10 @@ export default class ClientBase {
         try{
             response = await fetch(this.url + endpoint, {
                 method: 'GET',
-                signal: signal ?? controller.signal
+                signal: signal ?? controller.signal,
+                ...(this.token && {
+                    headers: { Authorization: `Bearer ${this.token}` }
+                })    
             });
             clearTimeout(id);
         }catch{
@@ -80,7 +83,10 @@ export default class ClientBase {
         try {
             response = await fetch(this.url + endpoint, {
                 method: 'GET',
-                signal: signal ?? controller.signal
+                signal: signal ?? controller.signal,
+                ...(this.token && {
+                    headers: { Authorization: `Bearer ${this.token}` }
+                })    
             });
             clearTimeout(id);
         } catch {
@@ -104,7 +110,10 @@ export default class ClientBase {
             response = await fetch(this.url + endpoint, {
                 method: 'POST',
                 body: data,
-                signal: controller.signal
+                signal: controller.signal,
+                ...(this.token && {
+                    headers: { Authorization: `Bearer ${this.token}` }
+                })            
             });
             clearTimeout(id);
         }catch{
@@ -157,7 +166,10 @@ export default class ClientBase {
             response = await fetch(this.url + endpoint, {
                 method: 'POST',
                 body: data,
-                signal: controller.signal
+                signal: controller.signal,
+                ...(this.token && {
+                    headers: { Authorization: `Bearer ${this.token}` }
+                })            
             });
             clearTimeout(id);
         }catch{
@@ -203,5 +215,12 @@ export default class ClientBase {
 
         return responseData;
     }
-
+    /**
+     * @param {string} token 
+     * @returns 
+     */
+    AddBearerAuthorization(token){
+        this.token = token;
+        return this;
+    }
 }
