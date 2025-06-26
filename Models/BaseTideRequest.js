@@ -18,9 +18,9 @@ export default class BaseTideRequest {
         this.authFlow = authFlow
         this.draft = draft.slice();
         this.dyanmicData = dyanmicData.slice();
-        this.authorization = null;
-        this.authorizerCert = null;
-        this.authorizer = null;
+        this.authorization = new Uint8Array();
+        this.authorizerCert = new Uint8Array();;
+        this.authorizer = new Uint8Array();;
         this.expiry = BigInt(CurrentTime() + 30); // default is 30s
         this.rules = new Uint8Array();
         this.rulesCert = new Uint8Array();
