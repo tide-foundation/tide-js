@@ -56,10 +56,7 @@ export default class ClientBase {
         try{
             response = await fetch(this.url + endpoint, {
                 method: 'GET',
-                signal: signal ?? controller.signal,
-                ...(this.token && {
-                    headers: { Authorization: `Bearer ${this.token}` }
-                })    
+                signal: signal ?? controller.signal
             });
             clearTimeout(id);
         }catch{
@@ -83,10 +80,7 @@ export default class ClientBase {
         try {
             response = await fetch(this.url + endpoint, {
                 method: 'GET',
-                signal: signal ?? controller.signal,
-                ...(this.token && {
-                    headers: { Authorization: `Bearer ${this.token}` }
-                })    
+                signal: signal ?? controller.signal
             });
             clearTimeout(id);
         } catch {
@@ -105,15 +99,14 @@ export default class ClientBase {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeout);
 
+        if(this.token) data.append("token", this.token);
+
         let response;
         try{
             response = await fetch(this.url + endpoint, {
                 method: 'POST',
                 body: data,
-                signal: controller.signal,
-                ...(this.token && {
-                    headers: { Authorization: `Bearer ${this.token}` }
-                })            
+                signal: controller.signal      
             });
             clearTimeout(id);
         }catch{
@@ -216,10 +209,12 @@ export default class ClientBase {
         return responseData;
     }
     /**
+     * @param {Uint8Array} sessionKeyPrivate
      * @param {string} token 
      * @returns 
      */
-    AddBearerAuthorization(token){
+    AddBearerAuthorization(sessionKeyPrivate, token){
+        this.sessionKey = sessionKeyPrivate;
         this.token = token;
         return this;
     }
