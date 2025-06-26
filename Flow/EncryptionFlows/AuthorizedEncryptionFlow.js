@@ -1,5 +1,5 @@
 import { ElGamal, Serialization } from "../../Cryptide/index.js";
-import { Ed25519PublicComponent } from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
+import { Ed25519PrivateComponent, Ed25519PublicComponent } from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
 import { decryptDataRawOutput, encryptData, encryptDataRawOutput } from "../../Cryptide/Encryption/AES.js";
 import { base64ToBytes, base64UrlToBase64, numberToUint8Array, StringFromUint8Array, StringToUint8Array } from "../../Cryptide/Serialization.js";
 import { CurrentTime } from "../../Tools/Utils.js";
@@ -9,11 +9,13 @@ import dVVKSigningFlow from "../SigningFlows/dVVKSigningFlow.js";
 import { GenSessKey, GetPublic } from "../../Cryptide/Math.js";
 import SerializedField from "../../Models/SerializedField.js";
 import dVVKDecryptionFlow from "../DecryptionFlows/dVVKDecryptionFlow.js";
+import { Doken } from "../../Models/Doken.js";
 /**
  * 
  * @param {{
  * vendorId: string,
- * token: string,
+ * token: Doken,
+ * sessionKeyPrivate: Ed25519PrivateComponent
  * voucherURL: string,
  * homeOrkUrl: string | null
  * }} config 
@@ -25,12 +27,14 @@ export function AuthorizedEncryptionFlow(config){
 
     var encryptionFlow = this;
 
+    if(!config.token.payload.sessionKey.Equals(config.sessionKeyPrivate.GetPublic())) throw Error("Mismatch between session key private and Doken session key public");
+
     encryptionFlow.vvkId = config.vendorId;
     encryptionFlow.token = config.token;
+    encryptionFlow.sessionKeyPrivate = config.sessionKeyPrivate;
     encryptionFlow.voucherURL = config.voucherURL;
     
-    encryptionFlow.sessKey = GenSessKey();
-    encryptionFlow.gSessKey = GetPublic(encryptionFlow.sessKey);
+    encryptionFlow.sessKey = config.sessionKeyPrivate;
 
     encryptionFlow.vvkInfo = null;
     async function getVVKInfo(){
@@ -107,19 +111,11 @@ export function AuthorizedEncryptionFlow(config){
         const encryptionRequest = new BaseTideRequest("TideSelfEncryption", "1", "Doken:1", draft);
 
         // Deserialize token to retrieve vuid - if it exists
-        const vuid = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(this.token.split(".")[1])))).vuid; // get vuid field from jwt payload in 1 line
+        const vuid = this.token.payload.vuid;
         if(vuid) encryptionRequest.dyanmicData = StringToUint8Array(vuid);
         
-        // Set the Authorization token as the authorizer for the request
-        encryptionRequest.addAuthorizer(new Uint8Array());
-        encryptionRequest.addAuthorizerCertificate(new Uint8Array());// special case where other field isn't required
-        encryptionRequest.addAuthorization(new Uint8Array()); // special case where other field isn't required
-        encryptionRequest.addRules(new Uint8Array()); // not required
-        encryptionRequest.addRulesCert(new Uint8Array());// not required
-        
         // Initiate signing flow
-        const encryptingSigningFlow = new dVVKSigningFlow(this.vvkId, encryptionFlow.vvkInfo.UserPublic, encryptionFlow.vvkInfo.OrkInfo, encryptionFlow.sessKey, encryptionFlow.gSessKey, this.voucherURL);
-        encryptingSigningFlow.setDoken(this.token);
+        const encryptingSigningFlow = new dVVKSigningFlow(this.vvkId, encryptionFlow.vvkInfo.UserPublic, encryptionFlow.vvkInfo.OrkInfo, encryptionFlow.sessKey, encryptionFlow.token, this.voucherURL);
         const signatures = await encryptingSigningFlow.start(encryptionRequest);
 
         // Construct final serialized payloads for client to store
@@ -197,8 +193,7 @@ export function AuthorizedEncryptionFlow(config){
     
             await pre_info;
     
-            const flow = new dVVKDecryptionFlow(this.vvkId, this.vvkInfo.UserPublic, this.vvkInfo.OrkInfo, this.sessKey, this.gSessKey, this.voucherURL);
-            flow.setDoken(this.token);
+            const flow = new dVVKDecryptionFlow(this.vvkId, this.vvkInfo.UserPublic, this.vvkInfo.OrkInfo, this.sessKey, this.token, this.voucherURL);
             const dataKeys = await flow.start(decryptionRequest);
     
             // Decrypt all datas

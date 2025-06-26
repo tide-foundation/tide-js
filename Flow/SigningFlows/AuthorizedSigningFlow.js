@@ -7,12 +7,14 @@ import { GenSessKey, GetPublic } from "../../Cryptide/Math.js";
 import { Serialization } from "../../Cryptide/index.js";
 import TideKey from "../../Cryptide/TideKey.js";
 import Ed25519Scheme from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.js";
+import { Ed25519PrivateComponent } from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
 
 /**
  * 
  * @param {{
 * vendorId: string,
-* token: string,
+* token: Doken,
+* sessionKeyPrivate: Ed25519PrivateComponent
 * voucherURL: string,
 * homeOrkUrl: string | null
 * }} config 
@@ -22,12 +24,14 @@ export function AuthorizedSigningFlow(config) {
         throw new Error("The 'AuthorizedSigningFlow' constructor must be invoked with 'new'.")
     }
 
+    if(!config.token.payload.sessionKey.Equals(config.sessionKeyPrivate.GetPublic())) throw Error("Mismatch between session key private and Doken session key public");
+
     var signingFlow = this;
     signingFlow.vvkId = config.vendorId;
     signingFlow.token = config.token;
     signingFlow.voucherURL = config.voucherURL;
 
-    signingFlow.sessKey = TideKey.NewKey(Ed25519Scheme);
+    signingFlow.sessKey = config.sessionKeyPrivate;
 
     signingFlow.vvkInfo = null;
     async function getVVKInfo() {
@@ -37,20 +41,12 @@ export function AuthorizedSigningFlow(config) {
     }
 
     /**
-     * @param {TideKey} key 
-     */
-    signingFlow.setSessionKey = function(key){
-        signingFlow.sessKey = key;
-    }
-
-    /**
      * @param {Uint8Array} tideSerializedRequest 
      */
     signingFlow.signv2 = async function(tideSerializedRequest){
         await getVVKInfo();
 
-        const flow = new dVVKSigningFlow(this.vvkId, signingFlow.vvkInfo.UserPublic, signingFlow.vvkInfo.OrkInfo, signingFlow.sessKey.get_private_component().rawBytes, signingFlow.sessKey.get_public_component().public, this.voucherURL);
-        flow.setDoken(signingFlow.token);
+        const flow = new dVVKSigningFlow(this.vvkId, signingFlow.vvkInfo.UserPublic, signingFlow.vvkInfo.OrkInfo, signingFlow.sessKey, signingFlow.token, this.voucherURL);
         return flow.start(tideSerializedRequest);
     }
 
