@@ -14,7 +14,7 @@ import { Ed25519PrivateComponent } from "../../Cryptide/Components/Schemes/Ed255
  * @param {{
 * vendorId: string,
 * token: Doken,
-* sessionKeyPrivate: Ed25519PrivateComponent
+* sessionKey: TideKey
 * voucherURL: string,
 * homeOrkUrl: string | null
 * }} config 
@@ -24,14 +24,14 @@ export function AuthorizedSigningFlow(config) {
         throw new Error("The 'AuthorizedSigningFlow' constructor must be invoked with 'new'.")
     }
 
-    if(!config.token.payload.sessionKey.Equals(config.sessionKeyPrivate.GetPublic())) throw Error("Mismatch between session key private and Doken session key public");
+    if(!config.token.payload.sessionKey.Equals(config.sessionKey.get_public_component())) throw Error("Mismatch between session key private and Doken session key public");
 
     var signingFlow = this;
     signingFlow.vvkId = config.vendorId;
     signingFlow.token = config.token;
     signingFlow.voucherURL = config.voucherURL;
 
-    signingFlow.sessKey = config.sessionKeyPrivate;
+    signingFlow.sessKey = config.sessionKey;
 
     signingFlow.vvkInfo = null;
     async function getVVKInfo() {

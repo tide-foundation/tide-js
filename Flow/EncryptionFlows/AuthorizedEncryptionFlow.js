@@ -10,12 +10,13 @@ import { GenSessKey, GetPublic } from "../../Cryptide/Math.js";
 import SerializedField from "../../Models/SerializedField.js";
 import dVVKDecryptionFlow from "../DecryptionFlows/dVVKDecryptionFlow.js";
 import { Doken } from "../../Models/Doken.js";
+import TideKey from "../../Cryptide/TideKey.js";
 /**
  * 
  * @param {{
  * vendorId: string,
  * token: Doken,
- * sessionKeyPrivate: Ed25519PrivateComponent
+ * sessionKey: TideKey
  * voucherURL: string,
  * homeOrkUrl: string | null
  * }} config 
@@ -27,14 +28,13 @@ export function AuthorizedEncryptionFlow(config){
 
     var encryptionFlow = this;
 
-    if(!config.token.payload.sessionKey.Equals(config.sessionKeyPrivate.GetPublic())) throw Error("Mismatch between session key private and Doken session key public");
+    if(!config.token.payload.sessionKey.Equals(config.sessionKey.get_public_component())) throw Error("Mismatch between session key private and Doken session key public");
 
     encryptionFlow.vvkId = config.vendorId;
     encryptionFlow.token = config.token;
-    encryptionFlow.sessionKeyPrivate = config.sessionKeyPrivate;
+    encryptionFlow.sessKey = config.sessionKey;
     encryptionFlow.voucherURL = config.voucherURL;
     
-    encryptionFlow.sessKey = config.sessionKeyPrivate;
 
     encryptionFlow.vvkInfo = null;
     async function getVVKInfo(){
@@ -181,15 +181,6 @@ export function AuthorizedEncryptionFlow(config){
             }
     
             const decryptionRequest = new BaseTideRequest("SelfDecrypt", "1", "Doken:1", draft);
-    
-            // Deserialize token to retrieve vuid - if it exists
-            const vuid = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(this.token.split(".")[1])))).vuid; // get vuid field from jwt payload in 1 line
-            if(vuid) decryptionRequest.dyanmicData = StringToUint8Array(vuid);
-            
-            // Set the Authorization token as the authorizer for the request
-            decryptionRequest.addAuthorizer(new Uint8Array());
-            decryptionRequest.addAuthorizerCertificate(new Uint8Array());// special case where other field isn't required
-            decryptionRequest.addAuthorization(new Uint8Array()); // special case where other field isn't required
     
             await pre_info;
     

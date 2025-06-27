@@ -21,7 +21,7 @@ import ClientBase from "./ClientBase.js";
 import SetShardResponse from "../Models/Responses/KeyGen/SetShard/SetShardResponse.js";
 import PrismConvertResponse from "../Models/Responses/KeyAuth/Convert/PrismConvertResponse.js";
 import CMKConvertResponse from "../Models/Responses/KeyAuth/Convert/CMKConvertResponse.js";
-import { BigIntFromByteArray, ConcatUint8Arrays, CreateTideMemory, CreateTideMemoryFromArray, StringToUint8Array, base64ToBytes, bytesToBase64 } from "../Cryptide/Serialization.js";
+import { BigIntFromByteArray, ConcatUint8Arrays, CreateTideMemory, CreateTideMemoryFromArray, GetValue, StringToUint8Array, base64ToBytes, bytesToBase64 } from "../Cryptide/Serialization.js";
 import ConvertRememberedResponse from "../Models/Responses/KeyAuth/Convert/ConvertRememberedResponse.js";
 import BaseTideRequest from "../Models/BaseTideRequest.js";
 import ReservationConfirmation from "../Models/Responses/Reservation/ReservationConfirmation.js";
@@ -315,9 +315,9 @@ export default class NodeClient extends ClientBase {
      * @param {Point} orkPublic 
      */
     async EnableTideDH(orkPublic) {
-        if(!this.sessionKey) throw Error("Add a session key to the client first");
+        if(!this.sessionKeyPrivateRaw) throw Error("Add a session key to the client first");
         this.enabledTideDH = true;
-        this.DHKey = await DH.computeSharedKey(orkPublic, new Ed25519PrivateComponent(this.sessionKey).priv);
+        this.DHKey = await DH.computeSharedKey(orkPublic, this.sessionKeyPrivateRaw);
         return this;
     }
     /**
@@ -336,7 +336,7 @@ export default class NodeClient extends ClientBase {
             }
         );
 
-        if(!this.token) data.append("gSessKey", this.sessionKey.get_public_component().public);
+        if(!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
 
         const response = await this._post(`/Authentication/Key/v1/PreSign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'PreSign');
@@ -373,7 +373,7 @@ export default class NodeClient extends ClientBase {
             }
         );
         
-        if(!this.token) data.append("gSessKey", this.sessionKey.get_public_component().public);
+        if(!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
 
         const response = await this._post(`/Authentication/Key/v1/Sign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'Sign');
@@ -396,10 +396,12 @@ export default class NodeClient extends ClientBase {
         const data = this._createFormData(
             {
                 'encrypted': encrypted,
-                'gSessKey': this.gSessKey.toBase64(),
                 'voucher': voucher
             }
         );
+        
+        if(!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
+
         const response = await this._post(`/Authentication/Key/v1/Decrypt?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'Decrypt');
         const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);

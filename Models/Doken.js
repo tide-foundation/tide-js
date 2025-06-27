@@ -22,7 +22,6 @@ export function Doken(data){
 
     doken.header = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(parts[0]))));
     doken.payload = new DokenPayload(JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(parts[1])))));
-    Object.freeze(doken.payload);
     doken.signature = base64ToBytes(base64UrlToBase64(parts[1]));
 
     doken.isExpired = function(){
@@ -36,8 +35,19 @@ export function Doken(data){
             /("t.ssk"\s*:\s*)"[^"]*"/,
             `$1"${sessionKey}"`
         );
-        
-        doken.dataRef = temp[0] + "." + base64ToBase64Url(bytesToBase64(StringToUint8Array(payload))) + (temp.length > 2 ? "." + temp[2] : "");
+
+        // WE DO ALL THESE MANUAL UPDATES BECAUSE JAVASCRIPT DOES NOT GUARANTEE ORDER IN JSON
+        // SINCE WE DON'T SEND THE DOKEN TO GET SIGNED, WE CONTRCUST THE MESSAGE HERE
+        // WE NEED TO ENSURE ITS THE SAME THING THE ORK SIGNS
+        doken.dataRef = temp[0] + "." + base64ToBase64Url(bytesToBase64(StringToUint8Array(payload))) + (temp.length > 2 ? "." + temp[2] : ""); // update encoded string
+        doken.payload.sessionKey = BaseComponent.DeserializeComponent(sessionKey); // update session key object in payload
+    }
+    doken.setNewSignature = function(sig){
+        doken.signature = sig.slice(); // update sig object
+
+        const temp = doken.dataRef.split(".");
+
+        doken.dataRef = temp[0] + "." + temp[1] + "." + base64ToBase64Url(bytesToBase64(doken.signature)); // update dataref object
     }
     /**
      * 

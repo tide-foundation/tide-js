@@ -8,13 +8,14 @@ import { BigIntToByteArray, ConcatUint8Arrays, bytesToBase64, serializeBitArray 
 import VoucherFlow from "../VoucherFlows/VoucherFlow.js";
 import { Doken } from "../../Models/Doken.js";
 import { Ed25519PrivateComponent } from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
+import TideKey from "../../Cryptide/TideKey.js";
 
 export default class dVVKSigningFlow {
     /**
      * @param {string} vvkid
      * @param {Point} vvkPublic
      * @param {OrkInfo[]} orks 
-     * @param {Ed25519PrivateComponent} sessKey 
+     * @param {TideKey} sessKey 
      * @param {Doken} doken 
      * @param {string} voucherURL
      */
@@ -24,14 +25,15 @@ export default class dVVKSigningFlow {
         this.orks = orks;
         this.orks = sortORKs(this.orks); // sort for bitwise!
 
-        if(!doken.payload.sessionKey.Equals(sessKey.GetPublic())) throw Error("Mismatch between session key private and Doken session key public");
+        if(doken){
+            if(!doken.payload.sessionKey.Equals(sessKey.get_public_component())) throw Error("Mismatch between session key private and Doken session key public");
+            this.doken = doken.serialize();
+        }        
         this.sessKey = sessKey;
-        this.doken = doken;
         this.getVouchersFunction = null;
 
         this.voucherURL = voucherURL;
 
-        this.doken = null;
     }
     /**
      * @param {(request: string) => Promise<string> } getVouchersFunction
@@ -48,7 +50,7 @@ export default class dVVKSigningFlow {
      */
     async start(request, waitForAll = false) {
 
-        const pre_clients = this.orks.map(info => new NodeClient(info.orkURL).AddBearerAuthorization(this.sessKey.Serialize().ToBytes(), this.doken.serialize()).EnableTideDH(info.orkPublic));
+        const pre_clients = this.orks.map(info => new NodeClient(info.orkURL).AddBearerAuthorization(this.sessKey.get_private_component().rawBytes, this.sessKey.get_public_component().Serialize().ToString(), this.doken).EnableTideDH(info.orkPublic));
 
         const voucherFlow = new VoucherFlow(this.orks.map(o => o.orkPaymentPublic), this.voucherURL, "vendorsign");
         const { vouchers } = await voucherFlow.GetVouchers(this.getVouchersFunction);

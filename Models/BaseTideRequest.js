@@ -103,7 +103,7 @@ export default class BaseTideRequest {
         Serialization.WriteValue(req, 5, this.dyanmicData);
         Serialization.WriteValue(req, 6, this.authorizer);
         Serialization.WriteValue(req, 7, this.authorization);
-        Serialization.WriteValue(req, 8, this.authorizerCert); // should every request be authenticated with vrk?
+        Serialization.WriteValue(req, 8, this.authorizerCert);
         Serialization.WriteValue(req, 9, this.rules);
         Serialization.WriteValue(req, 10, this.rulesCert);
 

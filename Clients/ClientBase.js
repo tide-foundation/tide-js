@@ -159,10 +159,7 @@ export default class ClientBase {
             response = await fetch(this.url + endpoint, {
                 method: 'POST',
                 body: data,
-                signal: controller.signal,
-                ...(this.token && {
-                    headers: { Authorization: `Bearer ${this.token}` }
-                })            
+                signal: controller.signal     
             });
             clearTimeout(id);
         }catch{
@@ -210,11 +207,13 @@ export default class ClientBase {
     }
     /**
      * @param {Uint8Array} sessionKeyPrivate
+     * @param {string} sessionKeyPublicEncoded
      * @param {string} token 
      * @returns 
      */
-    AddBearerAuthorization(sessionKeyPrivate, token){
-        this.sessionKey = sessionKeyPrivate;
+    AddBearerAuthorization(sessionKeyPrivate, sessionKeyPublicEncoded, token){
+        this.sessionKeyPrivateRaw = sessionKeyPrivate;
+        this.sessionKeyPublicEncoded = sessionKeyPublicEncoded;
         this.token = token;
         return this;
     }
