@@ -8,6 +8,7 @@ import { Serialization } from "../../Cryptide/index.js";
 import TideKey from "../../Cryptide/TideKey.js";
 import Ed25519Scheme from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.js";
 import { Ed25519PrivateComponent } from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
+import KeyInfo from "../../Models/Infos/KeyInfo.js";
 
 /**
  * 
@@ -17,6 +18,7 @@ import { Ed25519PrivateComponent } from "../../Cryptide/Components/Schemes/Ed255
 * sessionKey: TideKey
 * voucherURL: string,
 * homeOrkUrl: string | null
+* keyInfo: KeyInfo
 * }} config 
 */
 export function AuthorizedSigningFlow(config) {
@@ -33,19 +35,12 @@ export function AuthorizedSigningFlow(config) {
 
     signingFlow.sessKey = config.sessionKey;
 
-    signingFlow.vvkInfo = null;
-    async function getVVKInfo() {
-        if (!signingFlow.vvkInfo) {
-            signingFlow.vvkInfo = await new NetworkClient(config.homeOrkUrl).GetKeyInfo(signingFlow.vvkId);
-        }
-    }
+    signingFlow.vvkInfo = config.keyInfo;
 
     /**
      * @param {Uint8Array} tideSerializedRequest 
      */
     signingFlow.signv2 = async function(tideSerializedRequest){
-        await getVVKInfo();
-
         const flow = new dVVKSigningFlow(this.vvkId, signingFlow.vvkInfo.UserPublic, signingFlow.vvkInfo.OrkInfo, signingFlow.sessKey, signingFlow.token, this.voucherURL);
         return flow.start(tideSerializedRequest);
     }

@@ -11,6 +11,7 @@ import SerializedField from "../../Models/SerializedField.js";
 import dVVKDecryptionFlow from "../DecryptionFlows/dVVKDecryptionFlow.js";
 import { Doken } from "../../Models/Doken.js";
 import TideKey from "../../Cryptide/TideKey.js";
+import KeyInfo from "../../Models/Infos/KeyInfo.js";
 /**
  * 
  * @param {{
@@ -19,6 +20,7 @@ import TideKey from "../../Cryptide/TideKey.js";
  * sessionKey: TideKey
  * voucherURL: string,
  * homeOrkUrl: string | null
+ * keyInfo: KeyInfo
  * }} config 
  */
 export function AuthorizedEncryptionFlow(config){
@@ -28,7 +30,9 @@ export function AuthorizedEncryptionFlow(config){
 
     var encryptionFlow = this;
 
-    if(!config.token.payload.sessionKey.Equals(config.sessionKey.get_public_component())) throw Error("Mismatch between session key private and Doken session key public");
+    if(!config.token.payload.sessionKey.Equals(config.sessionKey.get_public_component())) {
+        throw Error("Mismatch between session key private and Doken session key public");
+    }
 
     encryptionFlow.vvkId = config.vendorId;
     encryptionFlow.token = config.token;
@@ -36,12 +40,7 @@ export function AuthorizedEncryptionFlow(config){
     encryptionFlow.voucherURL = config.voucherURL;
     
 
-    encryptionFlow.vvkInfo = null;
-    async function getVVKInfo(){
-        if(!encryptionFlow.vvkInfo){
-            encryptionFlow.vvkInfo = await new NetworkClient(config.homeOrkUrl).GetKeyInfo(encryptionFlow.vvkId);
-        }
-    }
+    encryptionFlow.vvkInfo = config.keyInfo;
 
     /**
      * 
@@ -54,8 +53,6 @@ export function AuthorizedEncryptionFlow(config){
      * @returns 
      */
     encryptionFlow.encrypt = async function(datasToEncrypt){
-        await getVVKInfo();
-
         const encReqs = await Promise.all(datasToEncrypt.map(async d => {
             const d_b = d.data;
             if(d_b.length < 32){
@@ -149,9 +146,7 @@ export function AuthorizedEncryptionFlow(config){
                 }
             })
     
-            // Get orks to apply vvk
-            const pre_info = getVVKInfo();
-    
+            // Get orks to apply vvk    
             const entries = deserializedDatas.map((data, i) => {
                 if(data.encKey){
                     // We must decrypt the encrypted key, not the data itself
@@ -181,8 +176,6 @@ export function AuthorizedEncryptionFlow(config){
             }
     
             const decryptionRequest = new BaseTideRequest("SelfDecrypt", "1", "Doken:1", draft);
-    
-            await pre_info;
     
             const flow = new dVVKDecryptionFlow(this.vvkId, this.vvkInfo.UserPublic, this.vvkInfo.OrkInfo, this.sessKey, this.token, this.voucherURL);
             const dataKeys = await flow.start(decryptionRequest);
