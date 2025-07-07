@@ -99,12 +99,14 @@ export default class ClientBase {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeout);
 
+        if(this.token) data.append("token", this.token);
+
         let response;
         try{
             response = await fetch(this.url + endpoint, {
                 method: 'POST',
                 body: data,
-                signal: controller.signal
+                signal: controller.signal      
             });
             clearTimeout(id);
         }catch{
@@ -157,7 +159,7 @@ export default class ClientBase {
             response = await fetch(this.url + endpoint, {
                 method: 'POST',
                 body: data,
-                signal: controller.signal
+                signal: controller.signal     
             });
             clearTimeout(id);
         }catch{
@@ -203,5 +205,16 @@ export default class ClientBase {
 
         return responseData;
     }
-
+    /**
+     * @param {Uint8Array} sessionKeyPrivate
+     * @param {string} sessionKeyPublicEncoded
+     * @param {string} token 
+     * @returns 
+     */
+    AddBearerAuthorization(sessionKeyPrivate, sessionKeyPublicEncoded, token){
+        this.sessionKeyPrivateRaw = sessionKeyPrivate;
+        this.sessionKeyPublicEncoded = sessionKeyPublicEncoded;
+        this.token = token;
+        return this;
+    }
 }

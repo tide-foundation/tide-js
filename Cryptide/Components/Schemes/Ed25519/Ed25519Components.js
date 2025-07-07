@@ -9,6 +9,7 @@ export class Ed25519PublicComponent extends BasePublicComponent{
     static Name = "Ed25519PublicComponent";
     static Version = "1";
     get Scheme() { return Ed25519Scheme; }
+    get ComponentType() { return Public };
 
     /**@type {Uint8Array} */
     pb = undefined;
@@ -66,8 +67,8 @@ export class Ed25519PublicComponent extends BasePublicComponent{
 export class Ed25519PrivateComponent extends BasePrivateComponent{
     static Name = "Ed25519PrivateComponent";
     static Version = "1";
-    Scheme = Ed25519Scheme;
-    ComponentType = Private;
+    get Scheme() { return Ed25519Scheme; }
+    get ComponentType() { return Private };
 
     /**@type {bigint} */
     p = undefined;
@@ -108,8 +109,8 @@ export class Ed25519PrivateComponent extends BasePrivateComponent{
 export class Ed25519SeedComponent extends BaseSeedComponent{
     static Name = "Ed25519SeedComponent";
     static Version = "1";
-    Scheme = Ed25519Scheme;
-    ComponentType = Seed;
+    get Scheme() { return Ed25519Scheme; }
+    get ComponentType() { return Seed };
 
     /**@type {Uint8Array} */
     rB = undefined;

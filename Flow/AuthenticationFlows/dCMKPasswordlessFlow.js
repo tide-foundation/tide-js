@@ -81,7 +81,7 @@ export default class dCMKPasswordlessFlow {
     }
 
     /**
-     * @param {Point} gVRK
+     * @param {Point} gVRK If a null value is provided, no encryption is applied.
      */
     async AuthenticateRemembered(gVRK) {
         if (this.cState == undefined) throw Error("Convert State is undefined");
