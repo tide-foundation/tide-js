@@ -1,5 +1,5 @@
 import { ElGamal, Serialization } from "../../Cryptide/index.js";
-import { Ed25519PublicComponent } from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
+import { Ed25519PrivateComponent, Ed25519PublicComponent } from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
 import { decryptDataRawOutput, encryptData, encryptDataRawOutput } from "../../Cryptide/Encryption/AES.js";
 import { base64ToBytes, base64UrlToBase64, numberToUint8Array, StringFromUint8Array, StringToUint8Array } from "../../Cryptide/Serialization.js";
 import { CurrentTime } from "../../Tools/Utils.js";
@@ -9,13 +9,18 @@ import dVVKSigningFlow from "../SigningFlows/dVVKSigningFlow.js";
 import { GenSessKey, GetPublic } from "../../Cryptide/Math.js";
 import SerializedField from "../../Models/SerializedField.js";
 import dVVKDecryptionFlow from "../DecryptionFlows/dVVKDecryptionFlow.js";
+import { Doken } from "../../Models/Doken.js";
+import TideKey from "../../Cryptide/TideKey.js";
+import KeyInfo from "../../Models/Infos/KeyInfo.js";
 /**
  * 
  * @param {{
  * vendorId: string,
- * token: string,
+ * token: Doken,
+ * sessionKey: TideKey
  * voucherURL: string,
  * homeOrkUrl: string | null
+ * keyInfo: KeyInfo
  * }} config 
  */
 export function AuthorizedEncryptionFlow(config){
@@ -25,19 +30,17 @@ export function AuthorizedEncryptionFlow(config){
 
     var encryptionFlow = this;
 
+    if(!config.token.payload.sessionKey.Equals(config.sessionKey.get_public_component())) {
+        throw Error("Mismatch between session key private and Doken session key public");
+    }
+
     encryptionFlow.vvkId = config.vendorId;
     encryptionFlow.token = config.token;
+    encryptionFlow.sessKey = config.sessionKey;
     encryptionFlow.voucherURL = config.voucherURL;
     
-    encryptionFlow.sessKey = GenSessKey();
-    encryptionFlow.gSessKey = GetPublic(encryptionFlow.sessKey);
 
-    encryptionFlow.vvkInfo = null;
-    async function getVVKInfo(){
-        if(!encryptionFlow.vvkInfo){
-            encryptionFlow.vvkInfo = await new NetworkClient(config.homeOrkUrl).GetKeyInfo(encryptionFlow.vvkId);
-        }
-    }
+    encryptionFlow.vvkInfo = config.keyInfo;
 
     /**
      * 
@@ -50,8 +53,6 @@ export function AuthorizedEncryptionFlow(config){
      * @returns 
      */
     encryptionFlow.encrypt = async function(datasToEncrypt){
-        await getVVKInfo();
-
         const encReqs = await Promise.all(datasToEncrypt.map(async d => {
             const d_b = d.data;
             if(d_b.length < 32){
@@ -104,21 +105,14 @@ export function AuthorizedEncryptionFlow(config){
             Serialization.WriteValue(draft, i+1, entry);
         })
 
-        const encryptionRequest = new BaseTideRequest("TideSelfEncryption", "1", "AccessToken:1", draft);
+        const encryptionRequest = new BaseTideRequest("TideSelfEncryption", "1", "Doken:1", draft);
 
         // Deserialize token to retrieve vuid - if it exists
-        const vuid = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(this.token.split(".")[1])))).vuid; // get vuid field from jwt payload in 1 line
+        const vuid = this.token.payload.vuid;
         if(vuid) encryptionRequest.dyanmicData = StringToUint8Array(vuid);
         
-        // Set the Authorization token as the authorizer for the request
-        encryptionRequest.addAuthorizer(StringToUint8Array(this.token));
-        encryptionRequest.addAuthorizerCertificate(new Uint8Array());// special case where other field isn't required
-        encryptionRequest.addAuthorization(new Uint8Array()); // special case where other field isn't required
-        encryptionRequest.addRules(new Uint8Array()); // not required
-        encryptionRequest.addRulesCert(new Uint8Array());// not required
-        
         // Initiate signing flow
-        const encryptingSigningFlow = new dVVKSigningFlow(this.vvkId, encryptionFlow.vvkInfo.UserPublic, encryptionFlow.vvkInfo.OrkInfo, encryptionFlow.sessKey, encryptionFlow.gSessKey, this.voucherURL);
+        const encryptingSigningFlow = new dVVKSigningFlow(this.vvkId, encryptionFlow.vvkInfo.UserPublic, encryptionFlow.vvkInfo.OrkInfo, encryptionFlow.sessKey, encryptionFlow.token, this.voucherURL);
         const signatures = await encryptingSigningFlow.start(encryptionRequest);
 
         // Construct final serialized payloads for client to store
@@ -152,9 +146,7 @@ export function AuthorizedEncryptionFlow(config){
                 }
             })
     
-            // Get orks to apply vvk
-            const pre_info = getVVKInfo();
-    
+            // Get orks to apply vvk    
             const entries = deserializedDatas.map((data, i) => {
                 if(data.encKey){
                     // We must decrypt the encrypted key, not the data itself
@@ -183,20 +175,9 @@ export function AuthorizedEncryptionFlow(config){
                 Serialization.WriteValue(draft, i, entries[i]);
             }
     
-            const decryptionRequest = new BaseTideRequest("SelfDecrypt", "1", "AccessToken:1", draft);
+            const decryptionRequest = new BaseTideRequest("SelfDecrypt", "1", "Doken:1", draft);
     
-            // Deserialize token to retrieve vuid - if it exists
-            const vuid = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(this.token.split(".")[1])))).vuid; // get vuid field from jwt payload in 1 line
-            if(vuid) decryptionRequest.dyanmicData = StringToUint8Array(vuid);
-            
-            // Set the Authorization token as the authorizer for the request
-            decryptionRequest.addAuthorizer(StringToUint8Array(this.token));
-            decryptionRequest.addAuthorizerCertificate(new Uint8Array());// special case where other field isn't required
-            decryptionRequest.addAuthorization(new Uint8Array()); // special case where other field isn't required
-    
-            await pre_info;
-    
-            const flow = new dVVKDecryptionFlow(this.vvkId, this.vvkInfo.UserPublic, this.vvkInfo.OrkInfo, this.sessKey, this.gSessKey, this.voucherURL);
+            const flow = new dVVKDecryptionFlow(this.vvkId, this.vvkInfo.UserPublic, this.vvkInfo.OrkInfo, this.sessKey, this.token, this.voucherURL);
             const dataKeys = await flow.start(decryptionRequest);
     
             // Decrypt all datas

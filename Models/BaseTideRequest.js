@@ -18,9 +18,9 @@ export default class BaseTideRequest {
         this.authFlow = authFlow
         this.draft = draft.slice();
         this.dyanmicData = dyanmicData.slice();
-        this.authorization = null;
-        this.authorizerCert = null;
-        this.authorizer = null;
+        this.authorization = new Uint8Array();
+        this.authorizerCert = new Uint8Array();;
+        this.authorizer = new Uint8Array();;
         this.expiry = BigInt(CurrentTime() + 30); // default is 30s
         this.rules = new Uint8Array();
         this.rulesCert = new Uint8Array();
@@ -103,7 +103,7 @@ export default class BaseTideRequest {
         Serialization.WriteValue(req, 5, this.dyanmicData);
         Serialization.WriteValue(req, 6, this.authorizer);
         Serialization.WriteValue(req, 7, this.authorization);
-        Serialization.WriteValue(req, 8, this.authorizerCert); // should every request be authenticated with vrk?
+        Serialization.WriteValue(req, 8, this.authorizerCert);
         Serialization.WriteValue(req, 9, this.rules);
         Serialization.WriteValue(req, 10, this.rulesCert);
 

@@ -21,12 +21,14 @@ import ClientBase from "./ClientBase.js";
 import SetShardResponse from "../Models/Responses/KeyGen/SetShard/SetShardResponse.js";
 import PrismConvertResponse from "../Models/Responses/KeyAuth/Convert/PrismConvertResponse.js";
 import CMKConvertResponse from "../Models/Responses/KeyAuth/Convert/CMKConvertResponse.js";
-import { BigIntFromByteArray, ConcatUint8Arrays, StringToUint8Array, base64ToBytes, bytesToBase64 } from "../Cryptide/Serialization.js";
+import { BigIntFromByteArray, ConcatUint8Arrays, CreateTideMemory, CreateTideMemoryFromArray, GetValue, StringToUint8Array, base64ToBytes, bytesToBase64 } from "../Cryptide/Serialization.js";
 import ConvertRememberedResponse from "../Models/Responses/KeyAuth/Convert/ConvertRememberedResponse.js";
 import BaseTideRequest from "../Models/BaseTideRequest.js";
 import ReservationConfirmation from "../Models/Responses/Reservation/ReservationConfirmation.js";
-import { Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
+import { Ed25519PrivateComponent, Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
 import { Point } from "../Cryptide/Ed25519.js";
+import TideKey from "../Cryptide/TideKey.js";
+import { Doken } from "../Models/Doken.js";
 
 export default class NodeClient extends ClientBase {
     /**
@@ -310,15 +312,12 @@ export default class NodeClient extends ClientBase {
     }
 
     /**
-     * @param {Point} gSessKey 
-     * @param {Uint8Array} sessKey 
      * @param {Point} orkPublic 
      */
-    async EnableTideDH(gSessKey, sessKey, orkPublic) {
+    async EnableTideDH(orkPublic) {
+        if(!this.sessionKeyPrivateRaw) throw Error("Add a session key to the client first");
         this.enabledTideDH = true;
-        this.DHKey = await DH.computeSharedKey(orkPublic, sessKey);
-        this.gSessKey = gSessKey;
-        this.sessKey = sessKey;
+        this.DHKey = await DH.computeSharedKey(orkPublic, this.sessionKeyPrivateRaw);
         return this;
     }
     /**
@@ -329,14 +328,16 @@ export default class NodeClient extends ClientBase {
      */
     async PreSign(index, vuid, request, voucher) {
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
-        const encrypted = await AES.encryptData(request.encode(), this.DHKey);
+        const encrypted = await AES.encryptData(CreateTideMemoryFromArray([request.encode()]), this.DHKey);
         const data = this._createFormData(
             {
                 'encrypted': encrypted,
-                'gSessKey': this.gSessKey.toBase64(),
                 'voucher': voucher
             }
         );
+
+        if(!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
+
         const response = await this._post(`/Authentication/Key/v1/PreSign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'PreSign');
         const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
@@ -360,15 +361,20 @@ export default class NodeClient extends ClientBase {
      */
     async Sign(vuid, request, GRs, bitwise) {
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
-        const payload = ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes()), request.encode()]);
+        const payload = CreateTideMemoryFromArray([
+            request.encode(),
+            ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes())])]
+        );
         const encrypted = await AES.encryptData(payload, this.DHKey);
         const data = this._createFormData(
             {
                 'encrypted': encrypted,
-                'gSessKey': this.gSessKey.toBase64(),
                 'bitwise': bytesToBase64(bitwise)
             }
         );
+        
+        if(!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
+
         const response = await this._post(`/Authentication/Key/v1/Sign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'Sign');
         const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
@@ -386,14 +392,16 @@ export default class NodeClient extends ClientBase {
      */
     async Decrypt(index, vuid, request, voucher){
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
-        const encrypted = await AES.encryptData(request.encode(), this.DHKey);
+        const encrypted = await AES.encryptData(CreateTideMemoryFromArray([request.encode()]), this.DHKey);
         const data = this._createFormData(
             {
                 'encrypted': encrypted,
-                'gSessKey': this.gSessKey.toBase64(),
                 'voucher': voucher
             }
         );
+        
+        if(!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
+
         const response = await this._post(`/Authentication/Key/v1/Decrypt?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'Decrypt');
         const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);

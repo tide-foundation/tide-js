@@ -32,6 +32,13 @@ export class URLSignatureFormat extends TideSignatureFormat{
         super(message);
     }
 }
+export class ClientURLSignatureFormat extends TideSignatureFormat{
+    Name = "ClientURL";
+    Version = "1";
+    constructor(message){
+        super(message);
+    }
+}
 
 export class PublicKeySignatureFormat extends TideSignatureFormat{
     Name = "PublicKey";

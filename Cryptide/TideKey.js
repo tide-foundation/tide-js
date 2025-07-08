@@ -27,12 +27,18 @@ export default class TideKey{
         if(c instanceof BaseComponent) this.component = c;
         else throw Error("Expecting object derived from BaseComponent");
     }
-
+    /**
+     * 
+     * @returns {BasePrivateComponent}
+     */
     get_private_component(){
         if(!hasOwnInstanceMethod(this.component, "GetPrivate") && !(this.component instanceof BasePrivateComponent)) throw Error("Cannot generate or find private component");
         this.privateComponent = this.component instanceof BasePrivateComponent ? this.component : this.component.GetPrivate();
         return this.privateComponent;
     }
+    /**
+     * @returns {BasePublicComponent}
+     */
     get_public_component(){
         if(!hasOwnInstanceMethod(this.component, "GetPublic") && !(this.component instanceof BasePublicComponent)) throw Error("Cannot generate or find public component");
         this.publicComponent = this.component instanceof BasePublicComponent ? this.component : this.component.GetPublic();

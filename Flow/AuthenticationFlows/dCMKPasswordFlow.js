@@ -143,7 +143,7 @@ export default class dCMKPasswordFlow{
     }
 
     /**
-     * @param {Point} gVRK
+     * @param {Point} gVRK If a null value is provided, no encryption is applied.
      * @param {Uint8Array} sessKey
      * @param {string} consentToSign
      */
