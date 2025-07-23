@@ -1,5 +1,5 @@
 # Tide JS
-Browser side modules required to interact with the Tide Network.
+Browser side modules required to interact with the Tide's Cybersecurity Fabric.
 
 ## Repository Index
 * [Clients.](https://github.com/tide-foundation/tide-js/tree/main/Clients) HTTP clients required to interact with Tide Network and Authentication functions, as well as the Vendor's voucher endpoint.
