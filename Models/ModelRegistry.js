@@ -166,7 +166,6 @@ class OffboardSignRequestBuilder extends HumanReadableModelBuilder{
 
     get _id() { return this._name + ":" + this._version; }
     constructor(data, expiry){
-        //throw Error("Not implemented");
         super(data, expiry);
     }
     getHumanReadableObject(){
