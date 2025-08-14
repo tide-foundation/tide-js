@@ -53,6 +53,15 @@ export default class TideKey{
         const f = this.component.Scheme.GetVerifyingFunction();
         return await f(message, signature, this.get_public_component());
     }
+    async asymmetricDecrypt(cipher){
+        const d = this.component.Scheme.GetDecryptingFunction();
+        return await d(cipher, this.get_private_component());
+    }
+    async asymmetricEncrypt(message){
+        const e = this.component.Scheme.GetEncryptingFunction();
+        return await e(message, this.get_public_component());
+    }
+    
 
     async prepVouchersReq(gORKn){
         // Ensure scheme is Ed25519 for tide vouchers
