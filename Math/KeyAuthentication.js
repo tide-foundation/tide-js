@@ -33,6 +33,10 @@ import ConvertRememberedResponse from "../Models/Responses/KeyAuth/Convert/Conve
 import VendorData from "../Models/VendorData.js";
 import { Point } from "../Cryptide/Ed25519.js";
 import { Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
+import DeviceConvertResponse from "../Models/Responses/KeyAuth/Convert/DeviceConvertResponse.js";
+import DecryptedDeviceConvertResponse from "../Models/Responses/KeyAuth/Convert/DecryptedDeviceConvertResponse.js";
+import TideKey from "../Cryptide/TideKey.js";
+import { BaseComponent } from "../Cryptide/Components/BaseComponent.js";
 /**
  * For use in change password flow
  * @param {PrismConvertResponse[]} convertResponses 
@@ -127,6 +131,48 @@ export async function CmkConvertReply(convertResponses, ids, prismAuthis, gCMK, 
     const {blurHCMKMul, blur, gRMul} = await genBlindMessage(gCMKR, gCMKAuth, authToken.toUint8Array(), CMKMul);
 
     return {VUID: VUID, blurHCMKMul, r4: blur, gCMKAuth, authToken, gRMul}
+}
+
+/**
+ * @param {DeviceConvertResponse[]} convertResponses
+ * @param {Uint8Array[]} appAuthi
+ * @param {bigint[]} ids
+ * @param {Point} gCMK
+ * @param {string} qPub
+ * @param {string} uDeObf
+ * @param {TideKey} blurerKPriv
+ * @param {Ed25519PublicComponent} gSessKeyPub
+ * @param {string} purpose
+ * @param {string} sessionId
+ */
+export async function DeviceConvertReply(convertResponses, appAuthi, ids, gCMK, qPub, uDeObf, blurerKPriv, gSessKeyPub, purpose, sessionId){    
+    let decPrismRequesti;
+    try{
+        const pre_decPrismRequesti = convertResponses.map(async (chall, i) => DecryptedDeviceConvertResponse.from(await AES.decryptData(chall.EncRequesti, appAuthi[i])));
+        decPrismRequesti = await Promise.all(pre_decPrismRequesti);
+    }catch{
+        throw Error("enclave.invalidAccount");
+    }
+    const timestampi = median(decPrismRequesti.map(resp => resp.Timestampi));
+
+    // Calculate when the stored token expires
+    const expired = CurrentTime() + Min(decPrismRequesti.map(d => d.Exti));
+
+    // CMK part
+    const userPRISM = Interpolation.AggregatePointsWithIds(decPrismRequesti.map(d => d.UserPRISMi), ids);
+    const userPRISMdec = userPRISM.mul(mod(BigIntFromByteArray(await DH.computeSharedKey(TideKey.FromSerializedComponent(qPub).get_public_component().public, blurerKPriv.get_private_component().priv))));
+
+    const gUserCMK = userPRISMdec.divide(TideKey.FromSerializedComponent(uDeObf).get_private_component().priv);
+    const gUserCMK_Hash = await Hash.SHA512_Digest(gUserCMK.toRawBytes());
+
+    const CMKMul = mod(BigIntFromByteArray(gUserCMK_Hash.slice(0, 32)));
+    const VUID = Bytes2Hex(gUserCMK_Hash.slice(-32));
+    const gCMKAuth = gCMK.mul(CMKMul);
+    const gCMKR = Interpolation.AggregatePoints(convertResponses.map(resp => resp.GCMKRi));
+    const authToken = AuthRequest.new(VUID, purpose, gSessKeyPub.Serialize().ToString(), timestampi + randBetween(30, 90), sessionId);
+    const {blurHCMKMul, blur, gRMul} = await genBlindMessage(gCMKR, gCMKAuth, authToken.toUint8Array(), CMKMul);
+
+    return {VUID, gCMKAuth, authToken, r4, decPrismRequesti, timestampi, expired, blurHCMKMul, blur, gRMul}
 }
 /**
  * @param {ConvertRememberedResponse[]} responses 
