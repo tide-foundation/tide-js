@@ -15,7 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { Point } from "../../../../Cryptide/Ed25519";
+import { Point } from "../../../../Cryptide/Ed25519.js";
 
 
 export default class DecryptedDeviceConvertResponse{

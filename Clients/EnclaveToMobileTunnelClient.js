@@ -1,12 +1,12 @@
-import TideKey from "../Cryptide/TideKey";
-import WebSocketClientBase from "./WebSocketClientBase";
+import TideKey from "../Cryptide/TideKey.js";
+import WebSocketClientBase from "./WebSocketClientBase.js";
 
 const guidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 export default class EnclaveToMobileTunnelClient extends WebSocketClientBase{
-    constructor(config){
-        this.url = config.url;;
-        super(this.url + "/ws/mobileapp/start", null);
+    constructor(url){
+        super(url + "/ws/mobileapp/start");
+        this.url = url;
     }
 
     async initializeConnection(){
@@ -20,14 +20,24 @@ export default class EnclaveToMobileTunnelClient extends WebSocketClientBase{
      * 
      * @param {string} voucherURL 
      * @param {TideKey} devicePublicKey 
+     * @param {string} appReq
+     * @param {string} appReqSignature
+     * @param {TideKey} sessionKey
+     * @param {string} sessionKeySignature
+     * @param {TideKey} vendorPublicKey
      */
-    async passEnclaveInfo(voucherURL, devicePublicKey){
+    async passEnclaveInfo(voucherURL, devicePublicKey, appReq, appReqSignature, sessionKey, sessionKeySignature, vendorPublicKey){
         await this.waitForMessage("request info"); // we need to make sure mobile is ready to recieve our request
         await this.sendMessage({
-            type: "request info",
-            message:{
-                voucherURL: voucherURL,
-                gBRK: devicePublicKey.get_public_component().Serialize().ToString()
+            type: "requested info",
+            message: {
+                appReq: appReq,
+                appReqSignature,
+                sessionKey: sessionKey.get_public_component().Serialize().ToString(),
+                sessionKeySignature,
+                voucherURL,
+                devicePublicKey: devicePublicKey.get_public_component().Serialize().ToString(),
+                vendorPublicKey: vendorPublicKey.get_public_component().Serialize().ToString()
             }
         });
         const enclaveEncryptedData = await this.waitForMessage("mobile completed");
