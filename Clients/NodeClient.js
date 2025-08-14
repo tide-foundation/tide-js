@@ -29,6 +29,7 @@ import { Ed25519PrivateComponent, Ed25519PublicComponent } from "../Cryptide/Com
 import { Point } from "../Cryptide/Ed25519.js";
 import TideKey from "../Cryptide/TideKey.js";
 import { Doken } from "../Models/Doken.js";
+import DeviceConvertResponse from "../Models/Responses/KeyAuth/Convert/DeviceConvertResponse.js";
 
 export default class NodeClient extends ClientBase {
     /**
@@ -102,6 +103,38 @@ export default class NodeClient extends ClientBase {
     }
 
     /**
+     * @param {number} index
+     * @param {string} uid 
+     * @param {string} gSessKeyPub
+     * @param {boolean} rememberMe
+     * @param {boolean} cmkCommitted
+     * @param {boolean} prismCommitted
+     * @param {string} voucher
+     * @param {string} m
+     * @returns
+     */
+    async DeviceConvert(index, uid, gSessKeyPub, rememberMe, voucher, m, cmkCommitted = true, prismCommitted = true) {
+        const data = this._createFormData({
+            'gBlurPass': null,
+            'gSessKeyPub': gSessKeyPub,
+            'rememberMe': rememberMe,
+            'cmkCommitted': cmkCommitted,
+            'prismCommitted': prismCommitted,
+            'voucher': voucher,
+            'M': m
+        })
+        const response = await this._post(`/Authentication/Auth/Convert?uid=${uid}`, data)
+        const responseData = await this._handleError(response, "Device Convert CMK/Prism");
+        const returnObj = {
+            "DeviceConvertResponse": DeviceConvertResponse.from(responseData)
+        };
+        return {
+            "index": index,
+            returnObj // only one value is allowed in indexed requests, apart from the index
+        }
+    }
+
+    /**
      * @param {number} index 
      * @param {string} uid 
      * @param {Point} gBlurPass 
@@ -162,6 +195,25 @@ export default class NodeClient extends ClientBase {
             'prismCommitted': prismCommitted
         })
         const response = await this._post(`/Authentication/Auth/Authenticate?uid=${uid}`, data)
+
+        const encSig = await this._handleError(response, "Authenticate");
+        return encSig;
+    }
+
+    /**
+     * @param {string} uid 
+     * @param {string} prkRequesti
+     * @param {bigint} blurHCMKMul
+     * @param {Uint8Array} bitwise
+     * @returns {Promise<string>}
+     */
+    async DeviceAuthenticate(uid, prkRequesti, blurHCMKMul, bitwise) {
+        const data = this._createFormData({
+            'prkRequesti': prkRequesti,
+            'blurHCMKMul': blurHCMKMul.toString(),
+            'bitwise': bytesToBase64(bitwise)
+        })
+        const response = await this._post(`/Authentication/Auth/DeviceAuthenticate?uid=${uid}`, data)
 
         const encSig = await this._handleError(response, "Authenticate");
         return encSig;
