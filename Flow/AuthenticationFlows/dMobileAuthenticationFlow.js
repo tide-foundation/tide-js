@@ -16,7 +16,7 @@ export default class dMobileAuthenticationFlow {
 
     constructor(scannedQrCodeAddress){ 
         this.webSocketClient = new WebSocketClientBase(scannedQrCodeAddress);
-        this.requestInfo = this.webSocketClient.waitForMessage("request info");
+        this.requestInfo = this.webSocketClient.waitForMessage("requested info");
         this.webSocketClient.sendMessage({
             type: "request info",
             message: ":)"
@@ -33,11 +33,11 @@ export default class dMobileAuthenticationFlow {
             }
         }
 
-        this.homeOrkOrigin = new URL(this.webSocketClient.socketUrl).origin;
+        this.homeOrkOrigin = new URL(this.webSocketClient.socketUrl()).origin;
         this.appReq = request.appReq;
-        this.sigAppReq = request.sigAppReq;
-        this.sessKeyProof = request.sessKeyProof;
-        this.browserPublicKey = TideKey.FromSerializedComponent(request.browserPublicKey);
+        this.sigAppReq = request.appReqSignature;
+        this.sessKeyProof = request.sessionKeySignature;
+        this.browserPublicKey = TideKey.FromSerializedComponent(request.devicePublicKey);
         this.vendorPublicKey = TideKey.FromSerializedComponent(request.vendorPublicKey);
     }
     /**
@@ -58,8 +58,8 @@ export default class dMobileAuthenticationFlow {
             this.browserPublicKey.get_public_component().Serialize().ToBytes(),
             base64ToBytes(this.sessKeyProof));
 
-        const returnURL = StringFromUint8Array(GetValue(base64ToBytes(appReqParsed["signedReturnURL"]), 0));
-        const returnURLSignature = GetValue(base64ToBytes(appReqParsed["signedReturnURL"]), 1);
+        const returnURL = appReqParsed["returnUrl"];
+        const returnURLSignature = base64ToBytes(appReqParsed["returnUrlSignature"]);
         await this.vendorPublicKey.verify(
             new URLSignatureFormat(returnURL).format(),
             returnURLSignature);
