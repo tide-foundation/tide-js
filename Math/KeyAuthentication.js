@@ -134,7 +134,7 @@ export async function CmkConvertReply(convertResponses, ids, prismAuthis, gCMK, 
 }
 
 /**
- * @param {DeviceConvertResponse[]} convertResponses
+ * @param {Uint8Array[]} encRequesti
  * @param {Uint8Array[]} appAuthi
  * @param {bigint[]} ids
  * @param {Point} gCMK
@@ -144,11 +144,12 @@ export async function CmkConvertReply(convertResponses, ids, prismAuthis, gCMK, 
  * @param {Ed25519PublicComponent} gSessKeyPub
  * @param {string} purpose
  * @param {string} sessionId
+ * @param {Point} gCMKR
  */
-export async function DeviceConvertReply(convertResponses, appAuthi, ids, gCMK, qPub, uDeObf, blurerKPriv, gSessKeyPub, purpose, sessionId){    
+export async function DeviceConvertReply(encRequesti, appAuthi, ids, gCMK, qPub, uDeObf, blurerKPriv, gSessKeyPub, purpose, sessionId, gCMKR){    
     let decPrismRequesti;
     try{
-        const pre_decPrismRequesti = convertResponses.map(async (chall, i) => DecryptedDeviceConvertResponse.from(await AES.decryptData(chall.EncRequesti, appAuthi[i])));
+        const pre_decPrismRequesti = encRequesti.map(async (chall, i) => DecryptedDeviceConvertResponse.from(await AES.decryptData(chall.EncRequesti, appAuthi[i])));
         decPrismRequesti = await Promise.all(pre_decPrismRequesti);
     }catch{
         throw Error("enclave.invalidAccount");
@@ -168,7 +169,6 @@ export async function DeviceConvertReply(convertResponses, appAuthi, ids, gCMK, 
     const CMKMul = mod(BigIntFromByteArray(gUserCMK_Hash.slice(0, 32)));
     const VUID = Bytes2Hex(gUserCMK_Hash.slice(-32));
     const gCMKAuth = gCMK.mul(CMKMul);
-    const gCMKR = Interpolation.AggregatePoints(convertResponses.map(resp => resp.GCMKRi));
     const authToken = AuthRequest.new(VUID, purpose, gSessKeyPub.Serialize().ToString(), timestampi + randBetween(30, 90), sessionId);
     const {blurHCMKMul, blur, gRMul} = await genBlindMessage(gCMKR, gCMKAuth, authToken.toUint8Array(), CMKMul);
 
@@ -231,6 +231,31 @@ export async function AuthenticateBasicReply(vuid, prkECDHi, encSigi, gCMKAuth, 
     const authResp = await Promise.all(pre_authResp);
 
     const blindS = mod(authResp.reduce((sum, next) => sum + next.Si, BigInt(0)));
+    const sig = await unblindSignature(blindS, r4);
+    const blindSigValid = await verifyBlindSignature(sig, gRMul, gCMKAuth, authToken.toUint8Array());
+    if(!blindSigValid) throw Error("Blind Signature Failed");
+    const blindSig = bytesToBase64(serializeBlindSig(sig, gRMul));
+
+    if(gVRK == null){
+        const vendorData = new VendorData(vuid, gCMKAuth, blindSig, authToken).toString();
+        return vendorData;
+    }else{
+        const VendorEncryptedData = await ElGamal.encryptData(StringToUint8Array(new VendorData(vuid, gCMKAuth, blindSig, authToken).toString()), gVRK);
+        return VendorEncryptedData;
+    }
+}
+/**
+ * 
+ * @param {string} vuid 
+ * @param {Uint8Array} sig 
+ * @param {Point} gCMKAuth 
+ * @param {AuthRequest} authToken 
+ * @param {bigint} r4 
+ * @param {Point} gRMul 
+ * @param {Point} gVRK
+ */
+export async function AuthenticateDeviceReply(vuid, sig, gCMKAuth, authToken, r4, gRMul, gVRK){
+    const blindS = BigIntFromByteArray(sig.slice(-32));
     const sig = await unblindSignature(blindS, r4);
     const blindSigValid = await verifyBlindSignature(sig, gRMul, gCMKAuth, authToken.toUint8Array());
     if(!blindSigValid) throw Error("Blind Signature Failed");
