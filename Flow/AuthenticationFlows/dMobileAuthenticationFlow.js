@@ -3,13 +3,16 @@ import EnclaveToMobileTunnelClient from "../../Clients/EnclaveToMobileTunnelClie
 import WebSocketClientBase from "../../Clients/WebSocketClientBase";
 import { DH } from "../../Cryptide";
 import { Ed25519PublicComponent } from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Components";
+import Ed25519Scheme from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Scheme";
 import { Point } from "../../Cryptide/Ed25519";
-import { base64ToBase64Url, base64ToBytes, bytesToBase64, GetUID, GetValue, StringFromUint8Array, StringToUint8Array } from "../../Cryptide/Serialization";
+import { base64ToBase64Url, base64ToBytes, BigIntToByteArray, bytesToBase64, CreateTideMemoryFromArray, GetUID, GetValue, StringFromUint8Array, StringToUint8Array } from "../../Cryptide/Serialization";
 import { ClientURLSignatureFormat, URLSignatureFormat } from "../../Cryptide/Signing/TideSignature";
 import TideKey from "../../Cryptide/TideKey";
-import { AuthenticateBasicReply, CmkConvertReply, DeviceConvertReply } from "../../Math/KeyAuthentication";
+import { AuthenticateBasicReply, AuthenticateDeviceReply, CmkConvertReply, DeviceConvertReply } from "../../Math/KeyAuthentication";
+import BaseTideRequest from "../../Models/BaseTideRequest";
 import KeyInfo from "../../Models/Infos/KeyInfo";
 import { Threshold, WaitForNumberofORKs } from "../../Tools/Utils";
+import dVVKSigningFlow2Step from "../SigningFlows/dVVKSigningFlow2Step";
 import VoucherFlow from "../VoucherFlows/VoucherFlow";
 
 export default class dMobileAuthenticationFlow {
@@ -39,6 +42,7 @@ export default class dMobileAuthenticationFlow {
         this.sessKeyProof = request.sessKeyProof;
         this.browserPublicKey = TideKey.FromSerializedComponent(request.browserPublicKey);
         this.vendorPublicKey = TideKey.FromSerializedComponent(request.vendorPublicKey);
+        this.voucherURL = request.voucherURL;
     }
     /**
      *  @param {string} username
@@ -81,76 +85,72 @@ export default class dMobileAuthenticationFlow {
     /**
      * 
      * @param {string} devicePrivateKey 
-     * @param {string} purpose
      * @param {string} sessionId
      * @param {boolean} rememberMe
      */
-    async authenticate(devicePrivateKey, purpose, sessionId, rememberMe) {
+    async authenticate(devicePrivateKey, sessionId, rememberMe) {
         if (!this.userId) throw 'Make sure you run ensureReady first';
+
+        const sessionKey = TideKey.NewKey(Ed25519Scheme);
 
         const simClient = new SimClient(this.homeOrkOrigin);
         const userInfo = await simClient.GetKeyInfo(this.userId);
-
         const userInfoRef = new KeyInfo(userInfo.UserId, userInfo.UserPublic, userInfo.UserM, userInfo.OrkInfo.slice()); // we need the full ork list later for the enclave encrypted data
 
-        const convertClients = userInfo.OrkInfo.map(ork => new NodeClient(ork.orkURL));
-        const voucherFlow = new VoucherFlow(userInfo.OrkInfo.map(o => o.orkPaymentPublic), JSON.parse(this.appReq)["voucherURL"], "signin");
-        const { vouchers, k } = await voucherFlow.GetVouchers();
+        const signingFlow = new dVVKSigningFlow2Step(this.userId, userInfo.UserPublic, userInfo.OrkInfo, sessionKey, null, this.voucherURL);
 
-        const pre_ConvertResponses = convertClients.map((client, i) => client.DeviceConvert(i, this.userId, appReqParsed["gSessKeyPub"], rememberMe, vouchers.toORK(i), userInfo.UserM, true, true));
+        const request = new BaseTideRequest("DeviceAuthentication", "1", "", new Uint8Array([rememberMe ? 1 : 0]));
+        signingFlow.setRequest(request);
+        const pre_encRequesti = signingFlow.preSign();
 
+        // Compute appAuthi will awaiting request
         const dvk = TideKey.FromSerializedComponent(devicePrivateKey);
         const appAuthi = await DH.generateECDHi(userInfo.OrkInfo.map(o => o.orkPublic), dvk.get_private_component().priv); // To save time
 
-        const { fulfilledResponses, bitwise } = await WaitForNumberofORKs(userInfo.OrkInfo, pre_ConvertResponses, "CMK", Threshold, null, appAuthi);
-        const ids = userInfo.OrkInfo.map(c => BigInt(c.orkID));
+        const encRequesti = await pre_encRequesti;
 
-        const convertInfo = await DeviceConvertReply(
-            fulfilledResponses.map(c => c.DeviceConvertResponse),
+        const convertinfo = await DeviceConvertReply(
+            encRequesti, 
             appAuthi,
-            ids,
+            signingFlow.orks.map(o => BigInt(o.orkID)), // use signing flow orks reference since these reference the orks that are part of this request
             userInfo.UserPublic,
             vouchers.qPub,
             vouchers.UDeObf,
             k,
-            this.sessionKeyPublic,
-            purpose,
-            sessionId
+            sessionKey,
+            "device_auth",
+            sessionId,
+            signingFlow.preSignState.GRj[0]
         );
 
-        // Start authenticate
-        const authenticateClients = userInfo.OrkInfo.map(ork => new NodeClient(ork.orkURL)); // recreate the clients with the updated userInfo.OrkInfo orks that responded from the Convert (remember userInfo.OrkInfo is changed in WaitForNumberofORKs)
+        const toSend = convertinfo.decPrismRequesti.map(d => {
+            return CreateTideMemoryFromArray([base64ToBytes(d.PRKRequesti), BigIntToByteArray(convertinfo.blurHCMKMul)])
+        });
+        const blindSig = (await signingFlow.sign(toSend)).sigs[0];
 
-        const pre_encSig = authenticateClients.map((client, i) => client.DeviceAuthenticate(
-            this.keyInfo.UserId,
-            convertInfo.decPrismRequesti.map(d => d.PRKRequesti),
-            convertInfo.blurHCMKMul,
-            serializeBitArray(bitwise)));
-        const encSig = await Promise.all(pre_encSig);
 
-        const vendorData = await AuthenticateBasicReply(
-            convertInfo.VUID,
-            appAuthi,
-            encSig,
-            convertInfo.gCMKAuth,
-            convertInfo.authToken,
-            convertInfo.r4,
-            convertInfo.gRMul,
+        const vendorData = await AuthenticateDeviceReply(
+            convertinfo.VUID,
+            blindSig,
+            convertinfo.gCMKAuth,
+            convertinfo.authToken,
+            convertinfo.r4,
+            convertinfo.gRMul,
             null
         );
 
         // Return enclave encrypted data
         const enclaveEncryptedData = await this.browserPublicKey.asymmetricEncrypt(StringToUint8Array(JSON.stringify(
             {
-                prkRequesti: convertInfo.decPrismRequesti.map(d => d.PRKRequesti),
+                prkRequesti: convertinfo.decPrismRequesti.map(d => d.PRKRequesti),
                 vendorData: vendorData,
                 rememberMe: rememberMe,
                 enclaveEntry: {
                     username: this.username,
                     //persona, not really supported yet
-                    expired: convertInfo.expired,
+                    expired: convertinfo.expired,
                     userInfo: userInfoRef.toNativeTypeObject(),
-                    orksBitwise: bitwise,
+                    orksBitwise: signingFlow.preSignState.bitwise,
                 }
             }
         )));
