@@ -59,11 +59,11 @@ export default class dVVKSigningFlow {
 
         const pre_PreSignResponses = clients.map((client, i) => client.PreSign(i, this.vvkid, request, vouchers.toORK(i)));
         const { fulfilledResponses, bitwise } = await WaitForNumberofORKs(this.orks, pre_PreSignResponses, "VVK", waitForAll ? Max : Threshold, null, clients);
-        const GRj = PreSign(fulfilledResponses);
+        const GRj = PreSign(fulfilledResponses.map(f => f.GRis));
 
         const pre_SignResponses = clients.map(client => client.Sign(this.vvkid, request, GRj, serializeBitArray(bitwise)));
         const SignResponses = await Promise.all(pre_SignResponses);
-        const Sj = SumS(SignResponses);
+        const Sj = SumS(SignResponses.map(s => s.Sij));
 
         if (GRj.length != Sj.length) throw Error("Weird amount of GRjs and Sjs");
         let sigs = [];

@@ -390,17 +390,22 @@ export default class NodeClient extends ClientBase {
 
         if(!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
 
-        const response = await this._post(`/Authentication/Key/v1/PreSign?vuid=${vuid}`, data);
+        const response = await this._post(`/Authentication/Key/v2/PreSign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'PreSign');
         const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
-        if (decrypted.length % 32 != 0) throw new Error("Unexpected response legnth. Must be divisible by 32");
+        const GRSection = GetValue(decrypted, 0);
+        if (GRSection.length % 32 != 0) throw new Error("Unexpected response legnth. Must be divisible by 32");
         let GRis = [];
-        for (let i = 0; i < decrypted.length; i += 32) {
-            GRis.push(Point.fromBytes(decrypted.slice(i, i + 32)));
+        for (let i = 0; i < GRSection.length; i += 32) {
+            GRis.push(Point.fromBytes(GRSection.slice(i, i + 32)));
         }
         return {
             index,
-            GRis
+            data: {
+                GRis,
+                AdditionalData: GetValue(decrypted, 1)
+            }
+            
         }
     }
 
@@ -427,14 +432,18 @@ export default class NodeClient extends ClientBase {
         
         if(!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
 
-        const response = await this._post(`/Authentication/Key/v1/Sign?vuid=${vuid}`, data);
+        const response = await this._post(`/Authentication/Key/v2/Sign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'Sign');
         const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
+        const signatureSection = GetValue(decrypted, 0);
         let Sij = [];
-        for (let i = 0; i < decrypted.length; i += 32) {
-            Sij.push(BigIntFromByteArray(decrypted.slice(i, i + 32)));
+        for (let i = 0; i < signatureSection.length; i += 32) {
+            Sij.push(BigIntFromByteArray(signatureSection.slice(i, i + 32)));
         }
-        return Sij;
+        return {
+            Sij,
+            AdditionalData: GetValue(decrypted, 1)
+        }
     }
     /**
      * @param {number} index 
