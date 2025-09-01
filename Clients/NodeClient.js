@@ -403,7 +403,8 @@ export default class NodeClient extends ClientBase {
             index,
             data: {
                 GRis,
-                AdditionalData: GetValue(decrypted, 1)
+                AdditionalData: GetValue(decrypted, 1),
+                SessionId : GetValue(decrypted, 2)
             }
             
         }
@@ -415,12 +416,14 @@ export default class NodeClient extends ClientBase {
      * @param {BaseTideRequest} request
      * @param {Point[]} GRs
      * @param {Uint8Array} bitwise
+     * @param {Uint8Array} sessId
      */
-    async Sign(vuid, request, GRs, bitwise) {
+    async Sign(vuid, request, GRs, bitwise, sessId) {
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
         const payload = CreateTideMemoryFromArray([
             request.encode(),
-            ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes())])]
+            ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes())])],
+            sessId
         );
         const encrypted = await AES.encryptData(payload, this.DHKey);
         const data = this._createFormData(
