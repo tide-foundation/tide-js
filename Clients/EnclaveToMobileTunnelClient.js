@@ -19,14 +19,14 @@ export default class EnclaveToMobileTunnelClient extends WebSocketClientBase{
     /**
      * 
      * @param {string} voucherURL 
-     * @param {TideKey} devicePublicKey 
+     * @param {TideKey} browserPublicKey 
      * @param {string} appReq
      * @param {string} appReqSignature
      * @param {TideKey} sessionKey
      * @param {string} sessionKeySignature
      * @param {TideKey} vendorPublicKey
      */
-    async passEnclaveInfo(voucherURL, devicePublicKey, appReq, appReqSignature, sessionKey, sessionKeySignature, vendorPublicKey){
+    async passEnclaveInfo(voucherURL, browserPublicKey, appReq, appReqSignature, sessionKey, sessionKeySignature, vendorPublicKey){
         await this.waitForMessage("request info"); // we need to make sure mobile is ready to recieve our request
         await this.sendMessage({
             type: "requested info",
@@ -36,7 +36,7 @@ export default class EnclaveToMobileTunnelClient extends WebSocketClientBase{
                 sessionKey: sessionKey.get_public_component().Serialize().ToString(),
                 sessionKeySignature,
                 voucherURL,
-                devicePublicKey: devicePublicKey.get_public_component().Serialize().ToString(),
+                browserPublicKey: browserPublicKey.get_public_component().Serialize().ToString(),
                 vendorPublicKey: vendorPublicKey.get_public_component().Serialize().ToString()
             }
         });
