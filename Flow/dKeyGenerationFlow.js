@@ -169,33 +169,6 @@ export default class dKeyGenerationFlow{
     }
 
     /**
-     * @param {string} auth
-     * @param {string} authSig
-     */
-    async GenVVKShard(auth, authSig) {
-        const clients = this.orks.map(ork => new NodeClient(ork.orkURL)) // create node clients
-
-        const {vouchers} = await (new VoucherFlow(this.orks.map(o => o.orkPaymentPublic), this.voucherURL, "vendorcreation").GetVouchers(this.getVouchersFunction));
-
-        const ids = this.orks.map(ork => ork.orkID);
-        const pre_GenShardResponses = clients.map((client, i) => client.GenVVKShard(this.uid, this.gVRK, auth, authSig, ids, vouchers.toORK(i)));
-
-        // create prkECDHi here to save time
-        const prkECHi = await DH.generateECDHi(this.orks.map(o => o.orkPublic), this.sessKey);
-
-        const fulfilledResponses = await Promise.all(pre_GenShardResponses);
-        const bitwise = new Array(Max).fill(1); // all must respond
-
-        this.gState = {
-            bitwise: bitwise,
-            prkECHi,
-            ... await ProcessShards(fulfilledResponses, bitwise, this.sessKey, true)
-        };
-
-        return {gK: this.gState.gK}
-    }
-
-    /**
      * @param {string} authorizer
      * @param {string} keyType
      */

@@ -62,7 +62,7 @@ export default class dVVKSigningFlow {
         const { fulfilledResponses, bitwise } = await WaitForNumberofORKs(this.orks, pre_PreSignResponses, "VVK", waitForAll ? Max : Threshold, null, clients);
         const GRj = PreSign(fulfilledResponses.map(f => f.GRis));
 
-        const pre_SignResponses = clients.map((client, i) => client.Sign(this.vvkid, request, GRj, serializeBitArray(bitwise), fulfilledResponses[i].SessionId));
+        const pre_SignResponses = clients.map((client, i) => client.Sign(this.vvkid, request, GRj, serializeBitArray(bitwise)));
         const SignResponses = await Promise.all(pre_SignResponses);
         const Sj = SumS(SignResponses.map(s => s.Sij));
 
