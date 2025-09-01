@@ -390,7 +390,7 @@ export default class NodeClient extends ClientBase {
 
         if(!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
 
-        const response = await this._post(`/Authentication/Key/v2/PreSign?vuid=${vuid}`, data);
+        const response = await this._post(`/Authentication/Key/v1/PreSign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'PreSign');
         const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
         const GRSection = GetValue(decrypted, 0);
@@ -435,7 +435,7 @@ export default class NodeClient extends ClientBase {
         
         if(!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
 
-        const response = await this._post(`/Authentication/Key/v2/Sign?vuid=${vuid}`, data);
+        const response = await this._post(`/Authentication/Key/v1/Sign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'Sign');
         const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
         const signatureSection = GetValue(decrypted, 0);
