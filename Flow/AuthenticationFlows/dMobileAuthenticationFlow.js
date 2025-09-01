@@ -64,12 +64,6 @@ export default class dMobileAuthenticationFlow {
             this.browserPublicKey.get_public_component().Serialize().ToBytes(),
             base64ToBytes(this.sessKeyProof));
 
-        const returnURL = StringFromUint8Array(GetValue(base64ToBytes(appReqParsed["signedReturnURL"]), 0));
-        const returnURLSignature = GetValue(base64ToBytes(appReqParsed["signedReturnURL"]), 1);
-        await this.vendorPublicKey.verify(
-            new URLSignatureFormat(returnURL).format(),
-            returnURLSignature);
-
         this.sessionId = appReqParsed["sessionId"];
 
         // Checks if gBRK is familiar (expected to do that (outside this flow) in mobile app)
