@@ -43,4 +43,10 @@ export default class EnclaveToMobileTunnelClient extends WebSocketClientBase{
         const enclaveEncryptedData = await this.waitForMessage("mobile completed");
         return enclaveEncryptedData;
     }
+
+    async indicateSuccess(){
+        await this.sendMessage({
+            type: "login sucess"
+        });
+    }
 }

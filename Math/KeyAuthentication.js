@@ -94,6 +94,33 @@ export async function PrismConvertReply(convertResponses, ids, mgORKi, r1, prkEC
 
     return {prismAuthis, timestampi, selfRequesti, expired}
 }
+/**
+ * @param {PrismConvertResponse[]} convertResponses 
+ * @param {bigint[]} ids
+ * @param {Point[]} mgORKi 
+ * @param {bigint} r1 
+ */
+export async function DevicePrismConvertReply(convertResponses, ids, mgORKi, r1){    
+    // ∑ gPass ⋅ r1 ⋅ PRISMi ⋅ li / r1
+    const gPassPRISM = Interpolation.AggregatePointsWithIds(convertResponses.map(resp => resp.GBlurPassPrismi), ids).divide(r1);
+    const gPassPRISM_hashed = await gPassPRISM.hash();
+
+    const prismAuthis = await DH.generateECDHi(mgORKi, gPassPRISM_hashed);
+
+    let decPrismRequesti;
+    try{
+        const pre_decPrismRequesti = convertResponses.map(async (chall, i) => DecryptedPrismConvertResponse.from(await AES.decryptData(chall.EncRequesti, prismAuthis[i])));
+        decPrismRequesti = await Promise.all(pre_decPrismRequesti);
+    }catch{
+        throw Error("enclave.invalidAccount");
+    }
+    const timestampi = median(decPrismRequesti.map(resp => resp.Timestampi));
+
+    // Calculate when the stored token expires
+    const expired = CurrentTime() + Min(decPrismRequesti.map(d => d.Exti));
+
+    return {prismAuthis, timestampi, prkRequesti: decPrismRequesti.map(d => d.PRKRequesti), expired}
+}
 
 /**
  * @param {CMKConvertResponse[]} convertResponses 
@@ -256,10 +283,10 @@ export async function AuthenticateBasicReply(vuid, prkECDHi, encSigi, gCMKAuth, 
  */
 export async function AuthenticateDeviceReply(vuid, sig, gCMKAuth, authToken, r4, gRMul, gVRK){
     const blindS = BigIntFromByteArray(sig.slice(-32));
-    const sig = await unblindSignature(blindS, r4);
-    const blindSigValid = await verifyBlindSignature(sig, gRMul, gCMKAuth, authToken.toUint8Array());
+    const usig = await unblindSignature(blindS, r4);
+    const blindSigValid = await verifyBlindSignature(usig, gRMul, gCMKAuth, authToken.toUint8Array());
     if(!blindSigValid) throw Error("Blind Signature Failed");
-    const blindSig = bytesToBase64(serializeBlindSig(sig, gRMul));
+    const blindSig = bytesToBase64(serializeBlindSig(usig, gRMul));
 
     if(gVRK == null){
         const vendorData = new VendorData(vuid, gCMKAuth, blindSig, authToken).toString();

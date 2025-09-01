@@ -2,15 +2,17 @@ import { NodeClient, SimClient } from "../..";
 import EnclaveToMobileTunnelClient from "../../Clients/EnclaveToMobileTunnelClient";
 import WebSocketClientBase from "../../Clients/WebSocketClientBase";
 import { DH } from "../../Cryptide";
-import { Ed25519PublicComponent } from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Components";
+import { Ed25519PrivateComponent, Ed25519PublicComponent } from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Components";
 import Ed25519Scheme from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Scheme";
 import { Point } from "../../Cryptide/Ed25519";
+import HashToPoint from "../../Cryptide/Hashing/H2P";
 import { base64ToBase64Url, base64ToBytes, BigIntToByteArray, bytesToBase64, CreateTideMemoryFromArray, GetUID, GetValue, StringFromUint8Array, StringToUint8Array } from "../../Cryptide/Serialization";
 import { ClientURLSignatureFormat, URLSignatureFormat } from "../../Cryptide/Signing/TideSignature";
 import TideKey from "../../Cryptide/TideKey";
-import { AuthenticateBasicReply, AuthenticateDeviceReply, CmkConvertReply, DeviceConvertReply } from "../../Math/KeyAuthentication";
+import { AuthenticateBasicReply, AuthenticateDeviceReply, CmkConvertReply, DeviceConvertReply, DevicePrismConvertReply, PrismConvertReply } from "../../Math/KeyAuthentication";
 import BaseTideRequest from "../../Models/BaseTideRequest";
 import KeyInfo from "../../Models/Infos/KeyInfo";
+import PrismConvertResponse from "../../Models/Responses/KeyAuth/Convert/PrismConvertResponse";
 import { Threshold, WaitForNumberofORKs } from "../../Tools/Utils";
 import dVVKSigningFlow2Step from "../SigningFlows/dVVKSigningFlow2Step";
 import VoucherFlow from "../VoucherFlows/VoucherFlow";
@@ -57,8 +59,8 @@ export default class dMobileAuthenticationFlow {
             base64ToBytes(this.sigAppReq));
 
         const appReqParsed = JSON.parse(this.appReq);
-        this.sessionKeyPublic = TideKey.FromSerializedComponent(appReqParsed["gSessKeyPub"]);
-        await this.sessionKeyPublic.verify(
+        this.enclaveSessionKeyPublic = TideKey.FromSerializedComponent(appReqParsed["gSessKeyPub"]);
+        await this.enclaveSessionKeyPublic.verify(
             this.browserPublicKey.get_public_component().Serialize().ToBytes(),
             base64ToBytes(this.sessKeyProof));
 
@@ -67,6 +69,8 @@ export default class dMobileAuthenticationFlow {
         await this.vendorPublicKey.verify(
             new URLSignatureFormat(returnURL).format(),
             returnURLSignature);
+
+        this.sessionId = appReqParsed["sessionId"];
 
         // Checks if gBRK is familiar (expected to do that (outside this flow) in mobile app)
         // ...
@@ -85,21 +89,21 @@ export default class dMobileAuthenticationFlow {
     /**
      * 
      * @param {string} devicePrivateKey 
-     * @param {string} sessionId
      * @param {boolean} rememberMe
      */
-    async authenticate(devicePrivateKey, sessionId, rememberMe) {
+    async authenticate(devicePrivateKey, rememberMe, test=false) {
         if (!this.userId) throw 'Make sure you run ensureReady first';
 
-        const sessionKey = TideKey.NewKey(Ed25519Scheme);
+        const deviceSessionKey = TideKey.NewKey(Ed25519Scheme);
 
         const simClient = new SimClient(this.homeOrkOrigin);
         const userInfo = await simClient.GetKeyInfo(this.userId);
         const userInfoRef = new KeyInfo(userInfo.UserId, userInfo.UserPublic, userInfo.UserM, userInfo.OrkInfo.slice()); // we need the full ork list later for the enclave encrypted data
 
-        const signingFlow = new dVVKSigningFlow2Step(this.userId, userInfo.UserPublic, userInfo.OrkInfo, sessionKey, null, this.voucherURL);
+        const signingFlow = new dVVKSigningFlow2Step(this.userId, userInfo.UserPublic, userInfo.OrkInfo, deviceSessionKey, null, this.voucherURL);
 
-        const request = new BaseTideRequest("DeviceAuthentication", "1", "", new Uint8Array([rememberMe ? 1 : 0]));
+        const draft = CreateTideMemoryFromArray([this.enclaveSessionKeyPublic.get_public_component().Serialize().ToString(), new Uint8Array([rememberMe ? 1 : 0])]);
+        const request = new BaseTideRequest((test ? "Test" : "") + "DeviceAuthentication", "1", "", draft);
         signingFlow.setRequest(request);
         const pre_encRequesti = signingFlow.preSign();
 
@@ -111,15 +115,15 @@ export default class dMobileAuthenticationFlow {
 
         const convertinfo = await DeviceConvertReply(
             encRequesti, 
-            appAuthi,
+            appAuthi.filter((_, i) => signingFlow.preSignState.bitwise[i] == true), // only use the appAuthis for the orks that responded (as shown in bitwise)
             signingFlow.orks.map(o => BigInt(o.orkID)), // use signing flow orks reference since these reference the orks that are part of this request
             userInfo.UserPublic,
             vouchers.qPub,
             vouchers.UDeObf,
             k,
-            sessionKey,
+            deviceSessionKey,
             "device_auth",
-            sessionId,
+            this.sessionId,
             signingFlow.preSignState.GRj[0]
         );
 
@@ -140,7 +144,7 @@ export default class dMobileAuthenticationFlow {
         );
 
         // Return enclave encrypted data
-        const enclaveEncryptedData = await this.browserPublicKey.asymmetricEncrypt(StringToUint8Array(JSON.stringify(
+        this.enclaveEncryptedData = await this.browserPublicKey.asymmetricEncrypt(StringToUint8Array(JSON.stringify(
             {
                 prkRequesti: convertinfo.decPrismRequesti.map(d => d.PRKRequesti),
                 vendorData: vendorData,
@@ -153,21 +157,78 @@ export default class dMobileAuthenticationFlow {
                     orksBitwise: signingFlow.preSignState.bitwise,
                 }
             }
-        )));
-
-
-        await this.webSocketClient.sendMessage({
-            type: "mobile completed",
-            message: enclaveEncryptedData
-        });
+        )));        
     }
 
-    pairNewDevice(username, password) {
+    async finish(){
+        if(!this.enclaveEncryptedData) throw 'Call Authenticate() first';
+
+        const success = this.webSocketClient.waitForMessage("login success");
+        await this.webSocketClient.sendMessage({
+            type: "mobile completed",
+            message: this.enclaveEncryptedData
+        });
+        await success;
+    }
+
+    async testAuthenticate(devicePrivateKey){
+        await this.authenticate(devicePrivateKey, false, true);
+        await this.finish();
+    }
+
+    async pairNewDevice(devicePrivateKey, password) {
         // This is where we submit the new device key to the orks 
 
         // Also we authenticate using the username, password
 
         // Later - when its a device allowing another device to pair - we'll need to show a qr code
 
+        if (!this.userId) throw 'Make sure you run ensureReady first';
+
+        const dvk = TideKey.FromSerializedComponent(devicePrivateKey);
+        const sessionKey = TideKey.NewKey(Ed25519Scheme);
+
+        const simClient = new SimClient(this.homeOrkOrigin);
+        const userInfo = await simClient.GetKeyInfo(this.userId);
+
+        const draft = CreateTideMemoryFromArray([
+            dvk.get_public_component().Serialize().ToBytes(), 
+            await dvk.sign(sessionKey.get_public_component().Serialize().ToBytes())],
+        );
+
+        const request = new BaseTideRequest("MigratePasswordToMobile", "1", "", draft);
+
+        const signingFlow = new dVVKSigningFlow2Step(this.userId, userInfo.UserPublic, userInfo.OrkInfo, sessionKey, null, this.voucherURL);
+        signingFlow.setRequest(request);
+
+        const gPass = new Ed25519PublicComponent(await HashToPoint(password));
+        const r1 = Ed25519PrivateComponent.New();
+        const gBlurPass = gPass.MultiplyComponent(r1);
+
+        const prismConvertResponses = (await signingFlow.preSign(gBlurPass.Serialize().ToString())).map(r => {
+            return new PrismConvertResponse(StringFromUint8Array(GetValue(r, 0)), TideKey.FromSerializedComponent(GetValue(r, 1)).get_public_component().public); // conversion so we can use PrismConvertReply function
+        });
+
+        const convertInfo = await DevicePrismConvertReply(
+            prismConvertResponses,
+            signingFlow.orks.map(o => BigInt(o.orkID)), // use signing flow orks reference since these reference the orks that are part of this request
+            signingFlow.orks.map(o => o.orkPublic), // use signing flow orks reference since these reference the orks that are part of this request
+            r1.priv
+        );
+
+        const dynDatas = convertInfo.prkRequesti.map(p => {
+            return CreateTideMemoryFromArray([base64ToBytes(p), BigIntToByteArray(convertInfo.timestampi)]);
+        })
+
+        const M_signature = (await signingFlow.sign(dynDatas)).sigs[0];
+
+        // Now do test sign in
+        await this.testAuthenticate(devicePrivateKey);
+
+
+        // Now we commit
+        // We'll need to construct the requests ourselves since this wasn't made as part of the key gen flow
+        const preCommit = signingFlow.orks.map(o => new NodeClient(o.orkURL).Commit(this.userId, M_signature.slice(-32), sessionKey));
+        await Promise.all(preCommit);
     }
 }

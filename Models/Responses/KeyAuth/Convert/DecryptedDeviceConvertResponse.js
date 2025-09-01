@@ -16,6 +16,7 @@
 //
 
 import { Point } from "../../../../Cryptide/Ed25519.js";
+import TideKey from "../../../../Cryptide/TideKey.js";
 
 
 export default class DecryptedDeviceConvertResponse{
@@ -34,7 +35,7 @@ export default class DecryptedDeviceConvertResponse{
     static from(data){
         const obj = JSON.parse(data);
         const timestamp = BigInt(obj.Timestampi);
-        const userPRISMi = Point.fromBase64(obj.UserPRISMi)
+        const userPRISMi = TideKey.FromSerializedComponent(obj.UserPRISMi).get_public_component().public;
         return new DecryptedDeviceConvertResponse(obj.PRKRequesti, timestamp, obj.Exti, userPRISMi);
     }
 }
