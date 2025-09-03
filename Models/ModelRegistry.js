@@ -2,47 +2,47 @@ import { GetValue, StringFromUint8Array } from "../Cryptide/Serialization.js";
 import InitializationCertificate from "./InitializationCertificate.js";
 import RuleSettings from "./Rules/RuleSettings.js";
 import CardanoTxBody from "./Cardano/CardanoTxBody.js";
-import HederaTxBody, { unwrapHederaBody } from "./Hedera/HederaTxBody.js";
-export class ModelRegistry {
+
+export class ModelRegistry{
     /**
      * 
      * @param {string} modelId 
      * @returns {HumanReadableModelBuilder}
      */
-    static getHumanReadableModelBuilder(modelId, data, expiry) {
+    static getHumanReadableModelBuilder(modelId, data, expiry){
         const c = modelBuildersMap[modelId];
-        if (!c) throw Error("Could not find model: " + modelId);
+        if(!c) throw Error("Could not find model: " + modelId);
         return c.create(data, expiry);
     }
 }
 
-export class HumanReadableModelBuilder {
-    constructor(data, expiry) {
+export class HumanReadableModelBuilder{
+    constructor(data, expiry){
         this._data = data;
         this._expiry = expiry;
     }
-    static create(data, expiry) {
+    static create(data, expiry){
         return new this(data, expiry);
     }
-    getHumanReadableObject() {
+    getHumanReadableObject(){
         throw Error("Not implemented for this model");
     }
 }
 
 // MODELS ----------------------------------------------------------------
-class UserContextSignRequestBuilder extends HumanReadableModelBuilder {
+class UserContextSignRequestBuilder extends HumanReadableModelBuilder{
     _name = "UserContext"; // Model ID
     _humanReadableName = "Change Request";
     _version = "1";
     get _id() { return this._name + ":" + this._version; }
 
-    constructor(data, expiry) {
+    constructor(data, expiry){
         super(data, expiry);
     }
-    static create(data, expiry) {
+    static create(data, expiry){
         return super.create(data, expiry);
     }
-    getHumanReadableObject() {
+    getHumanReadableObject(){
         // deserialize draft here and return a pretty object for user
         let prettyObject = {};
 
@@ -51,7 +51,7 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder {
         draftIndex++;
 
         // determine if InitCert is present
-        switch (initCertPresent) {
+        switch(initCertPresent){
             case 0:
                 break;
             case 1:
@@ -65,9 +65,9 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder {
         // make sure user context is JSON
         let cont = true;
         prettyObject.UserContexts = [];
-        while (cont) {
-            try { prettyObject.UserContexts.push(JSON.parse(StringFromUint8Array(GetValue(this._data, draftIndex)))); draftIndex++; }
-            catch { cont = false; }
+        while(cont){
+            try{prettyObject.UserContexts.push(JSON.parse(StringFromUint8Array(GetValue(this._data, draftIndex))));draftIndex++;}
+            catch{cont = false;}
         }
 
         // Create summary
@@ -77,15 +77,15 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder {
         // All clients will be either realm-management or under resource_management
         let clients = [];
         prettyObject.UserContexts.map(c => {
-            if (c.realm_access) clients.push("realm_access");
-            if (typeof c.resource_access === "object") {
+            if(c.realm_access) clients.push("realm_access");
+            if(typeof c.resource_access === "object"){
                 clients.push(...Object.keys(c.resource_access));
             }
         })
         clients = [...new Set(clients)];
         summary.push(["Applications affected", clients.join(", ")]);
         summary.push(["Expiry", unixSecondsToLocaleString(this._expiry)])
-
+        
         // return a nice object of InitCert? and usercontexts
         return {
             summary: summary,
@@ -93,16 +93,16 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder {
         }
     }
 }
-class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder { // this is an example class
+class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder{ // this is an example class
     _name = "CardanoTx"; // Model ID
     _version = "1";
     get _id() { return this._name + ":" + this._version; }
 
-    constructor(data, expiry) {
+    constructor(data, expiry){
         //throw Error("Not implemented");
         super(data, expiry);
     }
-    getHumanReadableObject() {
+    getHumanReadableObject(){
         // deserialize draft here and return a pretty object for user
         const txBytes = GetValue(this._data, 0);
         const body = new CardanoTxBody(txBytes);
@@ -119,53 +119,17 @@ class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder { // this is
         }
     }
 }
-class HederaTxSignRequestBuilder extends HumanReadableModelBuilder {
-    _name = "HederaTx";
-    _version = "1";
-    get _id() { return `${this._name}:${this._version}`; }
 
-    constructor(data, expiry) {
-        super(data, expiry);
-    }
-
-    getHumanReadableObject() {
-        // 1) Get the raw bytes (Uint8Array). Do NOT convert to string.
-        const raw = GetValue(this._data, 0); // Uint8Array | BufferSource
-
-        // 2) Parse. HederaTxBody internally unwraps Transaction/SignedTransaction → TransactionBody.
-        const hedera = new HederaTxBody(raw);
-
-        // 3) Pretty object: already in the exact “draft JSON” shape you asked for
-        const draft = hedera.toPrettyObject();
-
-        // 4) Optional summary: a couple of human lines
-        const summary = [];
-        if (Array.isArray(draft.transfers)) {
-            for (const t of draft.transfers) {
-                const who = typeof t.publicKey === "string" ? t.publicKey : "(alias)";
-                const dir = t.isDebit ? "Send" : "Receive";
-                summary.push([`${dir} ${t.amount} tinybar`, who]);
-            }
-        }
-        summary.push(["Fee", draft.transactionFee]);
-
-        return {
-            summary,
-            pretty: draft
-        };
-    }
-}
-
-class RuleSettingSignRequestBuilder extends HumanReadableModelBuilder { // this is an example class
+class RuleSettingSignRequestBuilder extends HumanReadableModelBuilder{ // this is an example class
     _name = "Rules"; // Model ID
     _version = "1";
     get _id() { return this._name + ":" + this._version; }
 
-    constructor(data, expiry) {
+    constructor(data, expiry){
         //throw Error("Not implemented");
         super(data, expiry);
     }
-    getHumanReadableObject() {
+    getHumanReadableObject(){
         // deserialize draft here and return a pretty object for user
         let prettyObject = {};
 
@@ -174,7 +138,7 @@ class RuleSettingSignRequestBuilder extends HumanReadableModelBuilder { // this 
         draftIndex++;
 
         // determine if InitCert is present
-        switch (previousRulesPresent) {
+        switch(previousRulesPresent){
             case 0:
                 break;
             case 1:
@@ -187,7 +151,7 @@ class RuleSettingSignRequestBuilder extends HumanReadableModelBuilder { // this 
         }
 
         const newRuleSettings = GetValue(this._data, draftIndex);
-        prettyObject.NewRuleSetting = new RuleSettings(StringFromUint8Array(newRuleSettings)).toPrettyObject();
+        prettyObject.NewRuleSetting = new RuleSettings(StringFromUint8Array(newRuleSettings)).toPrettyObject(); 
         return {
             summary: [["No summary for RuleSettings"]],
             pretty: prettyObject
@@ -198,20 +162,19 @@ class RuleSettingSignRequestBuilder extends HumanReadableModelBuilder { // this 
 const modelBuildersMap = {
     [new UserContextSignRequestBuilder()._id]: UserContextSignRequestBuilder,
     [new CardanoTxSignRequestBuilder()._id]: CardanoTxSignRequestBuilder,
-    [new RuleSettingSignRequestBuilder()._id]: RuleSettingSignRequestBuilder,
-    [new HederaTxSignRequestBuilder()._id]: HederaTxSignRequestBuilder
+    [new RuleSettingSignRequestBuilder()._id]: RuleSettingSignRequestBuilder
 }
 
 const unixSecondsToLocaleString = (unixSeconds) => {
-    const milliseconds = unixSeconds * 1000;
-    const date = new Date(milliseconds);
+  const milliseconds = unixSeconds * 1000;
+  const date = new Date(milliseconds);
 
-    return date.toLocaleString('en-GB', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-    });
+  return date.toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
 };
