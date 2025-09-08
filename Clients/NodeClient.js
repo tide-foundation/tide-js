@@ -397,9 +397,9 @@ export default class NodeClient extends ClientBase {
         if (!this.orkCacheId) throw Error("Call PreSign first");
         const payload = CreateTideMemoryFromArray([
             request.encode(),
-            ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes())])],
+            ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes())]),
             this.orkCacheId
-        );
+        ]);
         const encrypted = await AES.encryptData(payload, this.DHKey);
         const data = this._createFormData(
             {
@@ -418,7 +418,7 @@ export default class NodeClient extends ClientBase {
         for (let i = 0; i < signatureSection.length; i += 32) {
             Sij.push(BigIntFromByteArray(signatureSection.slice(i, i + 32)));
         }
-        
+
         delete this.orkCacheId;
         return {
             Sij,
