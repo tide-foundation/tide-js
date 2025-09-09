@@ -41,7 +41,7 @@ export default class Ed25519Scheme extends BaseScheme{
     static GetDecryptingFunction = () => {
         const decryptingFunc = async (cipher, component) => {
             if(cipher instanceof Uint8Array && component instanceof Ed25519PrivateComponent){
-                return await ElGamal.decryptData(cipher, component.priv);
+                return await ElGamal.decryptDataRaw(cipher, component.priv);
             }
             else throw Error("Mismatch between expected types (Uint8Array, Ed25519PrivateComponent)");
         }

@@ -57,4 +57,18 @@ export default class ElGamal {
         const decrypted = await decryptDataRawOutput(c2, await SHA256_Digest(c1Point.mul(priv).toRawBytes()));
         return decrypted;
     }
+
+    /**
+     * @param {Uint8Array} base64_c1_c2 
+     * @param {bigint | Uint8Array} k 
+     */
+    static async decryptDataRaw(base64_c1_c2, k) {
+        const priv = typeof(k) == 'bigint'? k : BigIntFromByteArray(k);
+        const c1 = base64_c1_c2.slice(0, 32);
+        const c2 = base64_c1_c2.slice(32);
+
+        const c1Point = Point.fromBytes(c1);
+        const decrypted = await decryptDataRawOutput(c2, await SHA256_Digest(c1Point.mul(priv).toRawBytes()));
+        return decrypted;
+    }
 }

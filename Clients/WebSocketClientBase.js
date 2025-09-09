@@ -6,9 +6,7 @@ export default function WebSocketClientBase(url, protocols){
     var base = this;
     const socket = new WebSocket(url, protocols);
 
-    base.socketUrl = function(){
-        return socket.url;
-    }
+    base.getSocketUrl = () => socket.url;
     
     /**
      * @param {string} type 

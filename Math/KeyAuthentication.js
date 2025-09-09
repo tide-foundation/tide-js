@@ -18,7 +18,7 @@
 
 import { HMAC_forHashing, SHA256_Digest, SHA512_Digest } from "../Cryptide/Hashing/Hash.js";
 import { CurrentTime, randBetween } from "../Tools/Utils.js";
-import { ConcatUint8Arrays, Bytes2Hex, bytesToBase64, BigIntFromByteArray, StringToUint8Array } from "../Cryptide/Serialization.js";
+import { ConcatUint8Arrays, Bytes2Hex, bytesToBase64, BigIntFromByteArray, StringToUint8Array, StringFromUint8Array } from "../Cryptide/Serialization.js";
 import { Min, median, mod, mod_inv } from "../Cryptide/Math.js";
 import PrismConvertResponse from "../Models/Responses/KeyAuth/Convert/PrismConvertResponse.js";
 import { AES, DH, EdDSA, ElGamal, Hash, Interpolation, Math } from "../Cryptide/index.js";
@@ -176,9 +176,10 @@ export async function CmkConvertReply(convertResponses, ids, prismAuthis, gCMK, 
 export async function DeviceConvertReply(encRequesti, appAuthi, ids, gCMK, qPub, uDeObf, blurerKPriv, gSessKeyPub, purpose, sessionId, gCMKR){    
     let decPrismRequesti;
     try{
-        const pre_decPrismRequesti = encRequesti.map(async (chall, i) => DecryptedDeviceConvertResponse.from(await AES.decryptData(chall.EncRequesti, appAuthi[i])));
+        const pre_decPrismRequesti = encRequesti.map(async (chall, i) => DecryptedDeviceConvertResponse.from(StringFromUint8Array(await AES.decryptDataRawOutput(chall, appAuthi[i]))));
         decPrismRequesti = await Promise.all(pre_decPrismRequesti);
-    }catch{
+    }catch(ex){
+        console.log(ex);
         throw Error("enclave.invalidAccount");
     }
     const timestampi = median(decPrismRequesti.map(resp => resp.Timestampi));
@@ -199,7 +200,7 @@ export async function DeviceConvertReply(encRequesti, appAuthi, ids, gCMK, qPub,
     const authToken = AuthRequest.new(VUID, purpose, gSessKeyPub.Serialize().ToString(), timestampi + randBetween(30, 90), sessionId);
     const {blurHCMKMul, blur, gRMul} = await genBlindMessage(gCMKR, gCMKAuth, authToken.toUint8Array(), CMKMul);
 
-    return {VUID, gCMKAuth, authToken, r4, decPrismRequesti, timestampi, expired, blurHCMKMul, blur, gRMul}
+    return {VUID, gCMKAuth, authToken, r4: blur, decPrismRequesti, timestampi, expired, blurHCMKMul, gRMul}
 }
 /**
  * @param {ConvertRememberedResponse[]} responses 

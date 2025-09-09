@@ -48,6 +48,11 @@ export default class dVVKSigningFlow2Step {
         if(request.dyanmicData.length != 0) throw 'Dyanamic data must be null for signing flow 2 step';
         this.request = request;
     }
+
+    getVouchers(){
+        if(!this.vouchers) throw 'Call preSign first';
+        return this.vouchers;
+    }
     /**
      * 
      * @param {Uint8Array | Uint8Array[]} dynamicData 
@@ -68,10 +73,14 @@ export default class dVVKSigningFlow2Step {
         const pre_clients = this.orks.map(info => new NodeClient(info.orkURL).AddBearerAuthorization(this.sessKey.get_private_component().rawBytes, this.sessKey.get_public_component().Serialize().ToString(), this.doken).EnableTideDH(info.orkPublic));
         const clients = await Promise.all(pre_clients); 
 
-        const { vouchers } = await pre_vouchers;
+        const { vouchers, k } = await pre_vouchers;
+        this.vouchers = {
+            k,
+            ...vouchers
+        }
 
         const pre_PreSignResponses = clients.map((client, i) => client.PreSign(i, this.vvkid, dynDataisArray ? this.request.replicate().setNewDynamicData(dynamicData[i]) : this.request, vouchers.toORK(i)));
-        const { fulfilledResponses, bitwise } = await WaitForNumberofORKs(this.orks, pre_PreSignResponses, "VVK", waitForAll ? Max : Threshold, null, clients);
+        const { fulfilledResponses, bitwise } = await WaitForNumberofORKs(this.orks, pre_PreSignResponses, "VVK", Threshold, null, clients);
         const GRj = PreSign(fulfilledResponses.map(f => f.GRis));
 
         this.preSignState = {
@@ -100,7 +109,7 @@ export default class dVVKSigningFlow2Step {
         const SignResponses = await Promise.all(pre_SignResponses);
         const Sj = SumS(SignResponses.map(s => s.Sij));
 
-        if (GRj.length != Sj.length) throw Error("Weird amount of GRjs and Sjs");
+        if (this.preSignState.GRj.length != Sj.length) throw Error("Weird amount of GRjs and Sjs");
         let sigs = [];
         for (let i = 0; i < this.preSignState.GRj.length; i++) {
             sigs.push(ConcatUint8Arrays([this.preSignState.GRj[i].toRawBytes(), BigIntToByteArray(Sj[i])]));

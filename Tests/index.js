@@ -1,5 +1,5 @@
 import { NewCMK_NewPRISM, ExistingCMK_NewPRISM, NewVVK, HealPrism } from "./KeyGeneration.js";
-import { CMKAuth_Basic, CMKAuth_Remembered } from "./KeyAuthentication.js";
+import { CMKAuth_Basic, CMKAuth_Remembered, Mobile_CMKAuth_Pairing } from "./KeyAuthentication.js";
 import { EmailRecovery } from "./AccountRecovery.js";
 import { StripeLicensing, CheckLicenseAddedToPayer } from "./StripeLicensing.js"
 import { Ed25519PublicDeserialization } from "./Components.js";
@@ -25,7 +25,8 @@ export const tests = {
     Tide_Key,
     Verifier,
     EnclaveToMobileTunnelling_Enclave,
-    EnclaveToMobileTunnelling_Mobile
+    EnclaveToMobileTunnelling_Mobile,
+    Mobile_CMKAuth_Pairing: Mobile_CMKAuth_Pairing
 };
 
 /**

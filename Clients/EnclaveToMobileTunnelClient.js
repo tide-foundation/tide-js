@@ -27,7 +27,7 @@ export default class EnclaveToMobileTunnelClient extends WebSocketClientBase{
      * @param {TideKey} vendorPublicKey
      */
     async passEnclaveInfo(voucherURL, browserPublicKey, appReq, appReqSignature, sessionKey, sessionKeySignature, vendorPublicKey){
-        await this.waitForMessage("request info"); // we need to make sure mobile is ready to recieve our request
+        await this.waitForMessage("ready"); // we need to make sure mobile is ready to recieve our request
         await this.sendMessage({
             type: "requested info",
             message: {
@@ -46,7 +46,7 @@ export default class EnclaveToMobileTunnelClient extends WebSocketClientBase{
 
     async indicateSuccess(){
         await this.sendMessage({
-            type: "login sucess"
+            type: "login success"
         });
     }
 }

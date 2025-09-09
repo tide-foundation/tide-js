@@ -1,6 +1,6 @@
 import { SimulatorFlow, Utils } from "../index.js";
 import { CreateGPrismAuth, GenSessKey, GetPublic, RandomBigInt } from "../Cryptide/Math.js";
-import { base64ToBytes, BigIntToByteArray, Bytes2Hex, bytesToBase64, GetUID, Hex2Bytes, StringToUint8Array } from "../Cryptide/Serialization.js";
+import { base64ToBytes, BigIntFromByteArray, BigIntToByteArray, Bytes2Hex, bytesToBase64, GetUID, Hex2Bytes, StringToUint8Array } from "../Cryptide/Serialization.js";
 import dKeyGenerationFlow from "../Flow/dKeyGenerationFlow.js";
 import OrkInfo from "../Models/Infos/OrkInfo.js";
 import HashToPoint from "../Cryptide/Hashing/H2P.js";
@@ -17,6 +17,7 @@ import BaseTideRequest from "../Models/BaseTideRequest.js";
 import dVVKSigningFlow from "../Flow/SigningFlows/dVVKSigningFlow.js";
 import { Ed25519PrivateComponent, Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
 import { CreateAuthorizerPackage, CreateVRKPackage } from "../Cryptide/TideMemoryObjects.js";
+import TideKey from "../Cryptide/TideKey.js";
 
 export async function NewCMK_NewPRISM(){
     var orks;
@@ -82,9 +83,11 @@ export async function ExistingCMK_NewPRISM(){
         }
 
         const getAuth = async() => {
+            const skey = new TideKey(new Ed25519PrivateComponent(BigIntFromByteArray(sessKey)));
+        
             const keyInfo = await new NetworkClient("http://localhost:1001").GetKeyInfo(uid);
             const keyAuthFlow = new dCMKPasswordFlow(keyInfo, "", true, true, "http://localhost:3000/voucher/new"); // needs these orks 
-            const {bitwise, expired, selfRequesti} = await keyAuthFlow.ConvertPassword(sessKey, gSessKey, gPass);
+            const {bitwise, expired, selfRequesti} = await keyAuthFlow.ConvertPassword(skey, gPass);
             return {bitwise, expired, selfRequesti};
         }
 
