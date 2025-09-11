@@ -16,6 +16,10 @@ export default class EnclaveToMobileTunnelClient extends WebSocketClientBase{
         return orkConnectionAddress;
     }
 
+    async waitForAppReady(){
+        await this.waitForMessage("ready"); // we need to make sure mobile is ready to recieve our request
+    }
+
     /**
      * 
      * @param {string} voucherURL 
@@ -27,7 +31,6 @@ export default class EnclaveToMobileTunnelClient extends WebSocketClientBase{
      * @param {TideKey} vendorPublicKey
      */
     async passEnclaveInfo(voucherURL, browserPublicKey, appReq, appReqSignature, sessionKey, sessionKeySignature, vendorPublicKey){
-        await this.waitForMessage("ready"); // we need to make sure mobile is ready to recieve our request
         await this.sendMessage({
             type: "requested info",
             message: {

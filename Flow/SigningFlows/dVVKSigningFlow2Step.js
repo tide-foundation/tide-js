@@ -32,6 +32,7 @@ export default class dVVKSigningFlow2Step {
         this.getVouchersFunction = null;
 
         this.voucherURL = voucherURL;
+        this.vendorAction = "vendorsign";
 
     }
     /**
@@ -47,6 +48,10 @@ export default class dVVKSigningFlow2Step {
         if(!(request instanceof BaseTideRequest)) throw 'Request is not a BaseTideRequest';
         if(request.dyanmicData.length != 0) throw 'Dyanamic data must be null for signing flow 2 step';
         this.request = request;
+    }
+
+    async overrideVoucherAction(action){
+        this.vendorAction = action;
     }
 
     getVouchers(){
@@ -67,7 +72,7 @@ export default class dVVKSigningFlow2Step {
             }else dynDataisArray = true;
         }
 
-        const voucherFlow = new VoucherFlow(this.orks.map(o => o.orkPaymentPublic), this.voucherURL, "vendorsign");
+        const voucherFlow = new VoucherFlow(this.orks.map(o => o.orkPaymentPublic), this.voucherURL, this.vendorAction);
         const pre_vouchers = voucherFlow.GetVouchers(this.getVouchersFunction);
 
         const pre_clients = this.orks.map(info => new NodeClient(info.orkURL).AddBearerAuthorization(this.sessKey.get_private_component().rawBytes, this.sessKey.get_public_component().Serialize().ToString(), this.doken).EnableTideDH(info.orkPublic));

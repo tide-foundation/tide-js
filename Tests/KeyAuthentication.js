@@ -145,7 +145,8 @@ export async function Mobile_CMKAuth_Pairing(){
     const appReq = JSON.stringify({
       gSessKeyPub: sessionKey.get_public_component().Serialize().ToString(),
       sessionId: "sessionID",
-      returnURL: returnURL
+      returnURL: returnURL,
+      rememberMe: false
     });
     const appReqSig = bytesToBase64(await browserKey.sign(StringToUint8Array(appReq)));
 
@@ -154,6 +155,7 @@ export async function Mobile_CMKAuth_Pairing(){
     const homeOrkUrl = "http://localhost:1001";
     const enclaveClient = new EnclaveToMobileTunnelClient(homeOrkUrl);
     const inviteLink = await enclaveClient.initializeConnection();
+    await enclaveClient.waitForAppReady();
     const pre_mobileDone = enclaveClient.passEnclaveInfo(voucherURL, browserKey, appReq, appReqSig, sessionKey, sessionKeySig, vendorPublicKey);
 
 
@@ -197,7 +199,7 @@ export async function Mobile_CMKAuth_Pairing(){
     const mobileAuthFlow = new dMobileAuthenticationFlow(inviteLink);
     const deviceKey = TideKey.NewKey(Ed25519Scheme);
     const data = await mobileAuthFlow.ensureReady(user);
-    const pre_pairDone = mobileAuthFlow.pairNewDevice(deviceKey.get_private_component().Serialize().ToString(), password, false, sessionKey); // <- remember me set here
+    const pre_pairDone = mobileAuthFlow.pairNewDevice(deviceKey.get_private_component().Serialize().ToString(), password, sessionKey);
 
     // Enclave client recieves mobile authentication data
     const mobileDone = await pre_mobileDone;
@@ -246,5 +248,54 @@ export async function Mobile_CMKAuth_Pairing(){
 
 
     console.log("Test passed");
+}
+
+export async function Mobile_Authentication_Real_Pairing(){
+    // This test is so i don't have to continuosly debug a mobile phone when testing mobile login
+    // This test WILL NOT create a user, since it's assumed a user has already created a Tide Account on an enclave in the past
+    // This test will ONLY replicate a mobile authentication on a phone but with a REAL enclave
+    const mobileKey = "AAAAcB5h5SR5IoUXfBMMxafY8AY4iukS7OfZ+sQT6fdxNvc="; // always use the same for tests
+
+    // 1. Enter tunnel address
+    const inviteLink = window.prompt("Whats the invite link?");
+
+    // 2. Pair mobile
+    // I'm going to assume the user created on the enclave was username="a" password ="a"
+    const username = "a";
+    const password = "a";
+    const mobileFlow = new dMobileAuthenticationFlow(inviteLink);
+    const {browserKeyIdentifier, vendorReturnURL, userID} = await mobileFlow.ensureReady(username);
+    console.log("Browser key identifier: " + browserKeyIdentifier);
+    console.log("Vendor return URL: " + vendorReturnURL);
+    console.log("User id: " + userID);
+
+    await mobileFlow.pairNewDevice(mobileKey, password);
+
+    console.log("'Mobile' pairing proccess done");
+}
+
+export async function Mobile_Authentication_Real_Login(){
+    // This test is so i don't have to continuosly debug a mobile phone when testing mobile login
+    // This test WILL NOT create a user, since it's assumed a user has already created a Tide Account on an enclave in the past
+    // This test will ONLY replicate a mobile authentication on a phone but with a REAL enclave
+    const mobileKey = "AAAAcB5h5SR5IoUXfBMMxafY8AY4iukS7OfZ+sQT6fdxNvc="; // always use the same for tests
+
+    // 1. Enter tunnel address
+    const inviteLink = window.prompt("Whats the invite link?");
+
+    // 2. Pair mobile
+    // I'm going to assume the user created on the enclave was username="a" password ="a"
+    const username = "a";
+    const password = "a";
+    const mobileFlow = new dMobileAuthenticationFlow(inviteLink);
+    const {browserKeyIdentifier, vendorReturnURL, userID} = await mobileFlow.ensureReady(username);
+    console.log("Browser key identifier: " + browserKeyIdentifier);
+    console.log("Vendor return URL: " + vendorReturnURL);
+    console.log("User id: " + userID);
+
+    await mobileFlow.authenticate(mobileKey);
+    await mobileFlow.finish();
+
+    console.log("'Mobile' login proccess done");
 }
 

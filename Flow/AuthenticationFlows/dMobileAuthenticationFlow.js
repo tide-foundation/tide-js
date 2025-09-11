@@ -69,6 +69,7 @@ export default class dMobileAuthenticationFlow {
             base64ToBytes(this.sessKeyProof));
 
         this.sessionId = appReqParsed["sessionId"];
+        this.rememberMe = appReqParsed["rememberMe"];
 
         // Checks if gBRK is familiar (expected to do that (outside this flow) in mobile app)
         // ...
@@ -87,9 +88,8 @@ export default class dMobileAuthenticationFlow {
     /**
      * 
      * @param {string} devicePrivateKey 
-     * @param {boolean} rememberMe
      */
-    async authenticate(devicePrivateKey, rememberMe, testSessionKey=null) {
+    async authenticate(devicePrivateKey, testSessionKey=null) {
         if (!this.userId) throw 'Make sure you run ensureReady first';
 
         const deviceSessionKey = testSessionKey ? testSessionKey : TideKey.NewKey(Ed25519Scheme);
@@ -99,8 +99,9 @@ export default class dMobileAuthenticationFlow {
         const userInfoRef = new KeyInfo(userInfo.UserId, userInfo.UserPublic, userInfo.UserM, userInfo.OrkInfo.slice()); // we need the full ork list later for the enclave encrypted data
 
         const signingFlow = new dVVKSigningFlow2Step(this.userId, userInfo.UserPublic, userInfo.OrkInfo, deviceSessionKey, null, this.voucherURL);
+        signingFlow.overrideVoucherAction("signin");
 
-        const draft = CreateTideMemoryFromArray([this.enclaveSessionKeyPublic.get_public_component().Serialize().ToBytes(), new Uint8Array([rememberMe ? 1 : 0])]);
+        const draft = CreateTideMemoryFromArray([this.enclaveSessionKeyPublic.get_public_component().Serialize().ToBytes(), new Uint8Array([this.rememberMe ? 1 : 0])]);
         const request = new BaseTideRequest((testSessionKey ? "Test" : "") + "DeviceAuthentication", "1", "", draft);
         signingFlow.setRequest(request);
         const pre_encRequesti = signingFlow.preSign();
@@ -119,7 +120,7 @@ export default class dMobileAuthenticationFlow {
             signingFlow.getVouchers().UDeObf,
             signingFlow.getVouchers().k,
             this.enclaveSessionKeyPublic.get_public_component(),
-            "device_auth",
+            "auth",
             this.sessionId,
             signingFlow.preSignState.GRj[0]
         );
@@ -145,7 +146,7 @@ export default class dMobileAuthenticationFlow {
             {
                 prkRequesti: convertinfo.decPrismRequesti.map(d => d.PRKRequesti),
                 vendorData: vendorData,
-                rememberMe: rememberMe,
+                rememberMe: this.rememberMe,
                 enclaveEntry: {
                     username: this.username,
                     //persona, not really supported yet
@@ -166,14 +167,15 @@ export default class dMobileAuthenticationFlow {
             message: this.enclaveEncryptedData
         });
         await success;
+        await this.webSocketClient.close();
     }
 
-    async testAuthenticate(devicePrivateKey, sessionKey, rememberMe){
-        await this.authenticate(devicePrivateKey, rememberMe, sessionKey);
+    async testAuthenticate(devicePrivateKey, sessionKey){
+        await this.authenticate(devicePrivateKey, sessionKey);
         await this.finish();
     }
 
-    async pairNewDevice(devicePrivateKey, password, rememberMe=false, sessKey=null) {
+    async pairNewDevice(devicePrivateKey, password, sessKey=null) {
         // This is where we submit the new device key to the orks 
 
         // Also we authenticate using the username, password
@@ -197,6 +199,7 @@ export default class dMobileAuthenticationFlow {
 
         const signingFlow = new dVVKSigningFlow2Step(this.userId, userInfo.UserPublic, userInfo.OrkInfo, sessionKey, null, this.voucherURL);
         signingFlow.setRequest(request);
+        signingFlow.overrideVoucherAction("updateaccount");
 
         const gPass = new Ed25519PublicComponent(await HashToPoint(password));
         const r1 = Ed25519PrivateComponent.New();
@@ -220,7 +223,7 @@ export default class dMobileAuthenticationFlow {
         const M_signature = (await signingFlow.sign(dynDatas)).sigs[0];
 
         // Now do test sign in
-        await this.testAuthenticate(devicePrivateKey, sessionKey, rememberMe);
+        await this.testAuthenticate(devicePrivateKey, sessionKey);
 
 
         // Now we commit
