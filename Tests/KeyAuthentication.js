@@ -197,7 +197,7 @@ export async function Mobile_CMKAuth_Pairing(){
     const mobileAuthFlow = new dMobileAuthenticationFlow(inviteLink);
     const deviceKey = TideKey.NewKey(Ed25519Scheme);
     const data = await mobileAuthFlow.ensureReady(user);
-    const pre_pairDone = mobileAuthFlow.pairNewDevice(deviceKey.get_private_component().Serialize().ToString(), password, false); // <- remember me set here
+    const pre_pairDone = mobileAuthFlow.pairNewDevice(deviceKey.get_private_component().Serialize().ToString(), password, false, sessionKey); // <- remember me set here
 
     // Enclave client recieves mobile authentication data
     const mobileDone = await pre_mobileDone;
@@ -227,8 +227,6 @@ export async function Mobile_CMKAuth_Pairing(){
     const userinfo = KeyInfo.fromNativeTypeObject(decrpytedMobileData.enclaveEntry.userInfo);
     // compute ECDHI for orks that are part of bitwise (also sorted orks so keys match up with request indexes)
     const prkECDHi = await DH.generateECDHi(sortORKs(userinfo.OrkInfo).map(o => o.orkPublic).filter((_, i) => decrpytedMobileData.enclaveEntry.orksBitwise[i] == true), sessionKey.get_private_component().priv);
-    console.log(sessionKey.get_public_component().Serialize().ToString());
-    console.log(bytesToBase64(prkECDHi[0]));
     const selfRequesti = await Promise.all(prkECDHi.map((dh, i) => AES.decryptDataRawOutput(base64ToBytes(decrpytedMobileData.prkRequesti[i]), dh)));
 
     const ee = new EnclaveEntry(

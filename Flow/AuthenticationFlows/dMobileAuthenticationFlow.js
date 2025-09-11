@@ -100,7 +100,7 @@ export default class dMobileAuthenticationFlow {
 
         const signingFlow = new dVVKSigningFlow2Step(this.userId, userInfo.UserPublic, userInfo.OrkInfo, deviceSessionKey, null, this.voucherURL);
 
-        const draft = CreateTideMemoryFromArray([this.enclaveSessionKeyPublic.get_public_component().Serialize().ToString(), new Uint8Array([rememberMe ? 1 : 0])]);
+        const draft = CreateTideMemoryFromArray([this.enclaveSessionKeyPublic.get_public_component().Serialize().ToBytes(), new Uint8Array([rememberMe ? 1 : 0])]);
         const request = new BaseTideRequest((testSessionKey ? "Test" : "") + "DeviceAuthentication", "1", "", draft);
         signingFlow.setRequest(request);
         const pre_encRequesti = signingFlow.preSign();
@@ -173,7 +173,7 @@ export default class dMobileAuthenticationFlow {
         await this.finish();
     }
 
-    async pairNewDevice(devicePrivateKey, password, rememberMe=false) {
+    async pairNewDevice(devicePrivateKey, password, rememberMe=false, sessKey=null) {
         // This is where we submit the new device key to the orks 
 
         // Also we authenticate using the username, password
@@ -183,7 +183,7 @@ export default class dMobileAuthenticationFlow {
         if (!this.userId) throw 'Make sure you run ensureReady first';
 
         const dvk = TideKey.FromSerializedComponent(devicePrivateKey);
-        const sessionKey = TideKey.NewKey(Ed25519Scheme);
+        const sessionKey = sessKey != null ? sessKey : TideKey.NewKey(Ed25519Scheme);
 
         const simClient = new SimClient(this.homeOrkOrigin);
         const userInfo = await simClient.GetKeyInfo(this.userId);

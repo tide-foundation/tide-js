@@ -122,6 +122,7 @@ export function CreateTideMemory(initialValue, totalLength, version = 1) {
  * @param {Uint8Array[]} datas 
  */
 export function CreateTideMemoryFromArray(datas){
+    if(!datas.every(d => d instanceof Uint8Array)) throw Error("Expecting all datas to be Uint8Array");
     const length = datas.reduce((sum, next) => sum + 4 + next.length, 0);
     const mem = CreateTideMemory(datas[0], length);
     for(let i = 1; i < datas.length; i++){
