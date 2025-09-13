@@ -4,7 +4,7 @@ import { Max, Threshold, WaitForNumberofORKs, sortORKs } from "../../Tools/Utils
 import NodeClient from "../../Clients/NodeClient.js";
 import OrkInfo from "../../Models/Infos/OrkInfo.js";
 import { PreSign, Sign as SumS } from "../../Math/KeySigning.js";
-import { BigIntToByteArray, ConcatUint8Arrays, bytesToBase64, serializeBitArray } from "../../Cryptide/Serialization.js";
+import { BigIntToByteArray, ConcatUint8Arrays, GetValue, bytesToBase64, serializeBitArray } from "../../Cryptide/Serialization.js";
 import VoucherFlow from "../VoucherFlows/VoucherFlow.js";
 import { Doken } from "../../Models/Doken.js";
 import TideKey from "../../Cryptide/TideKey.js";
@@ -106,7 +106,10 @@ export default class dVVKSigningFlow2Step {
             if(!(dynamicData instanceof Uint8Array) && !(Array.isArray(dynamicData))) throw 'Dynamic data must be Uint8Array or Uint8Array[]';
             if(dynamicData instanceof Uint8Array){
                 this.request.dyanmicData = dynamicData;
-            }else dynDataisArray = true;
+            }else {
+                if(dynamicData.length != this.preSignState.clients.length) throw Error("Supplied datas array must equal client amount");
+                dynDataisArray = true;
+            }
         }
         if(!this.preSignState) throw 'Execute preSign first';
 

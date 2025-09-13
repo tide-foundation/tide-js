@@ -55,8 +55,10 @@ export default class dCMKPasswordFlow{
      * @param {Point} gPass 
      * @param {Point} gCMK
      * @param {boolean} rememberMe
+     * @param {TideKey} vendorSessionKey
      */
-    async Convert(sessKey, gPass, gCMK, rememberMe){
+    async Convert(sessKey, gPass, gCMK, rememberMe, vendorSessionKey=null){
+        if(vendorSessionKey == null) vendorSessionKey = sessKey;
         const clients = this.keyInfo.OrkInfo.map(ork => new NodeClient(ork.orkURL)) // create node clients
 
         const voucherFlow = new VoucherFlow(this.keyInfo.OrkInfo.map(o => o.orkPaymentPublic), this.voucherURL, "signin");
@@ -97,7 +99,7 @@ export default class dCMKPasswordFlow{
                 Point.fromBytes(Hex2Bytes(vouchers.qPub).slice(-32)), // to translate between tide component and native object
                 BigIntFromByteArray(base64ToBytes(vouchers.UDeObf).slice(-32)), // to translate between tide component and native object
                 k.get_private_component().priv,
-                sessKey.get_public_component()
+                vendorSessionKey.get_public_component()
             )
         }
         return {
@@ -144,10 +146,8 @@ export default class dCMKPasswordFlow{
 
     /**
      * @param {Point} gVRK If a null value is provided, no encryption is applied.
-     * @param {Uint8Array} sessKey
-     * @param {string} consentToSign
      */
-    async Authenticate(gVRK, sessKey=null, consentToSign=null){
+    async Authenticate(gVRK){
         if(this.cState == undefined) throw Error("Convert State is undefined");
         const cmkClients = this.keyInfo.OrkInfo.map(ork => new NodeClient(ork.orkURL))
 
@@ -161,31 +161,16 @@ export default class dCMKPasswordFlow{
 
         const encSig = await Promise.all(pre_encSig);
         let vendorEncryptedData;
-        if(consentToSign == null){
-            vendorEncryptedData = await AuthenticateBasicReply(
-                this.cState.VUID, 
-                this.cState.prkECDHi, 
-                encSig, 
-                this.cState.gCMKAuth, 
-                this.cState.authToken, 
-                this.cState.r4, 
-                this.cState.gRMul, 
-                gVRK
-            );
-        }else{
-            vendorEncryptedData = await AuthenticateConsentReply(
-                this.cState.VUID, 
-                this.cState.prkECDHi, 
-                encSig, 
-                this.cState.gCMKAuth, 
-                this.cState.authToken, 
-                this.cState.r4, 
-                this.cState.gRMul, 
-                gVRK,
-                BigIntFromByteArray(sessKey),
-                consentToSign
-            );
-        } 
+        vendorEncryptedData = await AuthenticateBasicReply(
+            this.cState.VUID, 
+            this.cState.prkECDHi, 
+            encSig, 
+            this.cState.gCMKAuth, 
+            this.cState.authToken, 
+            this.cState.r4, 
+            this.cState.gRMul, 
+            gVRK
+        );
         return {
             bitwise: this.cState.bitwise,
             expired: this.cState.expired,

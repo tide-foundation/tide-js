@@ -26,7 +26,7 @@ export default class dMobileAuthenticationFlow {
 
     async configureFlowSettings(){
         let request = await this.requestInfo;
-        const requiredProperties = ['appReq', 'appReqSignature', 'sessionKey', 'sessionKeySignature', 'voucherURL', 'browserPublicKey', 'vendorPublicKey'];
+        const requiredProperties = ['appReq', 'appReqSignature', 'sessionKeySignature', 'voucherURL', 'browserPublicKey', 'vendorPublicKey'];
 
         for (const property of requiredProperties) {
             if (!request[property]) {
@@ -63,13 +63,21 @@ export default class dMobileAuthenticationFlow {
             base64ToBytes(this.sigAppReq));
 
         const appReqParsed = JSON.parse(this.appReq);
-        this.enclaveSessionKeyPublic = TideKey.FromSerializedComponent(appReqParsed["gSessKeyPub"]);
-        await this.enclaveSessionKeyPublic.verify(
+        this.enclaveVendorSessionKeyPublic = TideKey.FromSerializedComponent(appReqParsed["vendorSessKeyPub"]);
+
+        this.enclaveNetworkSessionKeyPublic = TideKey.FromSerializedComponent(appReqParsed["networkSessKeyPub"]);
+        await this.enclaveVendorSessionKeyPublic.verify(
             this.browserPublicKey.get_public_component().Serialize().ToBytes(),
             base64ToBytes(this.sessKeyProof));
 
         this.sessionId = appReqParsed["sessionId"];
         this.rememberMe = appReqParsed["rememberMe"];
+
+        // BIG NOTE
+        // enclaveVendorSessionKey public is the key used to identifiy this enclave to the vendor, and will be used alongside the DOKEN
+        // enclaveNetworkSessionKey is the key used to identify this enclave to the Tide Network for quick sign in functionality
+        // They should NEVER be the same as to ensure the Tide Network can't correlate CMKs to VVKs
+
 
         // Checks if gBRK is familiar (expected to do that (outside this flow) in mobile app)
         // ...
@@ -101,7 +109,7 @@ export default class dMobileAuthenticationFlow {
         const signingFlow = new dVVKSigningFlow2Step(this.userId, userInfo.UserPublic, userInfo.OrkInfo, deviceSessionKey, null, this.voucherURL);
         signingFlow.overrideVoucherAction("signin");
 
-        const draft = CreateTideMemoryFromArray([this.enclaveSessionKeyPublic.get_public_component().Serialize().ToBytes(), new Uint8Array([this.rememberMe ? 1 : 0])]);
+        const draft = CreateTideMemoryFromArray([this.enclaveNetworkSessionKeyPublic.get_public_component().Serialize().ToBytes(), new Uint8Array([this.rememberMe ? 1 : 0])]);
         const request = new BaseTideRequest((testSessionKey ? "Test" : "") + "DeviceAuthentication", "1", "", draft);
         signingFlow.setRequest(request);
         const pre_encRequesti = signingFlow.preSign();
@@ -119,7 +127,7 @@ export default class dMobileAuthenticationFlow {
             signingFlow.getVouchers().qPub,
             signingFlow.getVouchers().UDeObf,
             signingFlow.getVouchers().k,
-            this.enclaveSessionKeyPublic.get_public_component(),
+            this.enclaveVendorSessionKeyPublic.get_public_component(),
             "auth",
             this.sessionId,
             signingFlow.preSignState.GRj[0]
@@ -175,7 +183,7 @@ export default class dMobileAuthenticationFlow {
         await this.finish();
     }
 
-    async pairNewDevice(devicePrivateKey, password, sessKey=null) {
+    async pairNewDevice(devicePrivateKey, password, deviceName, sessKey=null) {
         // This is where we submit the new device key to the orks 
 
         // Also we authenticate using the username, password
@@ -192,8 +200,8 @@ export default class dMobileAuthenticationFlow {
 
         const draft = CreateTideMemoryFromArray([
             dvk.get_public_component().Serialize().ToBytes(), 
-            await dvk.sign(sessionKey.get_public_component().Serialize().ToBytes())],
-        );
+            await dvk.sign(sessionKey.get_public_component().Serialize().ToBytes())
+        ]);
 
         const request = new BaseTideRequest("MigratePasswordToMobile", "1", "", draft);
 
@@ -217,7 +225,11 @@ export default class dMobileAuthenticationFlow {
         );
 
         const dynDatas = convertInfo.prkRequesti.map(p => {
-            return CreateTideMemoryFromArray([base64ToBytes(p), BigIntToByteArray(convertInfo.timestampi)]);
+            return CreateTideMemoryFromArray([
+                base64ToBytes(p), 
+                BigIntToByteArray(convertInfo.timestampi),
+                StringToUint8Array(deviceName)
+            ]);
         })
 
         const M_signature = (await signingFlow.sign(dynDatas)).sigs[0];

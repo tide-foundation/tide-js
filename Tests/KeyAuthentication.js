@@ -143,7 +143,8 @@ export async function Mobile_CMKAuth_Pairing(){
     const sessionKeySig = bytesToBase64(await sessionKey.sign(browserKey.get_public_component().Serialize().ToBytes()));;
 
     const appReq = JSON.stringify({
-      gSessKeyPub: sessionKey.get_public_component().Serialize().ToString(),
+      networkSessKeyPub: sessionKey.get_public_component().Serialize().ToString(),
+      vendorSessKeyPub: sessionKey.get_public_component().Serialize().ToString(),
       sessionId: "sessionID",
       returnURL: returnURL,
       rememberMe: false
@@ -156,7 +157,7 @@ export async function Mobile_CMKAuth_Pairing(){
     const enclaveClient = new EnclaveToMobileTunnelClient(homeOrkUrl);
     const inviteLink = await enclaveClient.initializeConnection();
     await enclaveClient.waitForAppReady();
-    const pre_mobileDone = enclaveClient.passEnclaveInfo(voucherURL, browserKey, appReq, appReqSig, sessionKey, sessionKeySig, vendorPublicKey);
+    const pre_mobileDone = enclaveClient.passEnclaveInfo(voucherURL, browserKey, appReq, appReqSig, sessionKeySig, vendorPublicKey);
 
 
 
@@ -199,7 +200,7 @@ export async function Mobile_CMKAuth_Pairing(){
     const mobileAuthFlow = new dMobileAuthenticationFlow(inviteLink);
     const deviceKey = TideKey.NewKey(Ed25519Scheme);
     const data = await mobileAuthFlow.ensureReady(user);
-    const pre_pairDone = mobileAuthFlow.pairNewDevice(deviceKey.get_private_component().Serialize().ToString(), password, sessionKey);
+    const pre_pairDone = mobileAuthFlow.pairNewDevice(deviceKey.get_private_component().Serialize().ToString(), password, "test", sessionKey);
 
     // Enclave client recieves mobile authentication data
     const mobileDone = await pre_mobileDone;
@@ -269,7 +270,7 @@ export async function Mobile_Authentication_Real_Pairing(){
     console.log("Vendor return URL: " + vendorReturnURL);
     console.log("User id: " + userID);
 
-    await mobileFlow.pairNewDevice(mobileKey, password);
+    await mobileFlow.pairNewDevice(mobileKey, password, "test");
 
     console.log("'Mobile' pairing proccess done");
 }
