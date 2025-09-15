@@ -27,6 +27,29 @@ export default class BaseTideRequest {
     }
 
     /**
+     * This isn't copying. Just created another BaseTideRequest object that allows you to point each individual field to OTHER sections of memory.
+     * If you modify an existing 'replicated' field, you'll also modify the other object you originally replicated.
+     */
+    replicate(){
+        const r = new BaseTideRequest(this.name, this.version, this.authFlow, this.draft, this.dyanmicData);
+        r.authorization = this.authorization;
+        r.authorizerCert = this.authorizerCert;
+        r.authorizer = this.authorizer;
+        r.expiry = this.expiry;
+        r.rules = this.rules;
+        r.rulesCert = this.rulesCert;
+        return r;
+    }
+
+    /**
+     * @param {Uint8Array} d 
+     */
+    setNewDynamicData(d){
+        this.dyanmicData = d;
+        return this;
+    }
+
+    /**
      * 
      * @param {number} timeFromNowInSeconds 
      */

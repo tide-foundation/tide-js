@@ -271,32 +271,6 @@ export default class NodeClient extends ClientBase {
     }
 
     /**
-     * @param {string} uid
-     * @param {Point} gVRK
-     * @param {string} auth
-     * @param {string} authSig
-     * @param {string[]} mIdORKij
-     * @param {string} voucher
-     * @returns {Promise<GenShardResponse>}
-     */
-    async GenVVKShard(uid, gVRK, auth, authSig, mIdORKij, voucher) {
-        const data = this._createFormData(
-            {
-                'gVRK': gVRK.toBase64(),
-                'auth': auth,
-                'authSig': authSig,
-                'mIdORKij': mIdORKij,
-                'voucher': voucher
-            }
-        );
-        const response = await this._post(`/Authentication/Create/GenVVKShard?uid=${uid}`, data);
-
-        const responseData = await this._handleError(response, "GenShard");
-        const responseModel = GenShardResponse.from(responseData);
-        return responseModel;
-    }
-
-    /**
      * @param {number} index
      * @param {string} uid
      * @param {string} purpose
@@ -393,14 +367,20 @@ export default class NodeClient extends ClientBase {
         const response = await this._post(`/Authentication/Key/v1/PreSign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'PreSign');
         const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
-        if (decrypted.length % 32 != 0) throw new Error("Unexpected response legnth. Must be divisible by 32");
+        const GRSection = GetValue(decrypted, 0);
+        if (GRSection.length % 32 != 0) throw new Error("Unexpected response legnth. Must be divisible by 32");
         let GRis = [];
-        for (let i = 0; i < decrypted.length; i += 32) {
-            GRis.push(Point.fromBytes(decrypted.slice(i, i + 32)));
+        for (let i = 0; i < GRSection.length; i += 32) {
+            GRis.push(Point.fromBytes(GRSection.slice(i, i + 32)));
         }
+        this.orkCacheId = GetValue(decrypted, 2);
         return {
             index,
-            GRis
+            data: {
+                GRis,
+                AdditionalData: GetValue(decrypted, 1)
+            }
+            
         }
     }
 
@@ -410,13 +390,16 @@ export default class NodeClient extends ClientBase {
      * @param {BaseTideRequest} request
      * @param {Point[]} GRs
      * @param {Uint8Array} bitwise
+     * @param {Uint8Array} sessId
      */
-    async Sign(vuid, request, GRs, bitwise) {
+    async Sign(vuid, request, GRs, bitwise, sessId) {
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
+        if (!this.orkCacheId) throw Error("Call PreSign first");
         const payload = CreateTideMemoryFromArray([
             request.encode(),
-            ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes())])]
-        );
+            ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes())]),
+            this.orkCacheId
+        ]);
         const encrypted = await AES.encryptData(payload, this.DHKey);
         const data = this._createFormData(
             {
@@ -430,11 +413,17 @@ export default class NodeClient extends ClientBase {
         const response = await this._post(`/Authentication/Key/v1/Sign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'Sign');
         const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
+        const signatureSection = GetValue(decrypted, 0);
         let Sij = [];
-        for (let i = 0; i < decrypted.length; i += 32) {
-            Sij.push(BigIntFromByteArray(decrypted.slice(i, i + 32)));
+        for (let i = 0; i < signatureSection.length; i += 32) {
+            Sij.push(BigIntFromByteArray(signatureSection.slice(i, i + 32)));
         }
-        return Sij;
+
+        delete this.orkCacheId;
+        return {
+            Sij,
+            AdditionalData: GetValue(decrypted, 1)
+        }
     }
     /**
      * @param {number} index 

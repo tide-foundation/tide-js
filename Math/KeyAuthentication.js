@@ -18,7 +18,7 @@
 
 import { HMAC_forHashing, SHA256_Digest, SHA512_Digest } from "../Cryptide/Hashing/Hash.js";
 import { CurrentTime, randBetween } from "../Tools/Utils.js";
-import { ConcatUint8Arrays, Bytes2Hex, bytesToBase64, BigIntFromByteArray, StringToUint8Array } from "../Cryptide/Serialization.js";
+import { ConcatUint8Arrays, Bytes2Hex, bytesToBase64, BigIntFromByteArray, StringToUint8Array, StringFromUint8Array } from "../Cryptide/Serialization.js";
 import { Min, median, mod, mod_inv } from "../Cryptide/Math.js";
 import PrismConvertResponse from "../Models/Responses/KeyAuth/Convert/PrismConvertResponse.js";
 import { AES, DH, EdDSA, ElGamal, Hash, Interpolation, Math } from "../Cryptide/index.js";
@@ -94,6 +94,33 @@ export async function PrismConvertReply(convertResponses, ids, mgORKi, r1, prkEC
 
     return {prismAuthis, timestampi, selfRequesti, expired}
 }
+/**
+ * @param {PrismConvertResponse[]} convertResponses 
+ * @param {bigint[]} ids
+ * @param {Point[]} mgORKi 
+ * @param {bigint} r1 
+ */
+export async function DevicePrismConvertReply(convertResponses, ids, mgORKi, r1){    
+    // ∑ gPass ⋅ r1 ⋅ PRISMi ⋅ li / r1
+    const gPassPRISM = Interpolation.AggregatePointsWithIds(convertResponses.map(resp => resp.GBlurPassPrismi), ids).divide(r1);
+    const gPassPRISM_hashed = await gPassPRISM.hash();
+
+    const prismAuthis = await DH.generateECDHi(mgORKi, gPassPRISM_hashed);
+
+    let decPrismRequesti;
+    try{
+        const pre_decPrismRequesti = convertResponses.map(async (chall, i) => DecryptedPrismConvertResponse.from(await AES.decryptData(chall.EncRequesti, prismAuthis[i])));
+        decPrismRequesti = await Promise.all(pre_decPrismRequesti);
+    }catch{
+        throw Error("enclave.invalidAccount");
+    }
+    const timestampi = median(decPrismRequesti.map(resp => resp.Timestampi));
+
+    // Calculate when the stored token expires
+    const expired = CurrentTime() + Min(decPrismRequesti.map(d => d.Exti));
+
+    return {prismAuthis, timestampi, prkRequesti: decPrismRequesti.map(d => d.PRKRequesti), expired}
+}
 
 /**
  * @param {CMKConvertResponse[]} convertResponses 
@@ -134,7 +161,7 @@ export async function CmkConvertReply(convertResponses, ids, prismAuthis, gCMK, 
 }
 
 /**
- * @param {DeviceConvertResponse[]} convertResponses
+ * @param {Uint8Array[]} encRequesti
  * @param {Uint8Array[]} appAuthi
  * @param {bigint[]} ids
  * @param {Point} gCMK
@@ -144,13 +171,15 @@ export async function CmkConvertReply(convertResponses, ids, prismAuthis, gCMK, 
  * @param {Ed25519PublicComponent} gSessKeyPub
  * @param {string} purpose
  * @param {string} sessionId
+ * @param {Point} gCMKR
  */
-export async function DeviceConvertReply(convertResponses, appAuthi, ids, gCMK, qPub, uDeObf, blurerKPriv, gSessKeyPub, purpose, sessionId){    
+export async function DeviceConvertReply(encRequesti, appAuthi, ids, gCMK, qPub, uDeObf, blurerKPriv, gSessKeyPub, purpose, sessionId, gCMKR){    
     let decPrismRequesti;
     try{
-        const pre_decPrismRequesti = convertResponses.map(async (chall, i) => DecryptedDeviceConvertResponse.from(await AES.decryptData(chall.EncRequesti, appAuthi[i])));
+        const pre_decPrismRequesti = encRequesti.map(async (chall, i) => DecryptedDeviceConvertResponse.from(StringFromUint8Array(await AES.decryptDataRawOutput(chall, appAuthi[i]))));
         decPrismRequesti = await Promise.all(pre_decPrismRequesti);
-    }catch{
+    }catch(ex){
+        console.log(ex);
         throw Error("enclave.invalidAccount");
     }
     const timestampi = median(decPrismRequesti.map(resp => resp.Timestampi));
@@ -168,11 +197,10 @@ export async function DeviceConvertReply(convertResponses, appAuthi, ids, gCMK, 
     const CMKMul = mod(BigIntFromByteArray(gUserCMK_Hash.slice(0, 32)));
     const VUID = Bytes2Hex(gUserCMK_Hash.slice(-32));
     const gCMKAuth = gCMK.mul(CMKMul);
-    const gCMKR = Interpolation.AggregatePoints(convertResponses.map(resp => resp.GCMKRi));
     const authToken = AuthRequest.new(VUID, purpose, gSessKeyPub.Serialize().ToString(), timestampi + randBetween(30, 90), sessionId);
     const {blurHCMKMul, blur, gRMul} = await genBlindMessage(gCMKR, gCMKAuth, authToken.toUint8Array(), CMKMul);
 
-    return {VUID, gCMKAuth, authToken, r4, decPrismRequesti, timestampi, expired, blurHCMKMul, blur, gRMul}
+    return {VUID, gCMKAuth, authToken, r4: blur, decPrismRequesti, timestampi, expired, blurHCMKMul, gRMul}
 }
 /**
  * @param {ConvertRememberedResponse[]} responses 
@@ -235,6 +263,31 @@ export async function AuthenticateBasicReply(vuid, prkECDHi, encSigi, gCMKAuth, 
     const blindSigValid = await verifyBlindSignature(sig, gRMul, gCMKAuth, authToken.toUint8Array());
     if(!blindSigValid) throw Error("Blind Signature Failed");
     const blindSig = bytesToBase64(serializeBlindSig(sig, gRMul));
+
+    if(gVRK == null){
+        const vendorData = new VendorData(vuid, gCMKAuth, blindSig, authToken).toString();
+        return vendorData;
+    }else{
+        const VendorEncryptedData = await ElGamal.encryptData(StringToUint8Array(new VendorData(vuid, gCMKAuth, blindSig, authToken).toString()), gVRK);
+        return VendorEncryptedData;
+    }
+}
+/**
+ * 
+ * @param {string} vuid 
+ * @param {Uint8Array} sig 
+ * @param {Point} gCMKAuth 
+ * @param {AuthRequest} authToken 
+ * @param {bigint} r4 
+ * @param {Point} gRMul 
+ * @param {Point} gVRK
+ */
+export async function AuthenticateDeviceReply(vuid, sig, gCMKAuth, authToken, r4, gRMul, gVRK){
+    const blindS = BigIntFromByteArray(sig.slice(-32));
+    const usig = await unblindSignature(blindS, r4);
+    const blindSigValid = await verifyBlindSignature(usig, gRMul, gCMKAuth, authToken.toUint8Array());
+    if(!blindSigValid) throw Error("Blind Signature Failed");
+    const blindSig = bytesToBase64(serializeBlindSig(usig, gRMul));
 
     if(gVRK == null){
         const vendorData = new VendorData(vuid, gCMKAuth, blindSig, authToken).toString();
