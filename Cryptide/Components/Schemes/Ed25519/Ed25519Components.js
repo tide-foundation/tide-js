@@ -135,17 +135,17 @@ export class Ed25519SeedComponent extends BaseSeedComponent{
         head[0] &= 248; // Clamp bits: 0b1111_1000,
         head[31] &= 127; // 0b0111_1111,
         head[31] |= 64; // 0b0100_0000
-        return mod(BigIntFromByteArray(head));
+        return head;
     }
 
     GetPrivate(){
-        return new Ed25519PrivateComponent(this.rawBytes);
+        return new Ed25519PrivateComponent(mod(BigIntFromByteArray(this.rawBytes)));
     }
 
     GetPublic(){
         return this.GetPrivate().GetPublic();
     }
-    static async New(){
+    static New(){
         return new Ed25519SeedComponent(this.GenerateSeed());
     }
 }

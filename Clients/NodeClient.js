@@ -29,6 +29,7 @@ import { Ed25519PrivateComponent, Ed25519PublicComponent } from "../Cryptide/Com
 import { Point } from "../Cryptide/Ed25519.js";
 import TideKey from "../Cryptide/TideKey.js";
 import { Doken } from "../Models/Doken.js";
+import DeviceConvertResponse from "../Models/Responses/KeyAuth/Convert/DeviceConvertResponse.js";
 
 export default class NodeClient extends ClientBase {
     /**
@@ -94,6 +95,38 @@ export default class NodeClient extends ClientBase {
         const returnObj = {
             "CMKConvertResponse": CMKConvertResponse.from(responseData.split("|")[0]),
             "PrismConvertResponse": PrismConvertResponse.from(responseData.split("|")[1])
+        };
+        return {
+            "index": index,
+            returnObj // only one value is allowed in indexed requests, apart from the index
+        }
+    }
+
+    /**
+     * @param {number} index
+     * @param {string} uid 
+     * @param {string} gSessKeyPub
+     * @param {boolean} rememberMe
+     * @param {boolean} cmkCommitted
+     * @param {boolean} prismCommitted
+     * @param {string} voucher
+     * @param {string} m
+     * @returns
+     */
+    async DeviceConvert(index, uid, gSessKeyPub, rememberMe, voucher, m, cmkCommitted = true, prismCommitted = true) {
+        const data = this._createFormData({
+            'gBlurPass': null,
+            'gSessKeyPub': gSessKeyPub,
+            'rememberMe': rememberMe,
+            'cmkCommitted': cmkCommitted,
+            'prismCommitted': prismCommitted,
+            'voucher': voucher,
+            'M': m
+        })
+        const response = await this._post(`/Authentication/Auth/Convert?uid=${uid}`, data)
+        const responseData = await this._handleError(response, "Device Convert CMK/Prism");
+        const returnObj = {
+            "DeviceConvertResponse": DeviceConvertResponse.from(responseData)
         };
         return {
             "index": index,
@@ -168,6 +201,25 @@ export default class NodeClient extends ClientBase {
     }
 
     /**
+     * @param {string} uid 
+     * @param {string} prkRequesti
+     * @param {bigint} blurHCMKMul
+     * @param {Uint8Array} bitwise
+     * @returns {Promise<string>}
+     */
+    async DeviceAuthenticate(uid, prkRequesti, blurHCMKMul, bitwise) {
+        const data = this._createFormData({
+            'prkRequesti': prkRequesti,
+            'blurHCMKMul': blurHCMKMul.toString(),
+            'bitwise': bytesToBase64(bitwise)
+        })
+        const response = await this._post(`/Authentication/Auth/DeviceAuthenticate?uid=${uid}`, data)
+
+        const encSig = await this._handleError(response, "Authenticate");
+        return encSig;
+    }
+
+    /**
      * 
      * @param {string} uid 
      * @param {bigint} blurHCMKMul 
@@ -216,32 +268,6 @@ export default class NodeClient extends ClientBase {
             index,
             responseModel
         }
-    }
-
-    /**
-     * @param {string} uid
-     * @param {Point} gVRK
-     * @param {string} auth
-     * @param {string} authSig
-     * @param {string[]} mIdORKij
-     * @param {string} voucher
-     * @returns {Promise<GenShardResponse>}
-     */
-    async GenVVKShard(uid, gVRK, auth, authSig, mIdORKij, voucher) {
-        const data = this._createFormData(
-            {
-                'gVRK': gVRK.toBase64(),
-                'auth': auth,
-                'authSig': authSig,
-                'mIdORKij': mIdORKij,
-                'voucher': voucher
-            }
-        );
-        const response = await this._post(`/Authentication/Create/GenVVKShard?uid=${uid}`, data);
-
-        const responseData = await this._handleError(response, "GenShard");
-        const responseModel = GenShardResponse.from(responseData);
-        return responseModel;
     }
 
     /**
@@ -341,14 +367,20 @@ export default class NodeClient extends ClientBase {
         const response = await this._post(`/Authentication/Key/v1/PreSign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'PreSign');
         const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
-        if (decrypted.length % 32 != 0) throw new Error("Unexpected response legnth. Must be divisible by 32");
+        const GRSection = GetValue(decrypted, 0);
+        if (GRSection.length % 32 != 0) throw new Error("Unexpected response legnth. Must be divisible by 32");
         let GRis = [];
-        for (let i = 0; i < decrypted.length; i += 32) {
-            GRis.push(Point.fromBytes(decrypted.slice(i, i + 32)));
+        for (let i = 0; i < GRSection.length; i += 32) {
+            GRis.push(Point.fromBytes(GRSection.slice(i, i + 32)));
         }
+        this.orkCacheId = GetValue(decrypted, 2);
         return {
             index,
-            GRis
+            data: {
+                GRis,
+                AdditionalData: GetValue(decrypted, 1)
+            }
+            
         }
     }
 
@@ -358,13 +390,16 @@ export default class NodeClient extends ClientBase {
      * @param {BaseTideRequest} request
      * @param {Point[]} GRs
      * @param {Uint8Array} bitwise
+     * @param {Uint8Array} sessId
      */
-    async Sign(vuid, request, GRs, bitwise) {
+    async Sign(vuid, request, GRs, bitwise, sessId) {
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
+        if (!this.orkCacheId) throw Error("Call PreSign first");
         const payload = CreateTideMemoryFromArray([
             request.encode(),
-            ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes())])]
-        );
+            ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes())]),
+            this.orkCacheId
+        ]);
         const encrypted = await AES.encryptData(payload, this.DHKey);
         const data = this._createFormData(
             {
@@ -378,11 +413,17 @@ export default class NodeClient extends ClientBase {
         const response = await this._post(`/Authentication/Key/v1/Sign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'Sign');
         const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
+        const signatureSection = GetValue(decrypted, 0);
         let Sij = [];
-        for (let i = 0; i < decrypted.length; i += 32) {
-            Sij.push(BigIntFromByteArray(decrypted.slice(i, i + 32)));
+        for (let i = 0; i < signatureSection.length; i += 32) {
+            Sij.push(BigIntFromByteArray(signatureSection.slice(i, i + 32)));
         }
-        return Sij;
+
+        delete this.orkCacheId;
+        return {
+            Sij,
+            AdditionalData: GetValue(decrypted, 1)
+        }
     }
     /**
      * @param {number} index 

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Tide Tests</title>
+    <style>
+        table, th, td {
+            border: 1px solid black;
+            border-collapse: collapse;
+            padding: 8px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <h1>Tide Tests</h1>
+    <table id="testsTable">
+        <thead>
+            <tr>
+                <th>Test Name</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Test rows will be inserted here dynamically -->
+        </tbody>
+    </table>
+
+    <script type="module">
+        import {tests} from "./Tests/index.js";
+
+        window.addEventListener('load', () => {
+            const testsTable = document.querySelector('#testsTable tbody');
+
+            Object.keys(tests).forEach(testName => {
+                const row = testsTable.insertRow();
+                const nameCell = row.insertCell();
+                nameCell.textContent = testName;
+
+                const actionCell = row.insertCell();
+                const runButton = document.createElement('button');
+                runButton.textContent = 'Run Test';
+                runButton.onclick = () => tests[testName]();
+                actionCell.appendChild(runButton);
+            });
+        });
+    </script>
+</body>
+</html>

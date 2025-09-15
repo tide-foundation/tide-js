@@ -1,11 +1,12 @@
 import { NewCMK_NewPRISM, ExistingCMK_NewPRISM, NewVVK, HealPrism } from "./KeyGeneration.js";
-import { CMKAuth_Basic, CMKAuth_Remembered } from "./KeyAuthentication.js";
+import { CMKAuth_Basic, CMKAuth_Remembered, Mobile_Authentication_Real_Login, Mobile_Authentication_Real_Pairing, Mobile_CMKAuth_Pairing } from "./KeyAuthentication.js";
 import { EmailRecovery } from "./AccountRecovery.js";
 import { StripeLicensing, CheckLicenseAddedToPayer } from "./StripeLicensing.js"
 import { Ed25519PublicDeserialization } from "./Components.js";
 import { Decrypt, Encrypt, Get_Auth_By_JWT } from "./Encryption.js";
 import Tide_Key from "./TideKey.js";
 import { Verifier } from "./Verifier.js";
+import {EnclaveToMobileTunnelling_Enclave, EnclaveToMobileTunnelling_Mobile } from "./Tunelling.js";
 
 export const tests = {
     StripeLicensing,
@@ -22,7 +23,12 @@ export const tests = {
     Encrypt,
     Decrypt,
     Tide_Key,
-    Verifier
+    Verifier,
+    EnclaveToMobileTunnelling_Enclave,
+    EnclaveToMobileTunnelling_Mobile,
+    Mobile_CMKAuth_Pairing: Mobile_CMKAuth_Pairing,
+    Mobile_Authentication_Real_Pairing,
+    Mobile_Authentication_Real_Login
 };
 
 /**
