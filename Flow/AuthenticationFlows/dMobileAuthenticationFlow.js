@@ -78,7 +78,6 @@ export default class dMobileAuthenticationFlow {
         // enclaveNetworkSessionKey is the key used to identify this enclave to the Tide Network for quick sign in functionality
         // They should NEVER be the same as to ensure the Tide Network can't correlate CMKs to VVKs
 
-
         // Checks if gBRK is familiar (expected to do that (outside this flow) in mobile app)
         // ...
 
