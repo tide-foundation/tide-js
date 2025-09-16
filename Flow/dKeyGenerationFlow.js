@@ -50,7 +50,7 @@ export default class dKeyGenerationFlow{
         this.uid = uid;
         this.gVRK = Point.fromBase64(gVRK);
         this.bitwise = bitwise == null ? null : bitwise;
-        this.orks = sortORKs(orks);
+        this.orks = sortORKs(orks).slice(0, Max); // only take max;
         this.selfRequesti = selfRequesti;
         this.userPublic = userPublic;
         this.sessKey = sessKey;
