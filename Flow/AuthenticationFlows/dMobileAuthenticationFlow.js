@@ -1,4 +1,4 @@
-import { NodeClient, SimClient } from "../../index.js";
+import { dKeyGenerationFlow, NodeClient, SimClient } from "../../index.js";
 import WebSocketClientBase from "../../Clients/WebSocketClientBase.js";
 import { DH } from "../../Cryptide/index.js";
 import { Ed25519PrivateComponent, Ed25519PublicComponent } from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
@@ -11,7 +11,7 @@ import BaseTideRequest from "../../Models/BaseTideRequest.js";
 import KeyInfo from "../../Models/Infos/KeyInfo.js";
 import PrismConvertResponse from "../../Models/Responses/KeyAuth/Convert/PrismConvertResponse.js";
 import dVVKSigningFlow2Step from "../SigningFlows/dVVKSigningFlow2Step.js";
-import { sortORKs } from "../../Tools/Utils.js";
+import { Max, sortORKs } from "../../Tools/Utils.js";
 
 export default class dMobileAuthenticationFlow {
 
@@ -96,13 +96,13 @@ export default class dMobileAuthenticationFlow {
      * 
      * @param {string} devicePrivateKey 
      */
-    async authenticate(devicePrivateKey, testSessionKey=null) {
+    async authenticate(devicePrivateKey, testSessionKey=null, testUserInfo=null) {
         if (!this.userId) throw 'Make sure you run ensureReady first';
 
         const deviceSessionKey = testSessionKey ? testSessionKey : TideKey.NewKey(Ed25519Scheme);
 
         const simClient = new SimClient(this.homeOrkOrigin);
-        const userInfo = await simClient.GetKeyInfo(this.userId);
+        const userInfo = testUserInfo ? testUserInfo : await simClient.GetKeyInfo(this.userId);
         const userInfoRef = new KeyInfo(userInfo.UserId, userInfo.UserPublic, userInfo.UserM, userInfo.OrkInfo.slice()); // we need the full ork list later for the enclave encrypted data
 
         const signingFlow = new dVVKSigningFlow2Step(this.userId, userInfo.UserPublic, userInfo.OrkInfo, deviceSessionKey, null, this.voucherURL);
@@ -177,9 +177,36 @@ export default class dMobileAuthenticationFlow {
         await this.webSocketClient.close();
     }
 
-    async testAuthenticate(devicePrivateKey, sessionKey){
-        await this.authenticate(devicePrivateKey, sessionKey);
+    async testAuthenticate(devicePrivateKey, sessionKey, userInfo){
+        await this.authenticate(devicePrivateKey, sessionKey, userInfo);
         await this.finish();
+    }
+
+    async createNewAccount(devicePrivateKey, deviceName, email){
+        const sessionKey = TideKey.NewKey(Ed25519Scheme);
+        const dvk = TideKey.FromSerializedComponent(devicePrivateKey);
+
+        // Reserver UID, get orks to create account
+        const { reservationConfirmation, activeOrks} = await dKeyGenerationFlow.ReserveUID(this.userId, this.voucherURL, sessionKey.get_public_component().public);
+
+        // Create a new tide account
+        const userOrks = activeOrks.slice(0, Max);
+        const keyGen = new dKeyGenerationFlow(this.userId, 
+            null, 
+            userOrks, 
+            sessionKey.get_private_component().rawBytes,
+            sessionKey.get_public_component().public,
+            "NEW",
+            this.voucherURL,
+            [email]
+        );
+        const { gMultiplied, gK } = await keyGen.GenShard(1, [null], reservationConfirmation);
+        const keyM = (await keyGen.SetShard(dvk.get_public_component().Serialize().ToString(), "CMKDevice")).M;
+
+        // Test account
+        await this.testAuthenticate(devicePrivateKey, sessionKey, new KeyInfo(this.userId, gK, keyM, userOrks));
+
+        await keyGen.Commit();
     }
 
     async pairNewDevice(devicePrivateKey, password, deviceName, sessKey=null) {
