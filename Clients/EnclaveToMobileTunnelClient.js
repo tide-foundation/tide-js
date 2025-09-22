@@ -5,14 +5,14 @@ const guidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-
 
 export default class EnclaveToMobileTunnelClient extends WebSocketClientBase{
     constructor(url){
-        super(url + "/ws/mobileapp/start");
+        super(url + "/tide2fa/mobileapp/start");
         this.url = url;
     }
 
     async initializeConnection(){
         const channelName = await this.waitForMessage("init");
         if(!guidRegex.test(channelName)) throw 'Channel name is not of GUID form. Aborting...'
-        const orkConnectionAddress = this.url + "/ws/mobileApp/appConnect/" + channelName;
+        const orkConnectionAddress = this.url + "/tide2fa/mobileApp/appConnect/" + channelName;
         return orkConnectionAddress;
     }
 
