@@ -31,6 +31,7 @@ import { Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/E
 
 export default class dKeyGenerationFlow{
     /**
+     * TODO Remove gVRK from params
      * @param {string} uid
      * @param {string} gVRK
      * @param {OrkInfo[]} orks 
@@ -48,9 +49,8 @@ export default class dKeyGenerationFlow{
         if(expired != null) if(expired < CurrentTime()) throw Error("Time has expired. Try again");
         if(orks.length < Max) throw Error("Not enough orks available to create an account");
         this.uid = uid;
-        this.gVRK = Point.fromBase64(gVRK);
         this.bitwise = bitwise == null ? null : bitwise;
-        this.orks = sortORKs(orks);
+        this.orks = sortORKs(orks).slice(0, Max); // only take max;
         this.selfRequesti = selfRequesti;
         this.userPublic = userPublic;
         this.sessKey = sessKey;

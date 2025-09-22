@@ -300,3 +300,26 @@ export async function Mobile_Authentication_Real_Login(){
     console.log("'Mobile' login proccess done");
 }
 
+export async function Mobile_Authentication_Real_SignUp(){
+    // This test is so i don't have to continuosly debug a mobile phone when testing mobile login
+    // This test WILL NOT create a user, since it's assumed a user has already created a Tide Account on an enclave in the past
+    // This test will ONLY replicate a mobile authentication on a phone but with a REAL enclave
+    const mobileKey = "AAAAcB5h5SR5IoUXfBMMxafY8AY4iukS7OfZ+sQT6fdxNvc="; // always use the same for tests
+
+    // 1. Enter tunnel address
+    const inviteLink = window.prompt("Whats the invite link?");
+
+    // 2. Pair mobile
+    // I'm going to assume the user created on the enclave was username="a" password ="a"
+    const username = "a";
+    const mobileFlow = new dMobileAuthenticationFlow(inviteLink);
+    const {browserKeyIdentifier, vendorReturnURL, userID} = await mobileFlow.ensureReady(username);
+    console.log("Browser key identifier: " + browserKeyIdentifier);
+    console.log("Vendor return URL: " + vendorReturnURL);
+    console.log("User id: " + userID);
+
+    await mobileFlow.createNewAccount(mobileKey, "test", "a@e.co");
+
+    console.log("'Mobile' creation proccess done");
+}
+
