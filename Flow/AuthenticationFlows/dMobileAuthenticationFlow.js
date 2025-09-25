@@ -187,7 +187,7 @@ export default class dMobileAuthenticationFlow {
         const dvk = TideKey.FromSerializedComponent(devicePrivateKey);
 
         // Reserver UID, get orks to create account
-        const { reservationConfirmation, activeOrks} = await dKeyGenerationFlow.ReserveUID(this.userId, this.voucherURL, sessionKey.get_public_component().public);
+        const { reservationConfirmation, activeOrks} = await dKeyGenerationFlow.ReserveUID(this.userId, this.voucherURL, sessionKey.get_public_component().public, this.homeOrkOrigin);
 
         // Create a new tide account
         const userOrks = activeOrks.slice(0, Max);

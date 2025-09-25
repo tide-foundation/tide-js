@@ -64,8 +64,8 @@ export default class dKeyGenerationFlow{
         this.orksToWaitFor = purpose == "NEW" ? Max : Threshold;
     }
 
-    static async ReserveUID(uid, voucherURL, gSessKeyPub){
-        const simClient = new NetworkClient();
+    static async ReserveUID(uid, voucherURL, gSessKeyPub, homeOrkUrl = null){
+        const simClient = new NetworkClient(homeOrkUrl);
         const availableOrks = (await simClient.FindReservers(uid));
         const pre_activeOrks = SimulatorFlow.FilterInactiveOrks(availableOrks);
         const reservers = availableOrks.slice(0, 5); // super unlikely all 5 orks are down
