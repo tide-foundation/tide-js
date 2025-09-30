@@ -88,7 +88,9 @@ async function PromiseRace(promises, keyType, amountRequired, customTimeout=null
             }
         }
 
-        if(oneSecCheckPassed && fullyCompletedPromises >=amountRequired) break;
+        // Removed one sec check passed condition for slighly faster requests - add back in when we start penalising orks
+        //if(oneSecCheckPassed && fullyCompletedPromises >=amountRequired) break;
+        if(fullyCompletedPromises >=amountRequired) break;
 
         // Remove the resolved or rejected promise from the list
         promises.splice(fastestPromise.index, 1);
