@@ -1,4 +1,4 @@
-import { Bytes2Hex, GetValue, StringFromUint8Array } from "../Cryptide/Serialization.js";
+import { AuthorizerPack, Bytes2Hex, bytesToBase64, GetValue, StringFromUint8Array } from "../Cryptide/Serialization.js";
 import InitializationCertificate from "./InitializationCertificate.js";
 import RuleSettings from "./Rules/RuleSettings.js";
 import CardanoTxBody from "./Cardano/CardanoTxBody.js";
@@ -186,11 +186,39 @@ class OffboardSignRequestBuilder extends HumanReadableModelBuilder{
     }
 }
 
+class LicenseSignRequestBuilder extends HumanReadableModelBuilder{
+    _name = "RotateVRK";
+    _version = "1";
+    _humanReadableName = "Rotating VRK";
+
+    get _id() { return this._name + ":" + this._version; }
+    constructor(data, expiry){
+        super(data, expiry);
+    }
+    getHumanReadableObject(){
+        const authPack = new AuthorizerPack(this._data);
+
+        let summary = [];
+        summary.push(["Signing new license", authPack.Authorizer.GVRK.Serialize().ToString()]);
+
+        let body = {
+            "AuthFlow": authPack.AuthFlow,
+            "Authorizer": authPack.Authorizer.GVRK.Serialize().ToString(),
+            "SignModels": authPack.SignModels
+        }
+        return {
+            summary: summary,
+            pretty: body
+        }
+    }
+}
+
 const modelBuildersMap = {
     [new UserContextSignRequestBuilder()._id]: UserContextSignRequestBuilder,
     [new CardanoTxSignRequestBuilder()._id]: CardanoTxSignRequestBuilder,
     [new RuleSettingSignRequestBuilder()._id]: RuleSettingSignRequestBuilder,
-    [new OffboardSignRequestBuilder()._id]: OffboardSignRequestBuilder
+    [new OffboardSignRequestBuilder()._id]: OffboardSignRequestBuilder,
+    [new LicenseSignRequestBuilder()._id]: LicenseSignRequestBuilder
 }
 
 const unixSecondsToLocaleString = (unixSeconds) => {
