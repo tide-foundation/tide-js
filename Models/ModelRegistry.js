@@ -1,4 +1,4 @@
-import { GetValue, StringFromUint8Array } from "../Cryptide/Serialization.js";
+import { AuthorizerPack, Bytes2Hex, bytesToBase64, GetValue, StringFromUint8Array } from "../Cryptide/Serialization.js";
 import InitializationCertificate from "./InitializationCertificate.js";
 import RuleSettings from "./Rules/RuleSettings.js";
 import CardanoTxBody from "./Cardano/CardanoTxBody.js";
@@ -159,10 +159,66 @@ class RuleSettingSignRequestBuilder extends HumanReadableModelBuilder{ // this i
     }
 }
 
+class OffboardSignRequestBuilder extends HumanReadableModelBuilder{
+    _name = "Offboard";
+    _version = "1";
+    _humanReadableName = "Tide Offboarding";
+
+    get _id() { return this._name + ":" + this._version; }
+    constructor(data, expiry){
+        super(data, expiry);
+    }
+    getHumanReadableObject(){
+        let summary = [];
+        summary.push(["WARNING WARNING WARNING", ""]);
+        summary.push(["APPROVING THIS REQUEST WILL CRIPPLE YOUR LICENSED TIDE ACCOUNT", ""]);
+        summary.push(["ONLY APPROVE THIS REQUEST IF YOU INTEND TO OFFBOARD FROM THE TIDE NETWORK", ""]);
+        summary.push(["THIS ACTION IS UNRECOVERABLE", ""]);
+
+        const vrk = Bytes2Hex(GetValue(this._data, 0));
+        let body = {
+            "Vendor Rotating Key for Offboarding": vrk
+        }
+        return {
+            summary: summary,
+            pretty: body
+        }
+    }
+}
+
+class LicenseSignRequestBuilder extends HumanReadableModelBuilder{
+    _name = "RotateVRK";
+    _version = "1";
+    _humanReadableName = "Rotating VRK";
+
+    get _id() { return this._name + ":" + this._version; }
+    constructor(data, expiry){
+        super(data, expiry);
+    }
+    getHumanReadableObject(){
+        const authPack = new AuthorizerPack(this._data);
+
+        let summary = [];
+        summary.push(["Signing new license", authPack.Authorizer.GVRK.Serialize().ToString()]);
+
+        let body = {
+            "AuthFlow": authPack.AuthFlow,
+            "Authorizer": authPack.Authorizer.GVRK.Serialize().ToString(),
+            "SignModels": authPack.SignModels
+        }
+        return {
+            summary: summary,
+            pretty: body
+        }
+    }
+}
+
 const modelBuildersMap = {
     [new UserContextSignRequestBuilder()._id]: UserContextSignRequestBuilder,
     [new CardanoTxSignRequestBuilder()._id]: CardanoTxSignRequestBuilder,
-    [new RuleSettingSignRequestBuilder()._id]: RuleSettingSignRequestBuilder
+    [new RuleSettingSignRequestBuilder()._id]: RuleSettingSignRequestBuilder,
+    [new OffboardSignRequestBuilder()._id]: OffboardSignRequestBuilder,
+    [new LicenseSignRequestBuilder()._id]: LicenseSignRequestBuilder
 }
 
 const unixSecondsToLocaleString = (unixSeconds) => {
