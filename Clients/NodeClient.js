@@ -572,4 +572,89 @@ export default class NodeClient extends ClientBase {
 
     }
 
+    // --- Forseti (prod) endpoints: generic, no test data baked in ---
+
+    /** Internal helper: POST JSON and parse JSON body (via your existing error handler). */
+    async _postJsonAndParse(path, payload, label) {
+        const res = await this._postJSON(path, payload);
+        const text = await this._handleError(res, label);
+        try { return JSON.parse(text); } catch { return text; }
+    }
+
+    /**
+     * POST /Forseti/Upload/source
+     * Compiles server-side and stores. Returns { bh, entryType }.
+     */
+    async UploadPolicySource(vendorId, uploadedBy, entryType, sdkVersion, source) {
+        return await this._postJsonAndParse(
+            `/Forseti/Upload/source`,
+            { vendorId, uploadedBy, entryType, sdkVersion, source },
+            "Forseti Upload Source"
+        );
+    }
+
+    /**
+     * POST /Forseti/Upload/dll
+     * Stores a precompiled DLL. Returns { bh, entryType }.
+     */
+    async UploadPolicyDll(vendorId, uploadedBy, entryType, sdkVersion, dllBase64) {
+        return await this._postJsonAndParse(
+            `/Forseti/Upload/dll`,
+            { vendorId, uploadedBy, entryType, sdkVersion, dllBase64 },
+            "Forseti Upload DLL"
+        );
+    }
+
+    /**
+     * POST /Forseti/Bindings/upsert
+     * Creates/updates a binding row. Returns { updated: true }.
+     * combiner: "DenyOverrides" | "AllowOverrides" | "FirstMatch" | "KofN"
+     * mode:     "Enforce" | "Shadow"
+     */
+    async UpsertPolicyBinding(vvkid, ruleId, combiner, mode, codeBh, entryType, priority = 0) {
+        return await this._postJsonAndParse(
+            `/Forseti/Bindings/upsert`,
+            { vvkid, ruleId, combiner, mode, codeBh, entryType, priority },
+            "Forseti Upsert Binding"
+        );
+    }
+
+    /**
+     * POST /Forseti/Gate/validate
+     * Returns { allowed: boolean, error?: string|null }.
+     */
+    async ValidateAccess(vvkid, resource, action, claims) {
+    try {
+        const res = await this._postJSON(`/Forseti/Gate/validate`, { vvkid, resource, action, claims });
+        const text = await this._handleError(res, "Forseti Validate");
+        let obj;
+        try { obj = JSON.parse(text); } catch { obj = null; }
+        if (!obj || typeof obj.allowed !== "boolean") return { allowed: false, error: "BadResponse" };
+        // strict default-deny if error string present
+        if (obj.error && obj.error.length) return { allowed: false, error: obj.error };
+        return obj;
+    } catch (e) {
+        return { allowed: false, error: e?.message || "Validate.Failed" };
+    }
+    }
+
+    /**
+     * POST /Forseti/Revocations/revoke
+     * Hot-revokes a code hash for a tenant. Returns { revoked: true }.
+     */
+    async RevokePolicyBh(vvkid, bh, reason = null) {
+        return await this._postJsonAndParse(
+            `/Forseti/Revocations/revoke`,
+            { vvkid, bh, reason },
+            "Forseti Revoke"
+        );
+    }
+
+    async GetForsetiSdkVersion() {
+    const res = await this._get(`/Forseti/Meta/sdk-version`);
+    const text = await res.text();
+    if (!res.ok || !text) throw new Error("Failed to get Forseti SDK version");
+    return text.trim();
+    }
+
 }

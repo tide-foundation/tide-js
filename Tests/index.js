@@ -1,35 +1,62 @@
 import { NewCMK_NewPRISM, ExistingCMK_NewPRISM, NewVVK, HealPrism } from "./KeyGeneration.js";
-import { CMKAuth_Basic, CMKAuth_Remembered, Mobile_Authentication_Real_Login, Mobile_Authentication_Real_Pairing, Mobile_Authentication_Real_SignUp, Mobile_CMKAuth_Pairing } from "./KeyAuthentication.js";
+import {
+    CMKAuth_Basic,
+    CMKAuth_Remembered,
+    Mobile_Authentication_Real_Login,
+    Mobile_Authentication_Real_Pairing,
+    Mobile_Authentication_Real_SignUp,
+    Mobile_CMKAuth_Pairing
+} from "./KeyAuthentication.js";
 import { EmailRecovery } from "./AccountRecovery.js";
-import { StripeLicensing, CheckLicenseAddedToPayer } from "./StripeLicensing.js"
+import { StripeLicensing, CheckLicenseAddedToPayer } from "./StripeLicensing.js";
 import { Ed25519PublicDeserialization } from "./Components.js";
 import { Decrypt, Encrypt, Get_Auth_By_JWT } from "./Encryption.js";
 import Tide_Key from "./TideKey.js";
 import { Verifier } from "./Verifier.js";
-import {EnclaveToMobileTunnelling_Enclave, EnclaveToMobileTunnelling_Mobile } from "./Tunelling.js";
+import { EnclaveToMobileTunnelling_Enclave, EnclaveToMobileTunnelling_Mobile } from "./Tunelling.js";
+
+// New Forseti policy E2E tests (upload/bind/validate, deny case, revoke)
+import {
+    Forseti_UploadBindValidate,
+    Forseti_UploadBindExpectDeny,
+    Forseti_RevokeBh
+} from "./ForsetiPolicyTests.js";
 
 export const tests = {
+    // Payments/Licensing
     StripeLicensing,
     CheckLicenseAddedToPayer,
-    NewCMK_NewPRISM, 
+
+    // Key Gen / Auth
+    NewCMK_NewPRISM,
     ExistingCMK_NewPRISM,
     CMKAuth_Basic,
     CMKAuth_Remembered,
-    EmailRecovery,
     NewVVK,
     HealPrism,
+
+    // Auth flows (web/mobile)
+    Mobile_CMKAuth_Pairing: Mobile_CMKAuth_Pairing,
+    Mobile_Authentication_Real_Pairing,
+    Mobile_Authentication_Real_Login,
+    Mobile_Authentication_Real_SignUp,
+
+    // Crypto / Components
     Ed25519PublicDeserialization,
     Get_Auth_By_JWT,
     Encrypt,
     Decrypt,
     Tide_Key,
     Verifier,
+
+    // Tunneling
     EnclaveToMobileTunnelling_Enclave,
     EnclaveToMobileTunnelling_Mobile,
-    Mobile_CMKAuth_Pairing: Mobile_CMKAuth_Pairing,
-    Mobile_Authentication_Real_Pairing,
-    Mobile_Authentication_Real_Login,
-    Mobile_Authentication_Real_SignUp
+
+    // New Forseti policy tests (prod endpoints, runtime-provided data)
+    Forseti_UploadBindValidate,
+    Forseti_UploadBindExpectDeny,
+    Forseti_RevokeBh
 };
 
 /**
@@ -38,8 +65,5 @@ export const tests = {
     "gVRK": "17ffad8068dc0de9935d36636f3ad1b5de6de3413b12388e453b05f2a4c1d3db"
  }
  */
-//console.log(Bytes2Hex(Point.BASE.mul(BigInt("123456789")).toRawBytes()));
-//const obfg = Bytes2Hex((await HashToPoint(Point.BASE.toRawBytes())).mul(BigIntFromByteArray(await SHA256_Digest(BigIntToByteArray(BigInt("123456789"))))).toRawBytes())
-//console.log(obfg);
-//console.log(Bytes2Hex((await HashToPoint(Point.BASE.toRawBytes())).toRawBytes()));
+
 window.tests = tests;
