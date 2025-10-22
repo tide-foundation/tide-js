@@ -341,7 +341,7 @@ export default class NodeClient extends ClientBase {
      * @param {Point} orkPublic 
      */
     async EnableTideDH(orkPublic) {
-        if(!this.sessionKeyPrivateRaw) throw Error("Add a session key to the client first");
+        if (!this.sessionKeyPrivateRaw) throw Error("Add a session key to the client first");
         this.enabledTideDH = true;
         this.DHKey = await DH.computeSharedKey(orkPublic, this.sessionKeyPrivateRaw);
         return this;
@@ -362,7 +362,7 @@ export default class NodeClient extends ClientBase {
             }
         );
 
-        if(!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
+        if (!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
 
         const response = await this._post(`/Authentication/Key/v1/PreSign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'PreSign');
@@ -380,7 +380,7 @@ export default class NodeClient extends ClientBase {
                 GRis,
                 AdditionalData: GetValue(decrypted, 1)
             }
-            
+
         }
     }
 
@@ -407,8 +407,8 @@ export default class NodeClient extends ClientBase {
                 'bitwise': bytesToBase64(bitwise)
             }
         );
-        
-        if(!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
+
+        if (!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
 
         const response = await this._post(`/Authentication/Key/v1/Sign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'Sign');
@@ -431,7 +431,7 @@ export default class NodeClient extends ClientBase {
      * @param {BaseTideRequest} request 
      * @param {string} voucher
      */
-    async Decrypt(index, vuid, request, voucher){
+    async Decrypt(index, vuid, request, voucher) {
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
         const encrypted = await AES.encryptData(CreateTideMemoryFromArray([request.encode()]), this.DHKey);
         const data = this._createFormData(
@@ -440,8 +440,8 @@ export default class NodeClient extends ClientBase {
                 'voucher': voucher
             }
         );
-        
-        if(!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
+
+        if (!this.token) data.append("gSessKey", this.sessionKeyPublicEncoded);
 
         const response = await this._post(`/Authentication/Key/v1/Decrypt?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'Decrypt');
@@ -607,15 +607,15 @@ export default class NodeClient extends ClientBase {
 
     /**
      * POST /Forseti/Bindings/upsert
-     * Creates/updates a binding row. Returns { updated: true }.
-     * combiner: "DenyOverrides" | "AllowOverrides" | "FirstMatch" | "KofN"
-     * mode:     "Enforce" | "Shadow"
+     * Activates a single binding for (codeBh, mode). Ensures uniqueness per (codeBh, mode).
+     * mode: "enforce" | "shadow"   (case-insensitive)
+     * Returns { updated: true }.
      */
-    async UpsertPolicyBinding(vvkid, ruleId, combiner, mode, codeBh, entryType, priority = 0) {
+    async ActivatePolicyBinding(codeBh, entryType, mode) {
         return await this._postJsonAndParse(
             `/Forseti/Bindings/upsert`,
-            { vvkid, ruleId, combiner, mode, codeBh, entryType, priority },
-            "Forseti Upsert Binding"
+            { codeBh, entryType, mode },
+            "Forseti Activate Binding"
         );
     }
 
@@ -624,37 +624,28 @@ export default class NodeClient extends ClientBase {
      * Returns { allowed: boolean, error?: string|null }.
      */
     async ValidateAccess(vvkid, resource, action, claims) {
-    try {
-        const res = await this._postJSON(`/Forseti/Gate/validate`, { vvkid, resource, action, claims });
-        const text = await this._handleError(res, "Forseti Validate");
-        let obj;
-        try { obj = JSON.parse(text); } catch { obj = null; }
-        if (!obj || typeof obj.allowed !== "boolean") return { allowed: false, error: "BadResponse" };
-        // strict default-deny if error string present
-        if (obj.error && obj.error.length) return { allowed: false, error: obj.error };
-        return obj;
-    } catch (e) {
-        return { allowed: false, error: e?.message || "Validate.Failed" };
-    }
+        try {
+            const res = await this._postJSON(`/Forseti/Gate/validate`, { vvkid, resource, action, claims });
+            const text = await this._handleError(res, "Forseti Validate");
+            let obj;
+            try { obj = JSON.parse(text); } catch { obj = null; }
+            if (!obj || typeof obj.allowed !== "boolean") return { allowed: false, error: "BadResponse" };
+            if (obj.error && obj.error.length) return { allowed: false, error: obj.error };
+            return obj;
+        } catch (e) {
+            return { allowed: false, error: e?.message || "Validate.Failed" };
+        }
     }
 
     /**
-     * POST /Forseti/Revocations/revoke
-     * Hot-revokes a code hash for a tenant. Returns { revoked: true }.
+     * GET /Forseti/Meta/sdk-version (plain text)
      */
-    async RevokePolicyBh(vvkid, bh, reason = null) {
-        return await this._postJsonAndParse(
-            `/Forseti/Revocations/revoke`,
-            { vvkid, bh, reason },
-            "Forseti Revoke"
-        );
+    async GetForsetiSdkVersion() {
+        const res = await this._get(`/Forseti/Meta/sdk-version`);
+        const text = await res.text();
+        if (!res.ok || !text) throw new Error("Failed to get Forseti SDK version");
+        return text.trim();
     }
 
-    async GetForsetiSdkVersion() {
-    const res = await this._get(`/Forseti/Meta/sdk-version`);
-    const text = await res.text();
-    if (!res.ok || !text) throw new Error("Failed to get Forseti SDK version");
-    return text.trim();
-    }
 
 }
