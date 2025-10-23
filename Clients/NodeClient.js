@@ -585,10 +585,10 @@ export default class NodeClient extends ClientBase {
      * POST /Forseti/Upload/source
      * Compiles server-side and stores. Returns { bh, entryType }.
      */
-    async UploadPolicySource(vendorId, uploadedBy, entryType, sdkVersion, source) {
+    async UploadPolicySource(vendorId, modelId, uploadedBy, entryType, sdkVersion, source) {
         return await this._postJsonAndParse(
             `/Forseti/Upload/source`,
-            { vendorId, uploadedBy, entryType, sdkVersion, source },
+            { vendorId, modelId, uploadedBy, entryType, sdkVersion, source },
             "Forseti Upload Source"
         );
     }
@@ -597,10 +597,10 @@ export default class NodeClient extends ClientBase {
      * POST /Forseti/Upload/dll
      * Stores a precompiled DLL. Returns { bh, entryType }.
      */
-    async UploadPolicyDll(vendorId, uploadedBy, entryType, sdkVersion, dllBase64) {
+    async UploadPolicyDll(vendorId, modelId, uploadedBy, entryType, sdkVersion, dllBase64) {
         return await this._postJsonAndParse(
             `/Forseti/Upload/dll`,
-            { vendorId, uploadedBy, entryType, sdkVersion, dllBase64 },
+            { vendorId, modelId, uploadedBy, entryType, sdkVersion, dllBase64 },
             "Forseti Upload DLL"
         );
     }
@@ -609,9 +609,9 @@ export default class NodeClient extends ClientBase {
      * POST /Forseti/Gate/validate
      * Returns { allowed: boolean, error?: string|null }.
      */
-    async ValidateAccess(vvkid, resource, action, claims) {
+    async ValidateAccess(vvkid, modelId, contractId, resource, action, claims) {
         try {
-            const res = await this._postJSON(`/Forseti/Gate/validate`, { vvkid, resource, action, claims });
+            const res = await this._postJSON(`/Forseti/Gate/validate`, { vvkid, modelId, contractId, resource, action, claims });
             const text = await this._handleError(res, "Forseti Validate");
             let obj;
             try { obj = JSON.parse(text); } catch { obj = null; }
@@ -622,7 +622,6 @@ export default class NodeClient extends ClientBase {
             return { allowed: false, error: e?.message || "Validate.Failed" };
         }
     }
-
     /**
      * GET /Forseti/Meta/sdk-version (plain text)
      */
