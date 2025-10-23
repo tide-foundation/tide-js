@@ -142,9 +142,6 @@ public sealed class MyPolicy : IAccessPolicy
             lastBh = bh; lastEntry = resolvedEntry;
             log(`✅ Uploaded: bh=${bh} entry=${resolvedEntry}`);
 
-            await client.ActivatePolicyBinding(bh, resolvedEntry, mode);
-            log(`✅ Activated binding (mode=${mode}) for bh=${bh}`);
-
             // default claims if the box is empty
             let claims = parseClaimsOr({ sub: "alice", stage: "validate" });
             if (!claims) return;

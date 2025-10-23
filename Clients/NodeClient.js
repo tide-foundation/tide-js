@@ -606,20 +606,6 @@ export default class NodeClient extends ClientBase {
     }
 
     /**
-     * POST /Forseti/Bindings/upsert
-     * Activates a single binding for (codeBh, mode). Ensures uniqueness per (codeBh, mode).
-     * mode: "enforce" | "shadow"   (case-insensitive)
-     * Returns { updated: true }.
-     */
-    async ActivatePolicyBinding(codeBh, entryType, mode) {
-        return await this._postJsonAndParse(
-            `/Forseti/Bindings/upsert`,
-            { codeBh, entryType, mode },
-            "Forseti Activate Binding"
-        );
-    }
-
-    /**
      * POST /Forseti/Gate/validate
      * Returns { allowed: boolean, error?: string|null }.
      */
