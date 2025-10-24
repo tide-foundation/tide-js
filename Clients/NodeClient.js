@@ -606,10 +606,10 @@ export default class NodeClient extends ClientBase {
      * body: { vvkid, modelId, contractId, resource, action, parameters }
      * returns: { allowed: boolean, error?: string|null }
      */
-    async ValidateAccess(vvkid, modelId, contractId, resource, action, parameters) {
+    async ValidateAccess(vvkid, modelId, contractId, resource, action, claims) {
         try {
             const res = await this._postJSON(`/Forseti/Gate/validate`, {
-                vvkid, modelId, contractId, resource, action, parameters
+                vvkid, modelId, contractId, resource, action, claims
             });
             const text = await this._handleError(res, "Forseti Validate");
             let obj; try { obj = JSON.parse(text); } catch { obj = null; }
