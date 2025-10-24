@@ -574,17 +574,16 @@ export default class NodeClient extends ClientBase {
 
     // --- Forseti (prod) endpoints: generic, no test data baked in ---
 
-    /** Internal helper: POST JSON and parse JSON body (via your existing error handler). */
+    // inside NodeClient
+
+    /** Small helper: POST JSON then parse response JSON (or raw text if not JSON). */
     async _postJsonAndParse(path, payload, label) {
         const res = await this._postJSON(path, payload);
         const text = await this._handleError(res, label);
         try { return JSON.parse(text); } catch { return text; }
     }
 
-    /**
-     * POST /Forseti/Upload/source
-     * Compiles server-side and stores. Returns { bh, entryType }.
-     */
+    /** POST /Forseti/Upload/source  -> { bh, entryType } */
     async UploadPolicySource(vendorId, modelId, uploadedBy, entryType, sdkVersion, source) {
         return await this._postJsonAndParse(
             `/Forseti/Upload/source`,
@@ -593,10 +592,7 @@ export default class NodeClient extends ClientBase {
         );
     }
 
-    /**
-     * POST /Forseti/Upload/dll
-     * Stores a precompiled DLL. Returns { bh, entryType }.
-     */
+    /** POST /Forseti/Upload/dll -> { bh, entryType } */
     async UploadPolicyDll(vendorId, modelId, uploadedBy, entryType, sdkVersion, dllBase64) {
         return await this._postJsonAndParse(
             `/Forseti/Upload/dll`,
@@ -607,14 +603,16 @@ export default class NodeClient extends ClientBase {
 
     /**
      * POST /Forseti/Gate/validate
-     * Returns { allowed: boolean, error?: string|null }.
+     * body: { vvkid, modelId, contractId, resource, action, parameters }
+     * returns: { allowed: boolean, error?: string|null }
      */
-    async ValidateAccess(vvkid, modelId, contractId, resource, action, claims) {
+    async ValidateAccess(vvkid, modelId, contractId, resource, action, parameters) {
         try {
-            const res = await this._postJSON(`/Forseti/Gate/validate`, { vvkid, modelId, contractId, resource, action, claims });
+            const res = await this._postJSON(`/Forseti/Gate/validate`, {
+                vvkid, modelId, contractId, resource, action, parameters
+            });
             const text = await this._handleError(res, "Forseti Validate");
-            let obj;
-            try { obj = JSON.parse(text); } catch { obj = null; }
+            let obj; try { obj = JSON.parse(text); } catch { obj = null; }
             if (!obj || typeof obj.allowed !== "boolean") return { allowed: false, error: "BadResponse" };
             if (obj.error && obj.error.length) return { allowed: false, error: obj.error };
             return obj;
@@ -622,15 +620,15 @@ export default class NodeClient extends ClientBase {
             return { allowed: false, error: e?.message || "Validate.Failed" };
         }
     }
-    /**
-     * GET /Forseti/Meta/sdk-version (plain text)
-     */
+
+    /** GET /Forseti/Meta/sdk-version */
     async GetForsetiSdkVersion() {
         const res = await this._get(`/Forseti/Meta/sdk-version`);
         const text = await res.text();
         if (!res.ok || !text) throw new Error("Failed to get Forseti SDK version");
         return text.trim();
     }
+
 
 
 }
