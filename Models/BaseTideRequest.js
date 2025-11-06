@@ -22,8 +22,11 @@ export default class BaseTideRequest {
         this.authorizerCert = new Uint8Array();;
         this.authorizer = new Uint8Array();;
         this.expiry = BigInt(CurrentTime() + 30); // default is 30s
-        this.rules = new Uint8Array();
-        this.rulesCert = new Uint8Array();
+        this.policy = new Uint8Array();
+    }
+
+    id() {
+        this.name + ":" + this.version;
     }
 
     /**
@@ -36,8 +39,7 @@ export default class BaseTideRequest {
         r.authorizerCert = this.authorizerCert;
         r.authorizer = this.authorizer;
         r.expiry = this.expiry;
-        r.rules = this.rules;
-        r.rulesCert = this.rulesCert;
+        r.policy = this.policy;
         return r;
     }
 
@@ -83,21 +85,6 @@ export default class BaseTideRequest {
     }
 
 
-    /**
-     * @param {Uint8Array} rules 
-     */
-    addRules(rules) {
-        this.rules = rules;
-    }
-
-    /**
-     * 
-     * @param {Uint8Array} rulesCert 
-     */
-    addRulesCert(rulesCert) {
-        this.rulesCert = rulesCert
-    }
-
     async dataToAuthorize() {
         return StringToUint8Array("<datatoauthorize-" + this.name + ":" + this.version + bytesToBase64(await SHA512_Digest(this.draft)) + this.expiry.toString() + "-datatoauthorize>");
     }
@@ -114,23 +101,57 @@ export default class BaseTideRequest {
         const expiry_view = new DataView(expiry.buffer);
         expiry_view.setBigInt64(0, this.expiry, true);
 
-        const req = Serialization.CreateTideMemory(name_b,
-            44 + // 11 fields * 4 byte length
-            name_b.length + version_b.length + authFlow_b.length + expiry.length +
-            this.draft.length + this.dyanmicData.length + this.authorizer.length + this.authorization.length + this.authorizerCert.length + this.rules.length + this.rulesCert.length
-        );
-        Serialization.WriteValue(req, 1, version_b);
-        Serialization.WriteValue(req, 2, expiry);
-        Serialization.WriteValue(req, 3, this.draft);
-        Serialization.WriteValue(req, 4, authFlow_b);
-        Serialization.WriteValue(req, 5, this.dyanmicData);
-        Serialization.WriteValue(req, 6, this.authorizer);
-        Serialization.WriteValue(req, 7, this.authorization);
-        Serialization.WriteValue(req, 8, this.authorizerCert);
-        Serialization.WriteValue(req, 9, this.rules);
-        Serialization.WriteValue(req, 10, this.rulesCert);
-
+        const req = Serialization.CreateTideMemoryFromArray(
+            name_b,
+            version_b,
+            expiry,
+            this.draft,
+            authFlow_b,
+            this.dyanmicData,
+            this.authorizer,
+            this.authorization,
+            this.authorizerCert,
+            this.policy
+        )
 
         return req;
+    }
+
+    static decode(data){
+        // Read field 0 (name) - this is part of the TideMemory structure
+        const name_b = Serialization.GetValue(data, 0);
+        const name = new TextDecoder().decode(name_b);
+        
+        // Read all other fields
+        const version_b = Serialization.GetValue(data, 1);
+        const version = new TextDecoder().decode(version_b);
+        
+        const expiry_b = Serialization.GetValue(data, 2);
+        const expiry_view = new DataView(expiry_b.buffer, expiry_b.byteOffset, expiry_b.byteLength);
+        const expiry = expiry_view.getBigInt64(0, true);
+        
+        const draft = Serialization.GetValue(data, 3);
+        
+        const authFlow_b = Serialization.GetValue(data, 4);
+        const authFlow = new TextDecoder().decode(authFlow_b);
+        
+        const dynamicData = Serialization.GetValue(data, 5);
+        
+        const authorizer = Serialization.GetValue(data, 6);
+        const authorization = Serialization.GetValue(data, 7);
+        const authorizerCert = Serialization.GetValue(data, 8);
+        const policy = Serialization.GetValue(data, 9);
+        
+        // Create a new BaseTideRequest with the decoded data
+        const request = new BaseTideRequest(name, version, authFlow, draft, dynamicData);
+        
+        // Set the remaining fields
+        request.expiry = expiry;
+        request.authorizer = authorizer;
+        request.authorization = authorization;
+        request.authorizerCert = authorizerCert;
+        request.policy = policy;
+        
+        return request;
     }
 }

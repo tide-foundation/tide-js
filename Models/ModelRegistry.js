@@ -1,38 +1,74 @@
-import { AuthorizerPack, Bytes2Hex, bytesToBase64, GetValue, StringFromUint8Array } from "../Cryptide/Serialization.js";
+import { AuthorizerPack, Bytes2Hex, bytesToBase64, GetValue, StringFromUint8Array, TryGetValue } from "../Cryptide/Serialization.js";
 import InitializationCertificate from "./InitializationCertificate.js";
 import RuleSettings from "./Rules/RuleSettings.js";
 import CardanoTxBody from "./Cardano/CardanoTxBody.js";
+import BaseTideRequest from "./BaseTideRequest.js";
+import Policy from "./Policy.js";
 
 export class ModelRegistry{
     /**
-     * 
-     * @param {string} modelId 
      * @returns {HumanReadableModelBuilder}
      */
-    static getHumanReadableModelBuilder(modelId, data, expiry){
-        const c = modelBuildersMap[modelId];
-        if(!c) throw Error("Could not find model: " + modelId);
-        return c.create(data, expiry);
+    static getHumanReadableModelBuilder(reqId, data){
+        const r = BaseTideRequest.decode(data);
+        const c = modelBuildersMap[r.id()];
+        if(!c) throw Error("Could not find model: " + r.id());
+        return c.create(data, reqId);
     }
 }
 
 export class HumanReadableModelBuilder{
-    constructor(data, expiry){
-        this._data = data;
-        this._expiry = expiry;
+    _humanReadableName = null;
+    constructor(data, reqId){
+        if(data){
+            this._data = data;
+            this.request = BaseTideRequest.decode(data);
+        }
+        this.reqId = reqId;
     }
-    static create(data, expiry){
-        return new this(data, expiry);
+    static create(data, reqId){
+        return new this(data, reqId);
     }
-    getHumanReadableObject(){
+    async getRequestId(){
+        // hash of the request
+        return Bytes2Hex(await this.request.dataToAuthorize());
+    }
+    getApprovalRecieved(){
+        // how many approvals have been already submitted for this model
+        const authorizers = GetValue(this._data, 6);
+        let i = 0;
+        while(TryGetValue(authorizers, i, _)){i++;}
+        return i;
+    }
+    getApprovalsRequired(){
+        const policy = new Policy(GetValue(this._data, 9));
+
+
+        // Ok so in the future we'll want to support multi-role multi-threshold approvals
+        // but since the the UI doesn't support it and we don't even have a contract yet to support it
+        // we'll implement the logic later
+        // for now we'll only be supporting on role/threshold
+
+        return policy.params.getParameter("threshold", String);
+    }
+    getDetailsMap(){
+        // the summary
         throw Error("Not implemented for this model");
+    }
+    getRequestDataJson(){
+        // raw json
+        throw Error("Not implemented for this model");
+    }
+
+    getExpiry(){
+        return this.request.expiry;
     }
 }
 
 // MODELS ----------------------------------------------------------------
 class UserContextSignRequestBuilder extends HumanReadableModelBuilder{
     _name = "UserContext"; // Model ID
-    _humanReadableName = "Change Request";
+    _humanReadableName = "User Access Change";
     _version = "1";
     get _id() { return this._name + ":" + this._version; }
 
@@ -95,6 +131,7 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder{
 }
 class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder{ // this is an example class
     _name = "CardanoTx"; // Model ID
+    _humanReadableName = "Send Cardano Funds";
     _version = "1";
     get _id() { return this._name + ":" + this._version; }
 
@@ -120,49 +157,10 @@ class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder{ // this is 
     }
 }
 
-class RuleSettingSignRequestBuilder extends HumanReadableModelBuilder{ // this is an example class
-    _name = "Rules"; // Model ID
-    _version = "1";
-    get _id() { return this._name + ":" + this._version; }
-
-    constructor(data, expiry){
-        //throw Error("Not implemented");
-        super(data, expiry);
-    }
-    getHumanReadableObject(){
-        // deserialize draft here and return a pretty object for user
-        let prettyObject = {};
-
-        let draftIndex = 0;
-        const previousRulesPresent = GetValue(this._data, 0)[0];
-        draftIndex++;
-
-        // determine if InitCert is present
-        switch(previousRulesPresent){
-            case 0:
-                break;
-            case 1:
-                const previousRuleSettings = GetValue(this._data, draftIndex);
-                prettyObject.RuleSettingToRevoke = new RuleSettings(StringFromUint8Array(previousRuleSettings)).toPrettyObject();
-                draftIndex += 2;
-                break;
-            default:
-                throw Error("Unexpected value");
-        }
-
-        const newRuleSettings = GetValue(this._data, draftIndex);
-        prettyObject.NewRuleSetting = new RuleSettings(StringFromUint8Array(newRuleSettings)).toPrettyObject(); 
-        return {
-            summary: [["No summary for RuleSettings"]],
-            pretty: prettyObject
-        }
-    }
-}
-
 class OffboardSignRequestBuilder extends HumanReadableModelBuilder{
     _name = "Offboard";
     _version = "1";
-    _humanReadableName = "Tide Offboarding";
+    _humanReadableName = "Cancel Tide Subscription and Protection";
 
     get _id() { return this._name + ":" + this._version; }
     constructor(data, expiry){
@@ -216,7 +214,6 @@ class LicenseSignRequestBuilder extends HumanReadableModelBuilder{
 const modelBuildersMap = {
     [new UserContextSignRequestBuilder()._id]: UserContextSignRequestBuilder,
     [new CardanoTxSignRequestBuilder()._id]: CardanoTxSignRequestBuilder,
-    [new RuleSettingSignRequestBuilder()._id]: RuleSettingSignRequestBuilder,
     [new OffboardSignRequestBuilder()._id]: OffboardSignRequestBuilder,
     [new LicenseSignRequestBuilder()._id]: LicenseSignRequestBuilder
 }
