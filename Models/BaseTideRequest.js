@@ -1,6 +1,7 @@
 import { SHA512_Digest } from "../Cryptide/Hashing/Hash.js";
 import { Serialization } from "../Cryptide/index.js";
 import { base64ToBase64Url, bytesToBase64, numberToUint8Array, StringToUint8Array } from "../Cryptide/Serialization.js";
+import { PolicyAuthorizedTideRequestSignatureFormat } from "../Cryptide/Signing/TideSignature.js";
 import { CurrentTime } from "../Tools/Utils.js";
 
 export default class BaseTideRequest {
@@ -153,5 +154,12 @@ export default class BaseTideRequest {
         request.policy = policy;
         
         return request;
+    }
+
+    async dataToApprove(){
+        const creationTime =  Serialization.GetValue(Serialization.GetValue(this.authorization, 0), 0);
+        const creationSig =  Serialization.GetValue(Serialization.GetValue(this.authorization, 0), 1);
+        const creationMessage = new PolicyAuthorizedTideRequestSignatureFormat(creationTime, this.expiry, this.id(), await SHA512_Digest(this.draft));
+        return creationMessage.format();
     }
 }

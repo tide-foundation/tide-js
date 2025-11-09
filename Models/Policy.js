@@ -3,11 +3,13 @@ import { BigIntFromByteArray, StringFromUint8Array, StringToUint8Array } from ".
 
 export default class Policy{
     constructor(data){
-        this.version = StringFromUint8Array(Serialization.GetValue(data, 0));
-        this.contractId = StringFromUint8Array(Serialization.GetValue(data, 1));
-        this.modelId = StringFromUint8Array(Serialization.GetValue(data, 2));
-        this.keyId = StringFromUint8Array(Serialization.GetValue(data, 3));
-        this.params = new PolicyParameters(Serialization.GetValue(data, 4));
+        if(data){
+            this.version = StringFromUint8Array(Serialization.GetValue(data, 0));
+            this.contractId = StringFromUint8Array(Serialization.GetValue(data, 1));
+            this.modelId = StringFromUint8Array(Serialization.GetValue(data, 2));
+            this.keyId = StringFromUint8Array(Serialization.GetValue(data, 3));
+            this.params = new PolicyParameters(Serialization.GetValue(data, 4));
+        }
     }
 }
 

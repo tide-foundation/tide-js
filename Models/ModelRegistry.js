@@ -22,6 +22,7 @@ export class HumanReadableModelBuilder{
     constructor(data, reqId){
         if(data){
             this._data = data;
+            this._draft = GetValue(this._data, 3);
             this.request = BaseTideRequest.decode(data);
         }
         this.reqId = reqId;
@@ -63,6 +64,10 @@ export class HumanReadableModelBuilder{
     getExpiry(){
         return this.request.expiry;
     }
+
+    async getDataToApprove(){
+        return this.request.dataToApprove();
+    }
 }
 
 // MODELS ----------------------------------------------------------------
@@ -72,43 +77,43 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder{
     _version = "1";
     get _id() { return this._name + ":" + this._version; }
 
-    constructor(data, expiry){
-        super(data, expiry);
+    constructor(data, reqId){
+        super(data, reqId);
     }
-    static create(data, expiry){
-        return super.create(data, expiry);
+    static create(data, reqId){
+        return super.create(data, reqId);
     }
-    getHumanReadableObject(){
+    getRequestDataJson(){
         // deserialize draft here and return a pretty object for user
         let prettyObject = {};
 
         let draftIndex = 0;
-        const initCertPresent = GetValue(this._data, 0)[0];
-        draftIndex++;
-
-        // determine if InitCert is present
-        switch(initCertPresent){
-            case 0:
-                break;
-            case 1:
-                const initCert = GetValue(this._data, draftIndex);
-                prettyObject.InitializationCertificate = new InitializationCertificate(StringFromUint8Array(initCert)).toPrettyObject();
-                draftIndex++;
-                break;
-            default:
-                throw Error("Unexpected value");
-        }
         // make sure user context is JSON
         let cont = true;
         prettyObject.UserContexts = [];
         while(cont){
-            try{prettyObject.UserContexts.push(JSON.parse(StringFromUint8Array(GetValue(this._data, draftIndex))));draftIndex++;}
+            try{prettyObject.UserContexts.push(JSON.parse(StringFromUint8Array(GetValue(this._draft, draftIndex))));draftIndex++;}
+            catch{cont = false;}
+        }
+        
+        // return a nice object of InitCert? and usercontexts
+        return prettyObject;
+    }
+    getDetailsMap(){
+        // deserialize draft here and return a pretty object for user
+        let prettyObject = {};
+
+        let draftIndex = 0;
+        // make sure user context is JSON
+        let cont = true;
+        prettyObject.UserContexts = [];
+        while(cont){
+            try{prettyObject.UserContexts.push(JSON.parse(StringFromUint8Array(GetValue(this._draft, draftIndex))));draftIndex++;}
             catch{cont = false;}
         }
 
         // Create summary
-        let summary = [];
-        summary.push(["Admin related", initCertPresent == 1 ? "YES" : "no"]);
+        let summary = {};
         // Get the clients involved in this approval
         // All clients will be either realm-management or under resource_management
         let clients = [];
@@ -119,115 +124,64 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder{
             }
         })
         clients = [...new Set(clients)];
-        summary.push(["Applications affected", clients.join(", ")]);
-        summary.push(["Expiry", unixSecondsToLocaleString(this._expiry)])
-        
+        summary["Applications affected"] = clients.join(", ");
+
         // return a nice object of InitCert? and usercontexts
-        return {
-            summary: summary,
-            pretty: prettyObject
-        }
-    }
-}
-class CardanoTxSignRequestBuilder extends HumanReadableModelBuilder{ // this is an example class
-    _name = "CardanoTx"; // Model ID
-    _humanReadableName = "Send Cardano Funds";
-    _version = "1";
-    get _id() { return this._name + ":" + this._version; }
-
-    constructor(data, expiry){
-        //throw Error("Not implemented");
-        super(data, expiry);
-    }
-    getHumanReadableObject(){
-        // deserialize draft here and return a pretty object for user
-        const txBytes = GetValue(this._data, 0);
-        const body = new CardanoTxBody(txBytes);
-
-        let summary = [];
-        body.transaction.outputs.map(o => {
-            summary.push([`Outgoing ada to ${o.address}`, (o.amount / 1_000_000n).toString()]);
-        })
-        summary.push(["Fee", body.transaction.fee.toString()])
-
-        return {
-            summary: summary,
-            pretty: body.toPrettyObject()
-        }
+        return summary;
     }
 }
 
-class OffboardSignRequestBuilder extends HumanReadableModelBuilder{
+export class OffboardSignRequestBuilder extends HumanReadableModelBuilder{
     _name = "Offboard";
     _version = "1";
     _humanReadableName = "Cancel Tide Subscription and Protection";
 
     get _id() { return this._name + ":" + this._version; }
-    constructor(data, expiry){
-        super(data, expiry);
+    constructor(data, reqId){
+        super(data, reqId);
     }
-    getHumanReadableObject(){
-        let summary = [];
-        summary.push(["WARNING WARNING WARNING", ""]);
-        summary.push(["APPROVING THIS REQUEST WILL CRIPPLE YOUR LICENSED TIDE ACCOUNT", ""]);
-        summary.push(["ONLY APPROVE THIS REQUEST IF YOU INTEND TO OFFBOARD FROM THE TIDE NETWORK", ""]);
-        summary.push(["THIS ACTION IS UNRECOVERABLE", ""]);
+    getDetailsMap(){
+        let summary = {};
+        summary["WARNING WARNING WARNING"] = "";
+        summary["APPROVING THIS REQUEST WILL CRIPPLE YOUR LICENSED TIDE ACCOUNT"] = "";
+        summary["ONLY APPROVE THIS REQUEST IF YOU INTEND TO OFFBOARD FROM THE TIDE NETWORK"] = "";
+        summary["THIS ACTION IS UNRECOVERABLE"] =  "";
 
-        const vrk = Bytes2Hex(GetValue(this._data, 0));
+        
+        return summary;
+    }
+    getRequestDataJson(){
+       // const vrk = Bytes2Hex(GetValue(this._draft, 0));
         let body = {
-            "Vendor Rotating Key for Offboarding": vrk
+            "Vendor Rotating Key for Offboarding": "hey"
         }
-        return {
-            summary: summary,
-            pretty: body
-        }
+        return body;
     }
 }
 
 class LicenseSignRequestBuilder extends HumanReadableModelBuilder{
     _name = "RotateVRK";
     _version = "1";
-    _humanReadableName = "Rotating VRK";
+    _humanReadableName = "Renew License with New Permissions";
 
     get _id() { return this._name + ":" + this._version; }
     constructor(data, expiry){
         super(data, expiry);
     }
-    getHumanReadableObject(){
-        const authPack = new AuthorizerPack(this._data);
+    getDetailsMap(){
+        const authPack = new AuthorizerPack(this._draft);
 
         let summary = [];
-        summary.push(["Signing new license", authPack.Authorizer.GVRK.Serialize().ToString()]);
+        summary["Signing new license"] = authPack.Authorizer.GVRK.Serialize().ToString();
 
-        let body = {
-            "AuthFlow": authPack.AuthFlow,
-            "Authorizer": authPack.Authorizer.GVRK.Serialize().ToString(),
-            "SignModels": authPack.SignModels
-        }
-        return {
-            summary: summary,
-            pretty: body
-        }
+        summary["Approved Models to Sign"] = authPack.SignModels;
+        
+        return summary;
     }
 }
 
 const modelBuildersMap = {
     [new UserContextSignRequestBuilder()._id]: UserContextSignRequestBuilder,
-    [new CardanoTxSignRequestBuilder()._id]: CardanoTxSignRequestBuilder,
     [new OffboardSignRequestBuilder()._id]: OffboardSignRequestBuilder,
     [new LicenseSignRequestBuilder()._id]: LicenseSignRequestBuilder
 }
-
-const unixSecondsToLocaleString = (unixSeconds) => {
-  const milliseconds = unixSeconds * 1000;
-  const date = new Date(milliseconds);
-
-  return date.toLocaleString('en-GB', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  });
-};
