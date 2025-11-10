@@ -3,13 +3,32 @@ import { BigIntFromByteArray, StringFromUint8Array, StringToUint8Array } from ".
 
 export default class Policy{
     constructor(data){
-        if(data){
+        if(data instanceof Uint8Array){
             this.version = StringFromUint8Array(Serialization.GetValue(data, 0));
             this.contractId = StringFromUint8Array(Serialization.GetValue(data, 1));
             this.modelId = StringFromUint8Array(Serialization.GetValue(data, 2));
             this.keyId = StringFromUint8Array(Serialization.GetValue(data, 3));
             this.params = new PolicyParameters(Serialization.GetValue(data, 4));
+        }else{
+            if(typeof data["version"] !== "string") throw 'Version is not a string';
+            this.version = data["version"];
+            if(typeof data["contractId"] !== "string") throw 'ContractId is not a string';
+            this.contractId = data["contractId"];
+            if(typeof data["modelId"] !== "string") throw 'ModelId is not a string';
+            this.modelId = data["modelId"];
+
+            if(!data["params"]) throw 'Params is null';
+            this.params = new PolicyParameters(data["params"]);
         }
+    }
+    toBytes(){
+        return Serialization.CreateTideMemoryFromArray([
+            StringToUint8Array(this.version),
+            StringToUint8Array(this.contractId),
+            StringToUint8Array(this.modelId),
+            StringToUint8Array(this.keyId),
+            this.params.toBytes()
+        ]);
     }
 }
 
