@@ -30,10 +30,6 @@ export class HumanReadableModelBuilder{
     static create(data, reqId){
         return new this(data, reqId);
     }
-    async getRequestId(){
-        // hash of the request
-        return Bytes2Hex(await this.request.dataToAuthorize());
-    }
     getApprovalRecieved(){
         // how many approvals have been already submitted for this model
         const authorizers = GetValue(this._data, 6);

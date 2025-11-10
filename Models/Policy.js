@@ -98,8 +98,7 @@ class PolicyParameters {
      * @returns {Uint8Array}
      */
     toBytes() {
-        const tideMemory = Serialization.CreateTideMemory();
-        let index = 0;
+        let params = [];
         
         for (const [key, value] of this.params) {
             const nameBytes = StringToUint8Array(key);
@@ -130,14 +129,11 @@ class PolicyParameters {
             }
             
             const typeBytes = StringToUint8Array(typeStr);
-            const paramMemory = Serialization.CreateTideMemory(nameBytes);
-            Serialization.WriteValue(paramMemory, 1, typeBytes);
-            Serialization.WriteValue(paramMemory, 2, dataBytes);
-            
-            Serialization.WriteValue(tideMemory, index++, paramMemory);
+            const paramMemory = Serialization.CreateTideMemoryFromArray([nameBytes, typeBytes, dataBytes]);
+            params.push(paramMemory);
         }
         
-        return tideMemory;
+        return Serialization.CreateTideMemoryFromArray[params];
     }
 
     /**

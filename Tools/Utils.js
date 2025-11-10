@@ -18,8 +18,8 @@
 import { bitArrayToUint8Array } from "../Cryptide/Serialization.js";
 import OrkInfo from "../Models/Infos/OrkInfo.js";
 
-export const Threshold = 14;
-export const Max = 20;
+export const Threshold = 3;
+export const Max = 5;
 
 export function CurrentTime(){
 	return Math.floor(Date.now() / 1000); // this will be affected by the 2038 problem
