@@ -133,7 +133,7 @@ class PolicyParameters {
             params.push(paramMemory);
         }
         
-        return Serialization.CreateTideMemoryFromArray[params];
+        return Serialization.CreateTideMemoryFromArray(params);
     }
 
     /**
