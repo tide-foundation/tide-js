@@ -140,7 +140,7 @@ export default class BaseTideRequest {
         const expiry_view = new DataView(expiry.buffer);
         expiry_view.setBigInt64(0, this.expiry, true);
 
-        const req = Serialization.CreateTideMemoryFromArray(
+        const req = Serialization.CreateTideMemoryFromArray([
             name_b,
             version_b,
             expiry,
@@ -151,7 +151,7 @@ export default class BaseTideRequest {
             this.authorization,
             this.authorizerCert,
             this.policy
-        )
+        ]);
 
         return req;
     }
