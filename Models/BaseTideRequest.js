@@ -1,6 +1,6 @@
 import { SHA512_Digest } from "../Cryptide/Hashing/Hash.js";
 import { Serialization } from "../Cryptide/index.js";
-import { base64ToBase64Url, bytesToBase64, numberToUint8Array, StringToUint8Array, TryGetValue } from "../Cryptide/Serialization.js";
+import { base64ToBase64Url, bytesToBase64, GetValue, numberToUint8Array, StringToUint8Array, TryGetValue } from "../Cryptide/Serialization.js";
 import { PolicyAuthorizedTideRequestSignatureFormat } from "../Cryptide/Signing/TideSignature.js";
 
 import { CurrentTime } from "../Tools/Utils.js";
@@ -29,7 +29,7 @@ export default class BaseTideRequest {
     }
 
     id() {
-        this.name + ":" + this.version;
+        return this.name + ":" + this.version;
     }
 
     /**
@@ -99,22 +99,23 @@ export default class BaseTideRequest {
      */
     addApproval(doken, sig){
         // Ensure creation authorization has been added
-        if(!TryGetValue(this.authorization, 0, _)) throw Error("Creation authorization hasn't been added yet");
+        let res = {};
+        if(!TryGetValue(this.authorization, 0, res)) throw Error("Creation authorization hasn't been added yet");
 
         // Deconstruct existing authorization
         let existingSessKeySigs = [];
-        let currentSig = new Uint8Array();
+        let currentSig = {};
         for(let i = 0; TryGetValue(GetValue(this.authorization, 1), i, currentSig); i++){
-            if(currentSig.length == 0) continue;
-            existingSessKeySigs.push(currentSig);
+            if(currentSig.result.length == 0) continue;
+            existingSessKeySigs.push(currentSig.result);
         }
 
         // Now deconstruct exsiting authorizers (dokens)
         let existingDokens = [];
-        let currentDoken = new Uint8Array();
+        let currentDoken = {};
         for(let i = 0; TryGetValue(this.authorizer, i, currentDoken); i++){
-            if(currentDoken.length == 0) continue;
-            existingDokens.push(currentDoken);
+            if(currentDoken.result.length == 0) continue;
+            existingDokens.push(currentDoken.result);
         }
 
         // Now add the new doken and sig to the deconstructed data then reserialize it into the request

@@ -4,6 +4,7 @@ import RuleSettings from "./Rules/RuleSettings.js";
 import CardanoTxBody from "./Cardano/CardanoTxBody.js";
 import BaseTideRequest from "./BaseTideRequest.js";
 import Policy from "./Policy.js";
+import { Serialization } from "../Cryptide/index.js";
 
 export class ModelRegistry{
     /**
@@ -34,7 +35,8 @@ export class HumanReadableModelBuilder{
         // how many approvals have been already submitted for this model
         const authorizers = GetValue(this._data, 6);
         let i = 0;
-        while(TryGetValue(authorizers, i, _)){i++;}
+        let res = {};
+        while(TryGetValue(authorizers, i, res)){i++;}
         return i;
     }
     getApprovalsRequired(){
@@ -46,15 +48,15 @@ export class HumanReadableModelBuilder{
         // we'll implement the logic later
         // for now we'll only be supporting on role/threshold
 
-        return policy.params.getParameter("threshold", String);
+        return policy.params.getParameter("threshold", Number);
     }
     getDetailsMap(){
         // the summary
-        throw Error("Not implemented for this model");
+        return [];
     }
     getRequestDataJson(){
         // raw json
-        throw Error("Not implemented for this model");
+        return {};
     }
 
     getExpiry(){
@@ -147,9 +149,9 @@ export class OffboardSignRequestBuilder extends HumanReadableModelBuilder{
         return summary;
     }
     getRequestDataJson(){
-       // const vrk = Bytes2Hex(GetValue(this._draft, 0));
+        const vrk = Bytes2Hex(GetValue(this._draft, 0));
         let body = {
-            "Vendor Rotating Key for Offboarding": "hey"
+            "Vendor Rotating Key for Offboarding": vrk
         }
         return body;
     }
@@ -175,9 +177,24 @@ class LicenseSignRequestBuilder extends HumanReadableModelBuilder{
         return summary;
     }
 }
+class TestInitSignRequestBuilder extends HumanReadableModelBuilder{
+    _name = "TestInit";
+    _version = "1";
+    _humanReadableName = "Test Tide Request";
+    get _id() { return this._name + ":" + this._version; }
+    constructor(data, expiry){
+        super(data, expiry);
+    }
+    getDetailsMap(){
+        let summary = [];
+        summary["Draft Detail"] = StringFromUint8Array(this._draft);        
+        return summary;
+    }
+}
 
 const modelBuildersMap = {
     [new UserContextSignRequestBuilder()._id]: UserContextSignRequestBuilder,
     [new OffboardSignRequestBuilder()._id]: OffboardSignRequestBuilder,
-    [new LicenseSignRequestBuilder()._id]: LicenseSignRequestBuilder
+    [new LicenseSignRequestBuilder()._id]: LicenseSignRequestBuilder,
+    [new TestInitSignRequestBuilder()._id]: TestInitSignRequestBuilder
 }

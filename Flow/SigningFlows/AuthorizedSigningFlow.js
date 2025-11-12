@@ -42,6 +42,6 @@ export function AuthorizedSigningFlow(config) {
      */
     signingFlow.signv2 = async function(tideSerializedRequest){
         const flow = new dVVKSigningFlow(this.vvkId, signingFlow.vvkInfo.UserPublic, signingFlow.vvkInfo.OrkInfo, signingFlow.sessKey, signingFlow.token, this.voucherURL);
-        return flow.start(tideSerializedRequest);
+        return flow.start(BaseTideRequest.decode(tideSerializedRequest));
     }
 }

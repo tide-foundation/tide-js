@@ -1,14 +1,21 @@
 import { Serialization } from "../Cryptide";
-import { BigIntFromByteArray, StringFromUint8Array, StringToUint8Array } from "../Cryptide/Serialization";
+import { BigIntFromByteArray, BigIntToByteArray, StringFromUint8Array, StringToUint8Array, TryGetValue } from "../Cryptide/Serialization";
 
 export default class Policy{
     constructor(data){
+        this.signature = null;
         if(data instanceof Uint8Array){
-            this.version = StringFromUint8Array(Serialization.GetValue(data, 0));
-            this.contractId = StringFromUint8Array(Serialization.GetValue(data, 1));
-            this.modelId = StringFromUint8Array(Serialization.GetValue(data, 2));
-            this.keyId = StringFromUint8Array(Serialization.GetValue(data, 3));
-            this.params = new PolicyParameters(Serialization.GetValue(data, 4));
+            this.dataToVerify = Serialization.GetValue(data, 0);
+            this.version = StringFromUint8Array(Serialization.GetValue(this.dataToVerify, 0));
+            this.contractId = StringFromUint8Array(Serialization.GetValue(this.dataToVerify, 1));
+            this.modelId = StringFromUint8Array(Serialization.GetValue(this.dataToVerify, 2));
+            this.keyId = StringFromUint8Array(Serialization.GetValue(this.dataToVerify, 3));
+            this.params = new PolicyParameters(Serialization.GetValue(this.dataToVerify, 4));
+            
+            let res = {};
+            TryGetValue(data, 0, res);
+            this.signature = res.result;
+
         }else{
             if(typeof data["version"] !== "string") throw 'Version is not a string';
             this.version = data["version"];
@@ -21,14 +28,29 @@ export default class Policy{
             this.params = new PolicyParameters(data["params"]);
         }
     }
+    getDataToVerify(){
+        if(!this.dataToVerify){
+            this.dataToVerify = Serialization.CreateTideMemoryFromArray([
+                StringToUint8Array(this.version),
+                StringToUint8Array(this.contractId),
+                StringToUint8Array(this.modelId),
+                StringToUint8Array(this.keyId),
+                this.params.toBytes()]);
+        }
+        return this.dataToVerify;
+    }
     toBytes(){
-        return Serialization.CreateTideMemoryFromArray([
-            StringToUint8Array(this.version),
-            StringToUint8Array(this.contractId),
-            StringToUint8Array(this.modelId),
-            StringToUint8Array(this.keyId),
-            this.params.toBytes()
-        ]);
+        let d = [
+            Serialization.CreateTideMemoryFromArray([
+                StringToUint8Array(this.version),
+                StringToUint8Array(this.contractId),
+                StringToUint8Array(this.modelId),
+                StringToUint8Array(this.keyId),
+                this.params.toBytes()
+        ])];
+        if (this.signature) d.push(this.signature);
+        
+        return Serialization.CreateTideMemoryFromArray(d);
     }
 }
 
@@ -59,22 +81,22 @@ class PolicyParameters {
      */
     _decodeFromBytes(data) {
         let i = 0;
-        let value;
+        let value = {};
         
         // Try to get values at sequential indices
         while (Serialization.TryGetValue(data, i, value)) {
-            const nameBytes = Serialization.GetValue(value, 0);
-            const name = bytesToString(nameBytes);
+            const nameBytes = Serialization.GetValue(value.result, 0);
+            const name = StringFromUint8Array(nameBytes);
             
-            const typeBytes = Serialization.GetValue(value, 1);
-            const type = bytesToString(typeBytes);
+            const typeBytes = Serialization.GetValue(value.result, 1);
+            const type = StringFromUint8Array(typeBytes);
             
-            const dataBytes = Serialization.GetValue(value, 2);
+            const dataBytes = Serialization.GetValue(value.result, 2);
             
             let datum;
             switch (type) {
                 case "str":
-                    datum = bytesToString(dataBytes);
+                    datum = StringFromUint8Array(dataBytes);
                     break;
                 case "num":
                     const numView = new DataView(dataBytes.buffer, dataBytes.byteOffset, dataBytes.byteLength);
@@ -100,19 +122,6 @@ class PolicyParameters {
     }
 
     /**
-     * Convert bytes to BigInt (little-endian)
-     * @param {Uint8Array} bytes 
-     * @returns {BigInt}
-     */
-    _bytesToBigInt(bytes) {
-        let result = 0n;
-        for (let i = bytes.length - 1; i >= 0; i--) {
-            result = (result << 8n) | BigInt(bytes[i]);
-        }
-        return result;
-    }
-
-    /**
      * Serialize parameters to bytes
      * @returns {Uint8Array}
      */
@@ -133,7 +142,7 @@ class PolicyParameters {
                 dataBytes = new Uint8Array(buffer);
                 typeStr = "num";
             } else if (typeof value === 'bigint') {
-                dataBytes = this._bigIntToBytes(value);
+                dataBytes = BigIntToByteArray(value);
                 typeStr = "bnum";
             } else if (typeof value === 'boolean') {
                 dataBytes = new Uint8Array([value ? 1 : 0]);
@@ -142,7 +151,7 @@ class PolicyParameters {
                 dataBytes = value;
                 typeStr = "byt";
             } else {
-                throw new ParameterUnknownTypeException(
+                throw new Error(
                     `Could not serialize key '${key}' of type '${typeof value}'`
                 );
             }
@@ -181,13 +190,13 @@ class PolicyParameters {
         if (this.params.has(key)) {
             const val = this.params.get(key);
             if (expectedType !== null && val.constructor !== expectedType) {
-                throw new ParameterTypeMismatchException(
+                throw new Error(
                     `You wanted ${expectedType.name} but all we found was a ${val.constructor.name}`
                 );
             }
             return val;
         }
-        throw new ParameterNotFoundException(`Parameter '${key}' not found`);
+        throw new Error(`Parameter '${key}' not found`);
     }
 
     /**
@@ -216,7 +225,7 @@ class PolicyParameters {
             return true;
         }
         
-        throw new ParameterUnknownTypeException("Param type not known");
+        throw new Error("Param type not known");
     }
 
     /**
