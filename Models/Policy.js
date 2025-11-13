@@ -23,6 +23,8 @@ export default class Policy{
             this.contractId = data["contractId"];
             if(typeof data["modelId"] !== "string") throw 'ModelId is not a string';
             this.modelId = data["modelId"];
+            if(typeof data["keyId"] !== "string") throw 'KeyId is not a string';
+            this.keyId = data["keyId"];
 
             if(!data["params"]) throw 'Params is null';
             this.params = new PolicyParameters(data["params"]);
