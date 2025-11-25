@@ -4,8 +4,27 @@ import { BigIntFromByteArray, BigIntToByteArray, StringFromUint8Array, StringToU
 export default class Policy{
     constructor(data){
         this.signature = null;
+        
         if(data instanceof Uint8Array){
-            this.dataToVerify = Serialization.GetValue(data, 0);
+            // Validate we have data
+            if (data.length === 0) {
+                throw new Error("Cannot create Policy from empty buffer");
+            }
+            
+            if (data.length < 4) {
+                throw new Error(`Insufficient data to create Policy. Buffer length: ${data.length}, need at least 4 bytes`);
+            }
+            
+            try {
+                this.dataToVerify = Serialization.GetValue(data, 0);
+            } catch (error) {
+                throw new Error(`Failed to read Policy dataToVerify: ${error.message}`);
+            }
+            
+            if (this.dataToVerify.length < 4) {
+                throw new Error(`Policy dataToVerify is too short: ${this.dataToVerify.length} bytes`);
+            }
+            
             this.version = StringFromUint8Array(Serialization.GetValue(this.dataToVerify, 0));
             this.contractId = StringFromUint8Array(Serialization.GetValue(this.dataToVerify, 1));
             this.modelId = StringFromUint8Array(Serialization.GetValue(this.dataToVerify, 2));
@@ -13,7 +32,7 @@ export default class Policy{
             this.params = new PolicyParameters(Serialization.GetValue(this.dataToVerify, 4));
             
             let res = {};
-            TryGetValue(data, 0, res);
+            TryGetValue(data, 1, res);  // Signature is at index 1
             this.signature = res.result;
 
         }else{
@@ -30,6 +49,15 @@ export default class Policy{
             this.params = new PolicyParameters(data["params"]);
         }
     }
+    
+    // Add static decode method for consistency
+    static decode(data) {
+        if (!data || !(data instanceof Uint8Array) || data.length === 0) {
+            return null;
+        }
+        return new Policy(data);
+    }
+    
     getDataToVerify(){
         if(!this.dataToVerify){
             this.dataToVerify = Serialization.CreateTideMemoryFromArray([
