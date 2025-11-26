@@ -12,6 +12,11 @@ export class ModelRegistry {
      */
     static getHumanReadableModelBuilder(reqId, data) {
         const r = BaseTideRequest.decode(data);
+        const nameMatch = r.name.match(/^Custom<(.*)>$/)?.[1];
+        const versionMatch = r.version.match(/^Custom<(.*)>$/)?.[1];
+        if (nameMatch && versionMatch) {
+            return new CustomSignRequestBuilder(data, reqId);
+        }
         const c = modelBuildersMap[r.id()];
         if (!c) throw Error("Could not find model: " + r.id());
         return c.create(data, reqId);
@@ -30,25 +35,6 @@ export class HumanReadableModelBuilder {
     }
     static create(data, reqId) {
         return new this(data, reqId);
-    }
-    getApprovalRecieved() {
-        // how many approvals have been already submitted for this model
-        const authorizers = GetValue(this._data, 6);
-        let i = 0;
-        let res = {};
-        while (TryGetValue(authorizers, i, res)) { i++; }
-        return i;
-    }
-    getApprovalsRequired() {
-        const policy = new Policy(GetValue(this._data, 9));
-
-
-        // Ok so in the future we'll want to support multi-role multi-threshold approvals
-        // but since the the UI doesn't support it and we don't even have a contract yet to support it
-        // we'll implement the logic later
-        // for now we'll only be supporting on role/threshold
-
-        return policy.params.getParameter("threshold", Number);
     }
     getDetailsMap() {
         // the summary
@@ -69,6 +55,19 @@ export class HumanReadableModelBuilder {
 }
 
 // MODELS ----------------------------------------------------------------
+class CustomSignRequestBuilder extends HumanReadableModelBuilder {
+    get _id() { return this._name + ":" + this._version; }
+    constructor(data, reqId) {
+        super(data, reqId);
+        this._name = this.request.name.match(/^Custom<(.*)>$/)?.[1];
+        this._version = this.request.version.match(/^Custom<(.*)>$/)?.[1];
+        this.humanReadableJson = JSON.parse(StringFromUint8Array(GetValue(this.request.draft, 0)));
+        this._humanReadableName = this.humanReadableJson["humanReadableName"];
+    }
+    getRequestDataJson(){
+        return this.humanReadableJson["additionalInfo"];
+    }
+}
 class UserContextSignRequestBuilder extends HumanReadableModelBuilder {
     _name = "UserContext"; // Model ID
     _humanReadableName = "User Access Change";
