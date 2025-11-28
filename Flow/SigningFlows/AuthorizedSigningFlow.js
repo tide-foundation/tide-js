@@ -26,7 +26,9 @@ export function AuthorizedSigningFlow(config) {
         throw new Error("The 'AuthorizedSigningFlow' constructor must be invoked with 'new'.")
     }
 
-    if(!config.token.payload.sessionKey.Equals(config.sessionKey.get_public_component())) throw Error("Mismatch between session key private and Doken session key public");
+    if(config.token){
+        if(!config.token.payload.sessionKey.Equals(config.sessionKey.get_public_component())) throw Error("Mismatch between session key private and Doken session key public");
+    } 
 
     var signingFlow = this;
     signingFlow.vvkId = config.vendorId;
