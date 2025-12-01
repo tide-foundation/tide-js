@@ -230,10 +230,10 @@ export function GetValue(a, index) {
 
 export function TryGetValue(a, index, returnObj){
 	try{
-		returnObj = GetValue(a, index);
+		returnObj["result"] = GetValue(a, index);
 		return true;
 	}catch{
-		returnObj = null;
+		returnObj["result"] = null;
 		return false;
 	}
 
