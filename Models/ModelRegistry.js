@@ -75,9 +75,14 @@ class HederaSignRequestBuilder extends HumanReadableModelBuilder {
     get _id() { return this._name + ":" + this._version; }
     constructor(data, reqId) {
         super(data, reqId);
+        if(data){
+            this.customInfo = JSON.parse(StringFromUint8Array(Serialization.GetValue(this.request.draft, 0)));
+            this.additionalInfo = this.customInfo["additionalInfo"];
+            this._humanReadableName = `Request to send ${BigInt(this.additionalInfo["Total being spent (tinybar)"]) / BigInt(100_000_000)} HBAR`;
+        }
     }
     getRequestDataJson(){
-        
+        return this.additionalInfo;
     }
 }
 class UserContextSignRequestBuilder extends HumanReadableModelBuilder {
