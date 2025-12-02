@@ -68,6 +68,18 @@ class CustomSignRequestBuilder extends HumanReadableModelBuilder {
         return this.humanReadableJson["additionalInfo"];
     }
 }
+// Need this while we work on better custom models
+class HederaSignRequestBuilder extends HumanReadableModelBuilder {
+    _name = "HederaTx";
+    _version = "1";
+    get _id() { return this._name + ":" + this._version; }
+    constructor(data, reqId) {
+        super(data, reqId);
+    }
+    getRequestDataJson(){
+        
+    }
+}
 class UserContextSignRequestBuilder extends HumanReadableModelBuilder {
     _name = "UserContext"; // Model ID
     _humanReadableName = "User Access Change";
@@ -228,5 +240,6 @@ const modelBuildersMap = {
     [new OffboardSignRequestBuilder()._id]: OffboardSignRequestBuilder,
     [new LicenseSignRequestBuilder()._id]: LicenseSignRequestBuilder,
     [new TestInitSignRequestBuilder()._id]: TestInitSignRequestBuilder,
-    [new PolicySignRequestBuilder()._id]: PolicySignRequestBuilder
+    [new PolicySignRequestBuilder()._id]: PolicySignRequestBuilder,
+    [new HederaSignRequestBuilder()._id]: HederaSignRequestBuilder
 }
