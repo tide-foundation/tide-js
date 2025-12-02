@@ -179,8 +179,14 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
     getDetailsMap() {
         let summary = {};
         const policy = new Policy(GetValue(this._draft, 0));
+
+        summary['Version'] = policy.version;
+        summary['ContractId'] = policy.contractId;
+        summary['ModelId'] = policy.modelId;
+        summary["KeyId"] = policy.keyId;
+        
         policy.params.entries().forEach(([key, value]) => {
-            if (!(value instanceof Uint8Array)) summary[key] = value;
+            if (!(value instanceof Uint8Array)) summary[`Parameter:${key}`] = value;
         });
         let res = { value: null };
         if (TryGetValue(this._draft, 1, res)) {
@@ -189,14 +195,6 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
             summary["Contract To Upload Type"] = contractType;
         }
         return summary;
-    }
-    getRequestDataJson() {
-        let body = {};
-        let res = { value: null };
-        if (TryGetValue(this._draft, 1, res)) {
-            body["Contract Data To Upload Base64"] = bytesToBase64(GetValue(res.value, 1));
-        }
-        return body;
     }
 }
 
