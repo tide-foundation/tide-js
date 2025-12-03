@@ -68,6 +68,23 @@ class CustomSignRequestBuilder extends HumanReadableModelBuilder {
         return this.humanReadableJson["additionalInfo"];
     }
 }
+// Need this while we work on better custom models
+class HederaSignRequestBuilder extends HumanReadableModelBuilder {
+    _name = "HederaTx";
+    _version = "1";
+    get _id() { return this._name + ":" + this._version; }
+    constructor(data, reqId) {
+        super(data, reqId);
+        if(data){
+            this.customInfo = JSON.parse(StringFromUint8Array(Serialization.GetValue(this.request.draft, 0)));
+            this.additionalInfo = this.customInfo["additionalInfo"];
+            this._humanReadableName = `Request to send ${BigInt(this.additionalInfo["Total being spent (tinybar)"]) / BigInt(100_000_000)} HBAR`;
+        }
+    }
+    getRequestDataJson(){
+        return this.additionalInfo;
+    }
+}
 class UserContextSignRequestBuilder extends HumanReadableModelBuilder {
     _name = "UserContext"; // Model ID
     _humanReadableName = "User Access Change";
@@ -167,8 +184,14 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
     getDetailsMap() {
         let summary = {};
         const policy = new Policy(GetValue(this._draft, 0));
+
+        summary['Version'] = policy.version;
+        summary['ContractId'] = policy.contractId;
+        summary['ModelId'] = policy.modelId;
+        summary["KeyId"] = policy.keyId;
+        
         policy.params.entries().forEach(([key, value]) => {
-            if (!(value instanceof Uint8Array)) summary[key] = value;
+            if (!(value instanceof Uint8Array)) summary[`Parameter:${key}`] = value;
         });
         let res = { value: null };
         if (TryGetValue(this._draft, 1, res)) {
@@ -177,14 +200,6 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
             summary["Contract To Upload Type"] = contractType;
         }
         return summary;
-    }
-    getRequestDataJson() {
-        let body = {};
-        let res = { value: null };
-        if (TryGetValue(this._draft, 1, res)) {
-            body["Contract Data To Upload Base64"] = bytesToBase64(GetValue(res.value, 1));
-        }
-        return body;
     }
 }
 
@@ -228,5 +243,6 @@ const modelBuildersMap = {
     [new OffboardSignRequestBuilder()._id]: OffboardSignRequestBuilder,
     [new LicenseSignRequestBuilder()._id]: LicenseSignRequestBuilder,
     [new TestInitSignRequestBuilder()._id]: TestInitSignRequestBuilder,
-    [new PolicySignRequestBuilder()._id]: PolicySignRequestBuilder
+    [new PolicySignRequestBuilder()._id]: PolicySignRequestBuilder,
+    [new HederaSignRequestBuilder()._id]: HederaSignRequestBuilder
 }

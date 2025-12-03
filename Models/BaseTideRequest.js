@@ -36,7 +36,7 @@ export default class BaseTideRequest {
      * This isn't copying. Just created another BaseTideRequest object that allows you to point each individual field to OTHER sections of memory.
      * If you modify an existing 'replicated' field, you'll also modify the other object you originally replicated.
      */
-    replicate(){
+    replicate() {
         const r = new BaseTideRequest(this.name, this.version, this.authFlow, this.draft, this.dyanmicData);
         r.authorization = this.authorization;
         r.authorizerCert = this.authorizerCert;
@@ -49,7 +49,7 @@ export default class BaseTideRequest {
     /**
      * @param {Uint8Array} d 
      */
-    setNewDynamicData(d){
+    setNewDynamicData(d) {
         this.dyanmicData = d;
         return this;
     }
@@ -92,29 +92,39 @@ export default class BaseTideRequest {
         return StringToUint8Array("<datatoauthorize-" + this.name + ":" + this.version + bytesToBase64(await SHA512_Digest(this.draft)) + this.expiry.toString() + "-datatoauthorize>");
     }
 
+    getInitializedTime() {
+        let res = {};
+        if (!TryGetValue(this.authorization, 0, res)) throw Error("Creation authorization hasn't been added yet"); 
+
+        const createdAt_b = Serialization.GetValue(Serialization.GetValue(this.authorization, 0), 0);
+        const createdAt_view = new DataView(createdAt_b.buffer, createdAt_b.byteOffset, createdAt_b.byteLength);
+        const createdAt = createdAt_view.getBigInt64(0, true);
+        return createdAt
+    }
+
     /**
      * Add an approval for this request. To be used for policy auth flow
      * @param {Doken} doken 
      * @param {Uint8Array} sig 
      */
-    addApproval(doken, sig){
+    addApproval(doken, sig) {
         // Ensure creation authorization has been added
         let res = {};
-        if(!TryGetValue(this.authorization, 0, res)) throw Error("Creation authorization hasn't been added yet");
+        if (!TryGetValue(this.authorization, 0, res)) throw Error("Creation authorization hasn't been added yet");
 
         // Deconstruct existing authorization
         let existingSessKeySigs = [];
         let currentSig = {};
-        for(let i = 0; TryGetValue(GetValue(this.authorization, 1), i, currentSig); i++){
-            if(currentSig.result.length == 0) continue;
+        for (let i = 0; TryGetValue(GetValue(this.authorization, 1), i, currentSig); i++) {
+            if (currentSig.result.length == 0) continue;
             existingSessKeySigs.push(currentSig.result);
         }
 
         // Now deconstruct exsiting authorizers (dokens)
         let existingDokens = [];
         let currentDoken = {};
-        for(let i = 0; TryGetValue(this.authorizer, i, currentDoken); i++){
-            if(currentDoken.result.length == 0) continue;
+        for (let i = 0; TryGetValue(this.authorizer, i, currentDoken); i++) {
+            if (currentDoken.result.length == 0) continue;
             existingDokens.push(currentDoken.result);
         }
 
@@ -157,48 +167,48 @@ export default class BaseTideRequest {
         return req;
     }
 
-    static decode(data){
+    static decode(data) {
         // Read field 0 (name) - this is part of the TideMemory structure
         const name_b = Serialization.GetValue(data, 0);
         const name = new TextDecoder().decode(name_b);
-        
+
         // Read all other fields
         const version_b = Serialization.GetValue(data, 1);
         const version = new TextDecoder().decode(version_b);
-        
+
         const expiry_b = Serialization.GetValue(data, 2);
         const expiry_view = new DataView(expiry_b.buffer, expiry_b.byteOffset, expiry_b.byteLength);
         const expiry = expiry_view.getBigInt64(0, true);
-        
+
         const draft = Serialization.GetValue(data, 3);
-        
+
         const authFlow_b = Serialization.GetValue(data, 4);
         const authFlow = new TextDecoder().decode(authFlow_b);
-        
+
         const dynamicData = Serialization.GetValue(data, 5);
-        
+
         const authorizer = Serialization.GetValue(data, 6);
         const authorization = Serialization.GetValue(data, 7);
         const authorizerCert = Serialization.GetValue(data, 8);
         const policy = Serialization.GetValue(data, 9);
-        
+
         // Create a new BaseTideRequest with the decoded data
         const request = new BaseTideRequest(name, version, authFlow, draft, dynamicData);
-        
+
         // Set the remaining fields
         request.expiry = expiry;
         request.authorizer = authorizer;
         request.authorization = authorization;
         request.authorizerCert = authorizerCert;
         request.policy = policy;
-        
+
         return request;
     }
 
-    async dataToApprove(){
-        const creationTime =  Serialization.GetValue(Serialization.GetValue(this.authorization, 0), 0);
-        const creationSig =  Serialization.GetValue(Serialization.GetValue(this.authorization, 0), 1);
+    async dataToApprove() {
+        const creationTime = Serialization.GetValue(Serialization.GetValue(this.authorization, 0), 0);
+        const creationSig = Serialization.GetValue(Serialization.GetValue(this.authorization, 0), 1);
         const creationMessage = new PolicyAuthorizedTideRequestSignatureFormat(creationTime, this.expiry, this.id(), await SHA512_Digest(this.draft));
-        return creationMessage.format();
+        return Serialization.ConcatUint8Arrays([creationMessage.format(), creationSig]);
     }
 }
