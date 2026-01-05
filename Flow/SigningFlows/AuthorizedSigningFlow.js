@@ -41,9 +41,10 @@ export function AuthorizedSigningFlow(config) {
 
     /**
      * @param {Uint8Array} tideSerializedRequest 
+     * @param {bool} waitForAll 
      */
-    signingFlow.signv2 = async function(tideSerializedRequest){
+    signingFlow.signv2 = async function(tideSerializedRequest, waitForAll){
         const flow = new dVVKSigningFlow(this.vvkId, signingFlow.vvkInfo.UserPublic, signingFlow.vvkInfo.OrkInfo, signingFlow.sessKey, signingFlow.token, this.voucherURL);
-        return flow.start(BaseTideRequest.decode(tideSerializedRequest));
+        return flow.start(BaseTideRequest.decode(tideSerializedRequest), waitForAll);
     }
 }

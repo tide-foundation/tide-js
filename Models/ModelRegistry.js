@@ -181,9 +181,15 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
     constructor(data, expiry) {
         super(data, expiry);
     }
+
     getDetailsMap() {
         let summary = {};
-        const policy = Policy.from(GetValue(this._draft, 0));
+
+        const draftBytes = this._draft;
+        if (!draftBytes) return { error: 'No draft data' };
+
+        const policyBytes = GetValue(draftBytes, 0);
+        const policy = Policy.from(policyBytes);
 
         summary['Version'] = policy.version;
         summary['ContractId'] = policy.contractId;
@@ -195,13 +201,52 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
         policy.params.entries().forEach(([key, value]) => {
             if (!(value instanceof Uint8Array)) summary[`Parameter:${key}`] = value;
         });
-        let res = { value: null };
-        if (TryGetValue(this._draft, 1, res)) {
-            // contract is also included
-            const contractType = StringFromUint8Array(GetValue(res.value, 0));
+
+        let res = {};
+        if (TryGetValue(draftBytes, 1, res)) {
+            const contractBytes = res.result;
+            const contractType = StringFromUint8Array(GetValue(contractBytes, 0));
             summary["Contract To Upload Type"] = contractType;
+            summary["Contract Included"] = "Yes - see Request Data for source code";
         }
         return summary;
+    }
+
+    getRequestDataJson() {
+        let data = {};
+
+        const draftBytes = this._draft;
+        if (!draftBytes) return data;
+
+        // Only show contract source code - other info is in the summary
+        // Structure: draft[1] = contractTransport = ["forseti", forsetiData]
+        // forsetiData = [placeholder, innerPayload]
+        // innerPayload = [sourceCode, entryType?]
+        let res = {};
+        if (TryGetValue(draftBytes, 1, res)) {
+            const contractBytes = res.result;
+
+            // contractBytes[1] = forsetiData
+            let forsetiDataRes = {};
+            if (TryGetValue(contractBytes, 1, forsetiDataRes)) {
+                const forsetiData = forsetiDataRes.result;
+
+                // forsetiData[1] = innerPayload
+                let innerPayloadRes = {};
+                if (TryGetValue(forsetiData, 1, innerPayloadRes)) {
+                    const innerPayload = innerPayloadRes.result;
+
+                    // innerPayload[0] = sourceCode
+                    let sourceCodeRes = {};
+                    if (TryGetValue(innerPayload, 0, sourceCodeRes)) {
+                        const contractCode = StringFromUint8Array(sourceCodeRes.result);
+                        data["Contract Source Code"] = contractCode;
+                    }
+                }
+            }
+        }
+
+        return data;
     }
 }
 
