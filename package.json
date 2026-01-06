@@ -17,6 +17,6 @@
   },
   "homepage": "https://github.com/tide-foundation/tide-js#readme",
   "dependencies": {
-    "asgard-tide": "file:~/asgard"
+    "asgard-tide": "file:./asgard-copy"
   }
 }
