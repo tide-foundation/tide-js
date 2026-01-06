@@ -3,7 +3,7 @@ import InitializationCertificate from "./InitializationCertificate.js";
 import RuleSettings from "./Rules/RuleSettings.js";
 import CardanoTxBody from "./Cardano/CardanoTxBody.js";
 import BaseTideRequest from "./BaseTideRequest.js";
-import { Policy } from "asgard-tide";
+import { Policy, ApprovalType, ExecutionType } from "asgard-tide";
 import { Serialization } from "../Cryptide/index.js";
 
 export class ModelRegistry {
@@ -195,10 +195,9 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
         summary['ContractId'] = policy.contractId;
         summary['ModelId'] = policy.modelId;
         summary["KeyId"] = policy.keyId;
-        summary['Approval Type'] = policy.approvalType.toString();
-        summary["Execution Type"] = policy.executionType.toString();
-        
-        policy.params.entries().forEach(([key, value]) => {
+        summary['Approval Type'] = ApprovalType[policy.approvalType];
+        summary["Execution Type"] = ExecutionType[policy.executionType];
+        policy.params.entries.entries().forEach(([key, value]) => {
             if (!(value instanceof Uint8Array)) summary[`Parameter:${key}`] = value;
         });
 
