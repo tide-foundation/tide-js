@@ -15,11 +15,10 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { bitArrayToUint8Array } from "../Cryptide/Serialization.js";
 import OrkInfo from "../Models/Infos/OrkInfo.js";
 
-export const Threshold = 14;
-export const Max = 20;
+export const Threshold = window.tide_env === 'staging' ? 3 : 14;
+export const Max = window.tide_env === 'staging' ? 5 : 20;
 
 export function CurrentTime(){
 	return Math.floor(Date.now() / 1000); // this will be affected by the 2038 problem
