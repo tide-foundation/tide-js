@@ -1,0 +1,70 @@
+"use strict";
+// 
+// Tide Protocol - Infrastructure for a TRUE Zero-Trust paradigm
+// Copyright (C) 2022 Tide Foundation Ltd
+// 
+// This program is free software and is subject to the terms of 
+// the Tide Community Open Code License as published by the 
+// Tide Foundation Limited. You may modify it and redistribute 
+// it in accordance with and subject to the terms of that License.
+// This program is distributed WITHOUT WARRANTY of any kind, 
+// including without any implied warranty of MERCHANTABILITY or 
+// FITNESS FOR A PARTICULAR PURPOSE.
+// See the Tide Community Open Code License for more details.
+// You should have received a copy of the Tide Community Open 
+// Code License along with this program.
+// If not, see https://tide.org/licenses_tcoc2-0-0-en
+//
+Object.defineProperty(exports, "__esModule", { value: true });
+const Ed25519_1 = require("../Ed25519");
+const Math_1 = require("../Math");
+const AES_1 = require("./AES");
+const Hash_1 = require("../Hashing/Hash");
+const Serialization_1 = require("../Serialization");
+class ElGamal {
+    /**
+     *
+     * @param {Uint8Array} secretData
+     * @param {Point} publicKey
+     */
+    static async encryptData(secretData, publicKey) {
+        return (0, Serialization_1.bytesToBase64)(await this.encryptDataRaw(secretData, publicKey));
+    }
+    /**
+     *
+     * @param {Uint8Array} secretData
+     * @param {Point} publicKey
+     */
+    static async encryptDataRaw(secretData, publicKey) {
+        const r = (0, Math_1.RandomBigInt)();
+        const c1 = Ed25519_1.Point.BASE.mul(r).toRawBytes();
+        const c2 = await (0, AES_1.encryptDataRawOutput)(secretData, await (0, Hash_1.SHA256_Digest)(publicKey.mul(r).toRawBytes()));
+        return (0, Serialization_1.ConcatUint8Arrays)([c1, c2]);
+    }
+    /**
+     * @param {string} base64_c1_c2
+     * @param {bigint | Uint8Array} k
+     */
+    static async decryptData(base64_c1_c2, k) {
+        const priv = typeof (k) == 'bigint' ? k : (0, Serialization_1.BigIntFromByteArray)(k);
+        const b = (0, Serialization_1.base64ToBytes)(base64_c1_c2);
+        const c1 = b.slice(0, 32);
+        const c2 = b.slice(32);
+        const c1Point = Ed25519_1.Point.fromBytes(c1);
+        const decrypted = await (0, AES_1.decryptDataRawOutput)(c2, await (0, Hash_1.SHA256_Digest)(c1Point.mul(priv).toRawBytes()));
+        return decrypted;
+    }
+    /**
+     * @param {Uint8Array} base64_c1_c2
+     * @param {bigint | Uint8Array} k
+     */
+    static async decryptDataRaw(base64_c1_c2, k) {
+        const priv = typeof (k) == 'bigint' ? k : (0, Serialization_1.BigIntFromByteArray)(k);
+        const c1 = base64_c1_c2.slice(0, 32);
+        const c2 = base64_c1_c2.slice(32);
+        const c1Point = Ed25519_1.Point.fromBytes(c1);
+        const decrypted = await (0, AES_1.decryptDataRawOutput)(c2, await (0, Hash_1.SHA256_Digest)(c1Point.mul(priv).toRawBytes()));
+        return decrypted;
+    }
+}
+exports.default = ElGamal;
