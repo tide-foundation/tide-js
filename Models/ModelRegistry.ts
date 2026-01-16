@@ -221,9 +221,9 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
         summary["KeyId"] = policy.keyId;
         summary['Approval Type'] = ApprovalType[policy.approvalType];
         summary["Execution Type"] = ExecutionType[policy.executionType];
-        policy.params.entries.entries().forEach(([key, value]) => {
+        for (const [key, value] of policy.params.entries.entries()) {
             if (!(value instanceof Uint8Array)) summary[`Parameter:${key}`] = value;
-        });
+        }
 
         let res: any = {};
         if (TryGetValue(draftBytes, 1, res)) {

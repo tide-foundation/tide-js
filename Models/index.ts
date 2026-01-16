@@ -15,6 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
+// Direct exports
 export { default as AuthRequest } from './AuthRequest';
 export { default as BaseTideRequest } from './BaseTideRequest';
 export { default as Datum } from './Datum';
@@ -27,3 +28,6 @@ export { default as VoucherResponse } from './Responses/Vendor/VoucherResponse';
 export { default as SerializedField } from './SerializedField';
 export { default as VendorData } from './VendorData';
 export { default as VendorSettings } from './VendorSettings';
+
+// Namespace exports
+export * as Infos from './Infos';

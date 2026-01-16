@@ -15,29 +15,19 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
+// Top-level exports
 export { default as ElGamal } from "./Encryption/ElGamal"
 export { default as TideKey } from "./TideKey"
 
-import * as AES from "./Encryption/AES"
-export { AES };
-
-import * as DH from "./Encryption/DH"
-export { DH };
-
-import * as EdDSA from "./Signing/EdDSA"
-export { EdDSA };
-
-import * as Hash from "./Hashing/Hash"
-export { Hash };
-
-import * as HashToPoint from "./Hashing/H2P"
-export { HashToPoint };
-
-import * as Interpolation from "./Interpolation"
-export { Interpolation };
-
-import * as Math from "./Math"
-export { Math };
-
-import * as Serialization from "./Serialization"
-export { Serialization };
+// Namespace exports - for direct access
+export * as AES from "./Encryption/AES"
+export * as DH from "./Encryption/DH"
+export * as EdDSA from "./Signing/EdDSA"
+export * as Hash from "./Hashing/Hash"
+export * as HashToPoint from "./Hashing/H2P"
+export * as Interpolation from "./Interpolation"
+export * as Math from "./Math"
+export * as Serialization from "./Serialization"
+export * as Ed25519 from "./Ed25519"
+export * as TideMemoryObjects from "./TideMemoryObjects"
+export * as Components from "./Components"
