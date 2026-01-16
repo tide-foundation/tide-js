@@ -1,17 +1,12 @@
 import { StripeLicensing, CheckLicenseAddedToPayer } from "./StripeLicensing.js"
 import { Ed25519PublicDeserialization } from "./Components.js";
-import { Decrypt, Encrypt, Get_Auth_By_JWT } from "./Encryption.js";
 import Tide_Key from "./TideKey.js";
 import { Verifier } from "./Verifier.js";
-import {EnclaveToMobileTunnelling_Enclave, EnclaveToMobileTunnelling_Mobile } from "./Tunelling.js";
 
 export const tests = {
     StripeLicensing,
     CheckLicenseAddedToPayer,
     Ed25519PublicDeserialization,
-    Get_Auth_By_JWT,
-    Encrypt,
-    Decrypt,
     Tide_Key,
     Verifier
 };
