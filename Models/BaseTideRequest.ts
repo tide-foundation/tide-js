@@ -1,58 +1,38 @@
-// 
-// Tide Protocol - Infrastructure for a TRUE Zero-Trust paradigm
-// Copyright (C) 2022 Tide Foundation Ltd
-// 
-// This program is free software and is subject to the terms of 
-// the Tide Community Open Code License as published by the 
-// Tide Foundation Limited. You may modify it and redistribute 
-// it in accordance with and subject to the terms of that License.
-// This program is distributed WITHOUT WARRANTY of any kind, 
-// including without any implied warranty of MERCHANTABILITY or 
-// FITNESS FOR A PARTICULAR PURPOSE.
-// See the Tide Community Open Code License for more details.
-// You should have received a copy of the Tide Community Open 
-// Code License along with this program.
-// If not, see https://tide.org/licenses_tcoc2-0-0-en
-//
-
-import { SHA512_Digest } from "../Cryptide/Hashing/Hash";
-import { Serialization } from "../Cryptide/index";
-import { bytesToBase64, GetValue, StringToUint8Array, TryGetValue } from "../Cryptide/Serialization";
-import { PolicyAuthorizedTideRequestSignatureFormat } from "../Cryptide/Signing/TideSignature";
-
-import { CurrentTime } from "../Tools/Utils";
-import { Doken } from "./Doken";
+import { Doken } from "../Contracts/BaseContract";
+import { TideMemory } from "../Tools/TideMemory";
+import { Policy } from "./Policy";
 
 export default class BaseTideRequest {
-    name: any;
-    version: any;
-    authFlow: any;
-    draft: any;
-    dyanmicData: any;
-    authorization: any;
-    authorizerCert: any;
-    authorizer: any;
-    expiry: any;
-    policy: any;
-    /**
-     *
-     * @param {string} name
-     * @param {string} version
-     * @param {string} authFlow
-     * @param {Uint8Array} draft
-     * @param {Uint8Array} dyanmicData
-     */
-    constructor(name, version, authFlow, draft, dyanmicData = new Uint8Array()) {
+    static _name: string;
+    static _version: string;
+
+    name: string;
+    version: string;
+    authFlow: string;
+    draft: TideMemory;
+    dyanmicData: TideMemory;
+    authorization: TideMemory;
+    authorizerCert: TideMemory;
+    authorizer: TideMemory;
+    expiry: number;
+    policy: TideMemory;
+
+    constructor(name: string, version: string, authFlow: string, draft: Uint8Array, dyanmicData: Uint8Array) {
         this.name = name;
         this.version = version;
         this.authFlow = authFlow
-        this.draft = draft.slice();
-        this.dyanmicData = dyanmicData.slice();
-        this.authorization = new Uint8Array();
-        this.authorizerCert = new Uint8Array();;
-        this.authorizer = new Uint8Array();;
-        this.expiry = BigInt(CurrentTime() + 30); // default is 30s
-        this.policy = new Uint8Array();
+
+        this.draft = new TideMemory(draft.length);
+        this.draft.set(draft);
+
+        this.dyanmicData = new TideMemory(dyanmicData.length);
+        this.dyanmicData.set(dyanmicData);
+
+        this.authorization = new TideMemory();
+        this.authorizerCert = new TideMemory();;
+        this.authorizer = new TideMemory();
+        this.expiry = Math.floor(Date.now() / 1000) + 30; // default is 30s
+        this.policy = new TideMemory();
     }
 
     id() {
@@ -73,97 +53,138 @@ export default class BaseTideRequest {
         return r;
     }
 
-    /**
-     * @param {Uint8Array} d 
-     */
-    setNewDynamicData(d) {
-        this.dyanmicData = d;
+    setNewDynamicData(d: Uint8Array) {
+        this.dyanmicData = new TideMemory(d.length);
+        this.dyanmicData.set(d);
         return this;
     }
 
-    /**
-     * 
-     * @param {number} timeFromNowInSeconds 
-     */
-    setCustomExpiry(timeFromNowInSeconds) {
-        this.expiry = timeFromNowInSeconds;
+    setCustomExpiry(timeFromNowInSeconds: number) {
+        this.expiry = Math.floor(Date.now() / 1000) + timeFromNowInSeconds;
         return this;
     }
 
-    /**
-     * @param {Uint8Array} authorizer 
-     */
-    addAuthorizer(authorizer) {
-        this.authorizer = authorizer;
+    addAuthorizer(authorizer: Uint8Array) {
+        this.authorizer = new TideMemory(authorizer.length);
+        this.authorizer.set(authorizer);
     }
 
-    /**
-     * 
-     * @param {Uint8Array} authorizerCertificate 
-     */
-    addAuthorizerCertificate(authorizerCertificate) {
-        this.authorizerCert = authorizerCertificate
+    addAuthorizerCertificate(authorizerCertificate: Uint8Array) {
+        this.authorizerCert = new TideMemory(authorizerCertificate.length);
+        this.authorizerCert.set(authorizerCertificate);
     }
 
-    /**
-     * 
-     * @param {Uint8Array} authorization 
-     */
-    addAuthorization(authorization) {
-        this.authorization = authorization
+    addAuthorization(authorization: Uint8Array) {
+        this.authorization = new TideMemory(authorization.length);
+        this.authorization.set(authorization);
         return this;
     }
 
-
-    async dataToAuthorize() {
-        return StringToUint8Array("<datatoauthorize-" + this.name + ":" + this.version + bytesToBase64(await SHA512_Digest(this.draft)) + this.expiry.toString() + "-datatoauthorize>");
+    addPolicy(policy: Uint8Array) {
+        this.policy = new TideMemory(policy.length);
+        this.policy.set(policy);
+        return this;
     }
 
-    getInitializedTime() {
-        let res = {};
-        if (!TryGetValue(this.authorization, 0, res)) throw Error("Creation authorization hasn't been added yet"); 
-
-        const createdAt_b = Serialization.GetValue(Serialization.GetValue(this.authorization, 0), 0);
-        const createdAt_view = new DataView(createdAt_b.buffer, createdAt_b.byteOffset, createdAt_b.byteLength);
-        const createdAt = createdAt_view.getBigInt64(0, true);
-        return createdAt
+    hasPolicy(): boolean{
+        return this.policy.length != 0;
     }
 
-    /**
-     * Add an approval for this request. To be used for policy auth flow
-     * @param {Doken} doken 
-     * @param {Uint8Array} sig 
-     */
-    addApproval(doken, sig) {
-        // Ensure creation authorization has been added
-        let res = {};
-        if (!TryGetValue(this.authorization, 0, res)) throw Error("Creation authorization hasn't been added yet");
-
-        // Deconstruct existing authorization
-        let existingSessKeySigs = [];
-        let currentSig: any = {};
-        for (let i = 0; TryGetValue(GetValue(this.authorization, 1), i, currentSig); i++) {
-            if (currentSig.result.length == 0) continue;
-            existingSessKeySigs.push(currentSig.result);
+    async getRequestInitDetails() {
+        const te = new TextEncoder();
+        return {
+            "creationTime": BaseTideRequest.uint32ToUint8ArrayLE(Math.floor(Date.now() / 1000)), // now
+            "expireTime": BaseTideRequest.uint32ToUint8ArrayLE(this.expiry),
+            "modelId": te.encode(this.id()),
+            "draftHash": new TideMemory(await crypto.subtle.digest("SHA-512", this.draft))
         }
+    }
 
-        // Now deconstruct exsiting authorizers (dokens)
-        let existingDokens = [];
-        let currentDoken: any = {};
-        for (let i = 0; TryGetValue(this.authorizer, i, currentDoken); i++) {
-            if (currentDoken.result.length == 0) continue;
-            existingDokens.push(currentDoken.result);
-        }
-
-        // Now add the new doken and sig to the deconstructed data then reserialize it into the request
-        existingDokens.push(StringToUint8Array(doken.serialize()));
-        existingSessKeySigs.push(sig);
-
-        this.authorization = Serialization.CreateTideMemoryFromArray([
-            GetValue(this.authorization, 0),
-            Serialization.CreateTideMemoryFromArray(existingSessKeySigs)
+    addCreationSignature(creationTime: Uint8Array, sig: Uint8Array) {
+        this.authorization = TideMemory.CreateFromArray([
+            TideMemory.CreateFromArray([
+                creationTime,
+                sig
+            ]),
+            new TideMemory() // empty as no approvals have been added yet
         ]);
-        this.authorizer = Serialization.CreateTideMemoryFromArray(existingDokens);
+        return this;
+    }
+
+    isInitialized(): boolean {
+        try {
+            // check that creation time and sig fields are present
+            if (this.authorization.GetValue(0).GetValue(0).length > 0 && this.authorization.GetValue(0).GetValue(1).length == 64) return true;
+            else return false;
+        } catch {
+            return false;
+        }
+    }
+
+    getUniqueId(): string {
+        if (!this.isInitialized()) throw 'Must initialize request to generate unique id';
+        const bytes = this.authorization.GetValue(0).GetValue(1) as Uint8Array;
+        return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(''); // hex
+    }
+
+    getInitializedTime(): number {
+        if (!this.isInitialized()) throw 'Must initialize request to get creation time';
+        const time_bytes = this.authorization.GetValue(0).GetValue(0);
+        return BaseTideRequest.uint8ArrayToUint32LE(time_bytes);
+    }
+
+    getCurrentApprovalCount(): number {
+        if (!this.isInitialized()) throw 'Must initialize request to get approval count';
+        let i = 0;
+        let res = { result: undefined };
+        while (this.authorizer.TryGetValue(i, res)) { i++; }
+        return i;
+    }
+
+    getPolicy(): Policy {
+        return Policy.from(this.policy);
+    }
+
+    removeApproval(approvalVuid: string): boolean {
+        // find if there are any dokens with this approvalVuid
+        if (!this.isInitialized()) return false;
+        if (this.getCurrentApprovalCount() == 0) return false;
+
+        try {
+            // find doken and it's index
+            let i = 0;
+            let res = { result: new TideMemory() };
+            let dokenWithVuidFound = {};
+            let keepTheseDokensList = [];
+            let keepTheseApprovalSigs = [];
+            while (this.authorizer.TryGetValue(i, res)) {
+                const d = new Doken(res.result);
+                if (d.hasVuid(approvalVuid)) {
+                    dokenWithVuidFound = {
+                        index: i,
+                        value: d
+                    };
+                } else {
+                    keepTheseDokensList.push(res.result);
+                    keepTheseApprovalSigs.push(this.authorization.GetValue(1).GetValue(i));
+                }
+                i++;
+            }
+
+            // reconstruct authorizers and authorizer sigs of request
+            if (dokenWithVuidFound) {
+                const creationAuth = this.authorization.GetValue(0);
+                this.authorization = TideMemory.CreateFromArray([
+                    creationAuth,
+                    TideMemory.CreateFromArray(keepTheseApprovalSigs)
+                ]);
+                this.authorizer = TideMemory.CreateFromArray(keepTheseDokensList);
+                return true;
+            }else return false;
+        } catch (ex) {
+            console.error(ex);
+            return false;
+        }
     }
 
     encode() {
@@ -171,14 +192,13 @@ export default class BaseTideRequest {
         if (this.authorizerCert == null) throw Error("Authorizer cert not provided");
         if (this.authorization == null) throw Error("Authorize this request first with an authorizer");
 
-        const name_b = StringToUint8Array(this.name);
-        const version_b = StringToUint8Array(this.version);
-        const authFlow_b = StringToUint8Array(this.authFlow);
-        const expiry = new Uint8Array(8);
-        const expiry_view = new DataView(expiry.buffer);
-        expiry_view.setBigInt64(0, this.expiry, true);
+        const te = new TextEncoder();
+        const name_b = te.encode(this.name);
+        const version_b = te.encode(this.version);
+        const authFlow_b = te.encode(this.authFlow);
+        const expiry = BaseTideRequest.uint32ToUint8ArrayLE(this.expiry);
 
-        const req = Serialization.CreateTideMemoryFromArray([
+        const req = TideMemory.CreateFromArray([
             name_b,
             version_b,
             expiry,
@@ -194,33 +214,39 @@ export default class BaseTideRequest {
         return req;
     }
 
-    static decode(data) {
+    static decode<T extends BaseTideRequest>(
+        this: new (name: string, version: string, authFlow: string, draft: Uint8Array, dynamicData: Uint8Array) => T,
+        data: Uint8Array
+    ): T {
+        const d = new TideMemory(data.length);
+        d.set(data);
+
         // Read field 0 (name) - this is part of the TideMemory structure
-        const name_b = Serialization.GetValue(data, 0);
-        const name = new TextDecoder().decode(name_b);
+        const name = new TextDecoder().decode(d.GetValue(0));
 
         // Read all other fields
-        const version_b = Serialization.GetValue(data, 1);
-        const version = new TextDecoder().decode(version_b);
+        const version = new TextDecoder().decode(d.GetValue(1));
 
-        const expiry_b = Serialization.GetValue(data, 2);
-        const expiry_view = new DataView(expiry_b.buffer, expiry_b.byteOffset, expiry_b.byteLength);
-        const expiry = expiry_view.getBigInt64(0, true);
+        // Check name and version in static members if set
+        if ((this as any)._name != undefined && (this as any)._version != undefined) {
+            if (name != (this as any)._name || version != (this as any)._version) throw Error("Name and Version in decoded data don't match this object's set name and version.")
+        }
 
-        const draft = Serialization.GetValue(data, 3);
+        const expiry = BaseTideRequest.uint8ArrayToUint32LE(d.GetValue(2));
 
-        const authFlow_b = Serialization.GetValue(data, 4);
-        const authFlow = new TextDecoder().decode(authFlow_b);
+        const draft = d.GetValue(3);
 
-        const dynamicData = Serialization.GetValue(data, 5);
+        const authFlow = new TextDecoder().decode(d.GetValue(4));
 
-        const authorizer = Serialization.GetValue(data, 6);
-        const authorization = Serialization.GetValue(data, 7);
-        const authorizerCert = Serialization.GetValue(data, 8);
-        const policy = Serialization.GetValue(data, 9);
+        const dynamicData = d.GetValue(5);
 
-        // Create a new BaseTideRequest with the decoded data
-        const request = new BaseTideRequest(name, version, authFlow, draft, dynamicData as any);
+        const authorizer = d.GetValue(6);
+        const authorization = d.GetValue(7);
+        const authorizerCert = d.GetValue(8);
+        const policy = d.GetValue(9);
+
+        // Create a new instance using 'this' constructor to support subclasses
+        const request = new this(name, version, authFlow, draft, dynamicData);
 
         // Set the remaining fields
         request.expiry = expiry;
@@ -232,10 +258,38 @@ export default class BaseTideRequest {
         return request;
     }
 
-    async dataToApprove() {
-        const creationTime = Serialization.GetValue(Serialization.GetValue(this.authorization, 0), 0);
-        const creationSig = Serialization.GetValue(Serialization.GetValue(this.authorization, 0), 1);
-        const creationMessage = new PolicyAuthorizedTideRequestSignatureFormat(creationTime, this.expiry, this.id(), await SHA512_Digest(this.draft));
-        return Serialization.ConcatUint8Arrays([creationMessage.format(), creationSig]);
+    private static uint32ToUint8ArrayLE(num: number): Uint8Array {
+        // We want 8 bytes to match .NET Int64 (long) layout: low 32 bits in first 4 bytes, rest zero.
+        const arr = new Uint8Array(8);
+
+        // low 32 bits, little-endian
+        arr[0] = num & 0xff;
+        arr[1] = (num >>> 8) & 0xff;
+        arr[2] = (num >>> 16) & 0xff;
+        arr[3] = (num >>> 24) & 0xff;
+
+        // arr[4..7] are already 0 from Uint8Array init, matching a .NET long with high 32 bits = 0.
+        return arr;
+    }
+
+    private static uint8ArrayToUint32LE(bytes: Uint8Array): number {
+        if (bytes.length !== 8) {
+            throw new Error("Expected 8 bytes for a 64-bit value");
+        }
+
+        // Optional safety check: ensure high 32 bits are zero (no real 64-bit longs passed).
+        // If you *really* want to enforce the "no longs" assumption, uncomment:
+        //
+        // if (bytes[4] | bytes[5] | bytes[6] | bytes[7]) {
+        //     throw new Error("High 32 bits are not zero; expected a 32-bit value stored in 64-bit field.");
+        // }
+
+        // Reconstruct from the low 4 bytes (little-endian)
+        return (
+            bytes[0] +
+            (bytes[1] << 8) +
+            (bytes[2] << 16) +
+            (bytes[3] * 0x1000000) // avoids sign issues of << 24
+        );
     }
 }

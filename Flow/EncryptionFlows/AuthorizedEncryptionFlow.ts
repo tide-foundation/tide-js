@@ -119,11 +119,11 @@ export function AuthorizedEncryptionFlow(config){
             Serialization.WriteValue(draft, i+1, entry);
         })
 
-        const encryptionRequest = new BaseTideRequest("TideSelfEncryption", "1", "Doken:1", draft);
+        const encryptionRequest = new BaseTideRequest("TideSelfEncryption", "1", "Doken:1", draft, null);
 
         // Deserialize token to retrieve vuid - if it exists
         const vuid = this.token.payload.vuid;
-        if(vuid) encryptionRequest.dyanmicData = StringToUint8Array(vuid);
+        if(vuid) encryptionRequest.setNewDynamicData(StringToUint8Array(vuid));
         
         // Initiate signing flow
         const encryptingSigningFlow = new dVVKSigningFlow(this.vvkId, encryptionFlow.vvkInfo.UserPublic, encryptionFlow.vvkInfo.OrkInfo, encryptionFlow.sessKey, encryptionFlow.token, this.voucherURL);
@@ -189,7 +189,7 @@ export function AuthorizedEncryptionFlow(config){
                 Serialization.WriteValue(draft, i, entries[i]);
             }
     
-            const decryptionRequest = new BaseTideRequest("SelfDecrypt", "1", "Doken:1", draft);
+            const decryptionRequest = new BaseTideRequest("SelfDecrypt", "1", "Doken:1", draft, null);
     
             const flow = new dVVKDecryptionFlow(this.vvkId, this.vvkInfo.UserPublic, this.vvkInfo.OrkInfo, this.sessKey, this.token, this.voucherURL);
             const dataKeys = await flow.start(decryptionRequest);
