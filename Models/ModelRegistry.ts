@@ -17,8 +17,7 @@
 
 import { AuthorizerPack, Bytes2Hex, GetValue, StringFromUint8Array, TryGetValue } from "../Cryptide/Serialization";
 import BaseTideRequest from "./BaseTideRequest";
-// @ts-ignore
-import { Policy, ApprovalType, ExecutionType } from "asgard-tide";
+import { Policy, ApprovalType, ExecutionType } from "./Policy";
 import { Serialization } from "../Cryptide/index";
 
 export class ModelRegistry {

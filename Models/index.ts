@@ -24,6 +24,7 @@ export { default as EnclaveEntry } from './EnclaveEntry';
 export { default as KeyInfo } from './Infos/KeyInfo';
 export { default as OrkInfo } from './Infos/OrkInfo';
 export { ModelRegistry, HumanReadableModelBuilder, OffboardSignRequestBuilder } from './ModelRegistry';
+export { Policy, ApprovalType, ExecutionType } from './Policy';
 export { default as VoucherResponse } from './Responses/Vendor/VoucherResponse';
 export { default as SerializedField } from './SerializedField';
 export { default as VendorData } from './VendorData';
