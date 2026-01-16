@@ -1,6 +1,9 @@
 import { Doken } from "../Contracts/BaseContract";
 import { TideMemory } from "../Tools/TideMemory";
 import { Policy } from "./Policy";
+import { SHA512_Digest } from "../Cryptide/Hashing/Hash";
+import { bytesToBase64, StringToUint8Array } from "../Cryptide/Serialization";
+import { PolicyAuthorizedTideRequestSignatureFormat } from "../Cryptide/Signing/TideSignature";
 
 export default class BaseTideRequest {
     static _name: string;
@@ -88,6 +91,19 @@ export default class BaseTideRequest {
 
     hasPolicy(): boolean{
         return this.policy.length != 0;
+    }
+
+    // Additional method from tide-js version
+    async dataToAuthorize() {
+        return StringToUint8Array("<datatoauthorize-" + this.name + ":" + this.version + bytesToBase64(await SHA512_Digest(this.draft)) + this.expiry.toString() + "-datatoauthorize>");
+    }
+
+    // Additional method from tide-js version
+    async dataToApprove() {
+        const creationTime = this.authorization.GetValue(0).GetValue(0);
+        const creationSig = this.authorization.GetValue(0).GetValue(1);
+        const creationMessage = new PolicyAuthorizedTideRequestSignatureFormat(creationTime, this.expiry, this.id(), await SHA512_Digest(this.draft));
+        return TideMemory.CreateFromArray([creationMessage.format(), creationSig]);
     }
 
     async getRequestInitDetails() {

@@ -612,7 +612,7 @@ export function Bytes2Hex(byteArray) {
 		nibble = byteArray[i] & 0xF;
 		chars[p++] = nibble > 9 ? nibble + alpha : nibble + digit;
 	}
-	return String.fromCharCode.apply(null, chars);
+	return String.fromCharCode.apply(null, Array.from(chars));
 }
 
 /**

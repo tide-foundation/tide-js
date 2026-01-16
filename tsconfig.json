@@ -7,23 +7,33 @@
     "declarationMap": true,
     "outDir": "./dist",
     "rootDir": "./",
-    "strict": false,
+
+    // Core strict checks for runtime safety
+    "strictNullChecks": false,
+    "strictBindCallApply": true,
+    "strictFunctionTypes": true,
+    "strictPropertyInitialization": false,
+    "noImplicitThis": false,
+
+    // Important runtime safety checks
+    "noFallthroughCasesInSwitch": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+
+    // Module resolution
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
+
+    // Lenient for existing code
     "noImplicitAny": false,
-    "noImplicitThis": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "allowUnreachableCode": true,
-    "allowUnusedLabels": true,
     "noPropertyAccessFromIndexSignature": false,
-    "noImplicitReturns": false,
-    "noFallthroughCasesInSwitch": false,
-    "noUncheckedIndexedAccess": false
+    "noImplicitReturns": false
   },
   "include": [
     "index.ts",
