@@ -1,8 +1,24 @@
+// 
+// Tide Protocol - Infrastructure for a TRUE Zero-Trust paradigm
+// Copyright (C) 2022 Tide Foundation Ltd
+// 
+// This program is free software and is subject to the terms of 
+// the Tide Community Open Code License as published by the 
+// Tide Foundation Limited. You may modify it and redistribute 
+// it in accordance with and subject to the terms of that License.
+// This program is distributed WITHOUT WARRANTY of any kind, 
+// including without any implied warranty of MERCHANTABILITY or 
+// FITNESS FOR A PARTICULAR PURPOSE.
+// See the Tide Community Open Code License for more details.
+// You should have received a copy of the Tide Community Open 
+// Code License along with this program.
+// If not, see https://tide.org/licenses_tcoc2-0-0-en
+//
+
 import { etc, Point } from "../../../Ed25519.js";
-import { SHA512_Digest } from "../../../Hashing/Hash.js";
-import { mod, RandomBigInt } from "../../../Math.js";
-import { BigIntFromByteArray, BigIntToByteArray, StringToUint8Array } from "../../../Serialization.js";
-import { Public, Private, BaseComponent, Seed, BaseSeedComponent, BasePrivateComponent, BasePublicComponent } from "../../BaseComponent.js";
+import { mod,} from "../../../Math.js";
+import { BigIntFromByteArray, BigIntToByteArray} from "../../../Serialization.js";
+import { Public, Private, Seed, BaseSeedComponent, BasePrivateComponent, BasePublicComponent } from "../../BaseComponent.js";
 import Ed25519Scheme from "./Ed25519Scheme.js";
 
 export class Ed25519PublicComponent extends BasePublicComponent{

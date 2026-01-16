@@ -1,13 +1,23 @@
-import { CreateTideMemory, WriteValue } from "../../Cryptide/Serialization";
-import { AdminAuthorization } from "../../Models/AdminAuthorization";
+// 
+// Tide Protocol - Infrastructure for a TRUE Zero-Trust paradigm
+// Copyright (C) 2022 Tide Foundation Ltd
+// 
+// This program is free software and is subject to the terms of 
+// the Tide Community Open Code License as published by the 
+// Tide Foundation Limited. You may modify it and redistribute 
+// it in accordance with and subject to the terms of that License.
+// This program is distributed WITHOUT WARRANTY of any kind, 
+// including without any implied warranty of MERCHANTABILITY or 
+// FITNESS FOR A PARTICULAR PURPOSE.
+// See the Tide Community Open Code License for more details.
+// You should have received a copy of the Tide Community Open 
+// Code License along with this program.
+// If not, see https://tide.org/licenses_tcoc2-0-0-en
+//
+
 import BaseTideRequest from "../../Models/BaseTideRequest.js";
-import NetworkClient from "../../Clients/NetworkClient.js";
 import dVVKSigningFlow from "../SigningFlows/dVVKSigningFlow.js";
-import { GenSessKey, GetPublic } from "../../Cryptide/Math.js";
-import { Serialization } from "../../Cryptide/index.js";
 import TideKey from "../../Cryptide/TideKey.js";
-import Ed25519Scheme from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.js";
-import { Ed25519PrivateComponent } from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Components.js";
 import KeyInfo from "../../Models/Infos/KeyInfo.js";
 
 /**
