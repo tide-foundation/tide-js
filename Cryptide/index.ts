@@ -16,6 +16,7 @@
 //
 
 export { default as ElGamal } from "./Encryption/ElGamal"
+export { default as TideKey } from "./TideKey"
 
 import * as AES from "./Encryption/AES"
 export { AES };

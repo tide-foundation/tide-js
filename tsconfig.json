@@ -1,16 +1,17 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "commonjs",
+    "module": "es2022",
     "lib": ["ES2020", "DOM"],
-    "declaration": false,
+    "declaration": true,
+    "declarationMap": true,
     "outDir": "./dist",
     "rootDir": "./",
     "strict": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": false,
-    "moduleResolution": "node",
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "noImplicitAny": false,
@@ -25,7 +26,13 @@
     "noUncheckedIndexedAccess": false
   },
   "include": [
-    "**/*.ts"
+    "index.ts",
+    "Clients/**/*.ts",
+    "Cryptide/**/*.ts",
+    "Flow/**/*.ts",
+    "Math/**/*.ts",
+    "Models/**/*.ts",
+    "Tools/**/*.ts"
   ],
   "exclude": [
     "node_modules",

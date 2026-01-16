@@ -15,13 +15,4 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-export * as Clients from './Clients';
-export * as Cryptide from './Cryptide';
-export * as Flow from './Flow';
-export * as Math from './Math';
-export * as Models from './Models';
-export * as Tools from './Tools';
-
-// Backwards compatibility alias
-import * as Utils from './Tools/Utils';
-export { Utils };
+export * from './Utils';

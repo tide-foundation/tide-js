@@ -15,13 +15,10 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-export * as Clients from './Clients';
-export * as Cryptide from './Cryptide';
-export * as Flow from './Flow';
-export * as Math from './Math';
-export * as Models from './Models';
-export * as Tools from './Tools';
-
-// Backwards compatibility alias
-import * as Utils from './Tools/Utils';
-export { Utils };
+export { default as dVVKDecryptionFlow } from './DecryptionFlows/dVVKDecryptionFlow';
+export { AuthorizedEncryptionFlow } from './EncryptionFlows/AuthorizedEncryptionFlow';
+export { AuthorizedSigningFlow } from './SigningFlows/AuthorizedSigningFlow';
+export { default as dTestVVKSigningFlow } from './SigningFlows/dTestVVkSigningFlow';
+export { default as dVVKSigningFlow2Step } from './SigningFlows/dVVKSigningFlow2Step';
+export { default as dVVKSigningFlow } from './SigningFlows/dVVKSigningFlow';
+export { default as VoucherFlow } from './VoucherFlows/VoucherFlow';

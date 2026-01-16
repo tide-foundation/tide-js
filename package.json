@@ -2,11 +2,15 @@
   "name": "tide-js",
   "version": "0.0.1",
   "description": "Browser side modules required to interact with the Tide's Cybersecurity Fabric.",
-  "main": "index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "files": [
+    "dist"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tide-foundation/tide-js.git"

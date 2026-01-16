@@ -15,13 +15,15 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-export * as Clients from './Clients';
-export * as Cryptide from './Cryptide';
-export * as Flow from './Flow';
-export * as Math from './Math';
-export * as Models from './Models';
-export * as Tools from './Tools';
-
-// Backwards compatibility alias
-import * as Utils from './Tools/Utils';
-export { Utils };
+export { default as AuthRequest } from './AuthRequest';
+export { default as BaseTideRequest } from './BaseTideRequest';
+export { default as Datum } from './Datum';
+export { Doken } from './Doken';
+export { default as EnclaveEntry } from './EnclaveEntry';
+export { default as KeyInfo } from './Infos/KeyInfo';
+export { default as OrkInfo } from './Infos/OrkInfo';
+export { ModelRegistry, HumanReadableModelBuilder, OffboardSignRequestBuilder } from './ModelRegistry';
+export { default as VoucherResponse } from './Responses/Vendor/VoucherResponse';
+export { default as SerializedField } from './SerializedField';
+export { default as VendorData } from './VendorData';
+export { default as VendorSettings } from './VendorSettings';
