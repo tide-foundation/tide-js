@@ -15,7 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { ElGamal, Serialization } from "../../Cryptide/index";
+import { Encryption, Serialization } from "../../Cryptide/index";
 import { decryptDataRawOutput, encryptDataRawOutput } from "../../Cryptide/Encryption/AES";
 import { numberToUint8Array, StringToUint8Array } from "../../Cryptide/Serialization";
 import { CurrentTime } from "../../Tools/Utils";
@@ -72,7 +72,7 @@ export function AuthorizedEncryptionFlow(config){
             if(d_b.length < 32){
                 // if data is less than 32B
                 // Gr. EncryptedData 
-                const encryptedData = await ElGamal.encryptDataRaw(d_b, encryptionFlow.vvkInfo.UserPublic);
+                const encryptedData = await Encryption.ElGamal.encryptDataRaw(d_b, encryptionFlow.vvkInfo.UserPublic);
 
                 const tags_b = d.tags.map(t => StringToUint8Array(t)); 
 
@@ -87,7 +87,7 @@ export function AuthorizedEncryptionFlow(config){
                 // if data is more than 32B
                 const largeDataKey = window.crypto.getRandomValues(new Uint8Array(32));
                 const encryptedData = await encryptDataRawOutput(d_b, largeDataKey);
-                const encryptedKey = await ElGamal.encryptDataRaw(largeDataKey, encryptionFlow.vvkInfo.UserPublic);
+                const encryptedKey = await Encryption.ElGamal.encryptDataRaw(largeDataKey, encryptionFlow.vvkInfo.UserPublic);
 
                 const tags_b = d.tags.map(t => StringToUint8Array(t)); 
 

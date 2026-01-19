@@ -17,4 +17,4 @@
 
 export * from './BaseComponent';
 export * from './ComponentRegistry';
-export * as Ed25519 from './Schemes/Ed25519';
+export * as Schemes from './Schemes';

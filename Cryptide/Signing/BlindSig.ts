@@ -19,7 +19,7 @@ import { RandomBigInt, mod, mod_inv } from "../Math";
 import { Point } from "../Ed25519";
 import { SHA512_Digest } from "../Hashing/Hash";
 import { BigIntFromByteArray, BigIntToByteArray, ConcatUint8Arrays, bytesToBase64 } from "../Serialization";
-import { EdDSA } from "../index";
+import * as EdDSA from "./EdDSA";
 /**
  * 
  * @param {Point} gR 

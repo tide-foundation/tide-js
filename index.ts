@@ -24,5 +24,5 @@ export * as Models from './Models';
 export * as Tools from './Tools';
 
 // Backwards compatibility alias
-import * as Utils from './Tools/Utils';
+import * as Utils from './Tools';
 export { Utils };

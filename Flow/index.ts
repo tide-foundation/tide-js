@@ -15,10 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-export { default as dVVKDecryptionFlow } from './DecryptionFlows/dVVKDecryptionFlow';
-export { AuthorizedEncryptionFlow } from './EncryptionFlows/AuthorizedEncryptionFlow';
-export { AuthorizedSigningFlow } from './SigningFlows/AuthorizedSigningFlow';
-export { default as dTestVVKSigningFlow } from './SigningFlows/dTestVVkSigningFlow';
-export { default as dVVKSigningFlow2Step } from './SigningFlows/dVVKSigningFlow2Step';
-export { default as dVVKSigningFlow } from './SigningFlows/dVVKSigningFlow';
-export { default as VoucherFlow } from './VoucherFlows/VoucherFlow';
+export * as DecryptionFlows from './DecryptionFlows';
+export * as EncryptionFlows from './EncryptionFlows';
+export * as SigningFlows from './SigningFlows';
+export * as VoucherFlows from './VoucherFlows';

@@ -41,7 +41,7 @@ export class HumanReadableModelBuilder {
     _humanReadableName = null;
     _data: any;
     _draft: any;
-    request: any;
+    request: BaseTideRequest | undefined;
     reqId: any;
     constructor(data, reqId) {
         if (data) {

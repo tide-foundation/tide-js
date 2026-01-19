@@ -16,15 +16,12 @@
 //
 
 // Top-level exports
-export { default as ElGamal } from "./Encryption/ElGamal"
 export { default as TideKey } from "./TideKey"
 
 // Namespace exports - for direct access
-export * as AES from "./Encryption/AES"
-export * as DH from "./Encryption/DH"
-export * as EdDSA from "./Signing/EdDSA"
-export * as Hash from "./Hashing/Hash"
-export * as HashToPoint from "./Hashing/H2P"
+export * as Encryption from "./Encryption"
+export * as Signing from "./Signing"
+export * as Hashing from "./Hashing"
 export * as Interpolation from "./Interpolation"
 export * as Math from "./Math"
 export * as Serialization from "./Serialization"

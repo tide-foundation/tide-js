@@ -15,18 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-// Direct exports
-export { default as AuthRequest } from './AuthRequest';
-export { default as BaseTideRequest } from './BaseTideRequest';
-export { default as Datum } from './Datum';
-export { Doken } from './Doken';
-export { default as EnclaveEntry } from './EnclaveEntry';
-export { ModelRegistry, HumanReadableModelBuilder, OffboardSignRequestBuilder } from './ModelRegistry';
-export { Policy, ApprovalType, ExecutionType } from './Policy';
-export { default as SerializedField } from './SerializedField';
-export { default as VendorData } from './VendorData';
-export { default as VendorSettings } from './VendorSettings';
-
-// Namespace exports
-export * as Infos from './Infos';
-export * as Responses from './Responses';
+export { default as BaseScheme } from './BaseScheme';
+export * from './SchemeRegistry';
+export * as Ed25519 from './Ed25519';
+export * as AES from './AES';

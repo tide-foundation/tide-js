@@ -15,7 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { EdDSA } from "../../Cryptide/index";
+import { Signing } from "../../Cryptide/index";
 import BaseTideRequest from "../../Models/BaseTideRequest";
 import { Threshold, WaitForNumberofORKs, sortORKs } from "../../Tools/Utils";
 import NodeClient from "../../Clients/NodeClient";
@@ -65,7 +65,7 @@ export default class dTestVVKSigningFlow{
         const draft = `{"SomeStaticData":"This msg was previously authorized"}`;
         const dynamicData = `{"SomeDynamicData":"New log in"}`;
         const request = new BaseTideRequest("TestInit", "1", "VRK:1", StringToUint8Array(draft), StringToUint8Array(dynamicData));
-        const proof = base64ToBytes(await EdDSA.sign(await request.dataToAuthorize(), this.vrk));
+        const proof = base64ToBytes(await Signing.EdDSA.sign(await request.dataToAuthorize(), this.vrk));
         var x = await request.dataToAuthorize();
         request.addAuthorization(proof);
         request.addAuthorizer(this.authorizer);
@@ -89,7 +89,7 @@ export default class dTestVVKSigningFlow{
         const testSig = bytesToBase64(ConcatUint8Arrays([GRj[0].toRawBytes(), BigIntToByteArray(Sj[0])]));
 
         const toVerify = "This msg was previously authorized <-mix-> New log in";
-        const valid = await EdDSA.verify(testSig, this.vvkPublic, new TestSignatureFormat(toVerify).format());
+        const valid = await Signing.EdDSA.verify(testSig, this.vvkPublic, new TestSignatureFormat(toVerify).format());
         if(!valid) throw Error("Test VVK Signing failed");
 
         const endTime = performance.now();

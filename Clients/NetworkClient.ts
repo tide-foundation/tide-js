@@ -29,9 +29,36 @@ export default class NetworkClient extends ClientBase {
         
     }
 
+    /**
+     * @param {string} uid 
+     * @returns {OrkInfo[]}
+     */
+    async FindReservers(uid){
+        const response = await this._get(`/Network/Authentication/Users/GetReservers/${uid}`);
+        try{
+            const responseData = await this._handleError(response, "Find Reservers");
+            const formattedResponse = JSON.parse(responseData);
+            if(formattedResponse.length == 0) throw Error("Username forbidden");
+            const returnedResponse = formattedResponse.map(orkEntry => OrkInfo.from(orkEntry));
+            return returnedResponse; 
+        }catch(err){
+            throw Error(err)
+        }
+    }
+
+    async GetSomeORKs(){
+        const response = await this._get('/Network/Authentication/Node/Some');
+        const responseData = await this._handleError(response, "Get Some Orks");
+        const formattedResponse = JSON.parse(responseData)
+        const returnedResponse = formattedResponse.map(orkEntry => {
+            return OrkInfo.from(orkEntry);
+        });
+        return returnedResponse;
+    }
+
     async GetPayerUrl(payerPublic) {
         const response = await this._get(`/Network/Payment/Node/Urls/${payerPublic}`);
-        const responseData = await this._handleError(response, "Get Some Orks");
+        const responseData = await this._handleError(response, "Get Payer URL");
         const urlArray = JSON.parse(responseData);
         const randomUrl = urlArray[Math.floor(Math.random() * urlArray.length)];
         return randomUrl;

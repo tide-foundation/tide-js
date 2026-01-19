@@ -4,6 +4,7 @@ import { Policy } from "./Policy";
 import { SHA512_Digest } from "../Cryptide/Hashing/Hash";
 import { bytesToBase64, StringToUint8Array } from "../Cryptide/Serialization";
 import { PolicyAuthorizedTideRequestSignatureFormat } from "../Cryptide/Signing/TideSignature";
+import { Serialization } from "../Cryptide";
 
 export default class BaseTideRequest {
     static _name: string;
@@ -103,7 +104,7 @@ export default class BaseTideRequest {
         const creationTime = this.authorization.GetValue(0).GetValue(0);
         const creationSig = this.authorization.GetValue(0).GetValue(1);
         const creationMessage = new PolicyAuthorizedTideRequestSignatureFormat(creationTime, this.expiry, this.id(), await SHA512_Digest(this.draft));
-        return TideMemory.CreateFromArray([creationMessage.format(), creationSig]);
+        return Serialization.ConcatUint8Arrays([creationMessage.format(), creationSig]);
     }
 
     async getRequestInitDetails() {
@@ -159,6 +160,43 @@ export default class BaseTideRequest {
 
     getPolicy(): Policy {
         return Policy.from(this.policy);
+    }
+
+    /**
+     * Add an approval for this request. To be used for policy auth flow
+     * @param {Doken} doken 
+     * @param {Uint8Array} sig 
+     */
+    addApproval(doken, sig) {
+        // Ensure creation authorization has been added
+        let res = {};
+        if (!Serialization.TryGetValue(this.authorization, 0, res)) throw Error("Creation authorization hasn't been added yet");
+
+        // Deconstruct existing authorization
+        let existingSessKeySigs = [];
+        let currentSig = {result: undefined};
+        for (let i = 0; Serialization.TryGetValue(Serialization.GetValue(this.authorization, 1), i, currentSig); i++) {
+            if (currentSig.result.length == 0) continue;
+            existingSessKeySigs.push(currentSig.result);
+        }
+
+        // Now deconstruct exsiting authorizers (dokens)
+        let existingDokens = [];
+        let currentDoken = {result: undefined};
+        for (let i = 0; Serialization.TryGetValue(this.authorizer, i, currentDoken); i++) {
+            if (currentDoken.result.length == 0) continue;
+            existingDokens.push(currentDoken.result);
+        }
+
+        // Now add the new doken and sig to the deconstructed data then reserialize it into the request
+        existingDokens.push(StringToUint8Array(doken.serialize()));
+        existingSessKeySigs.push(sig);
+
+        this.authorization = TideMemory.CreateFromArray([
+            Serialization.GetValue(this.authorization, 0),
+            Serialization.CreateTideMemoryFromArray(existingSessKeySigs)
+        ]);
+        this.authorizer = TideMemory.CreateFromArray(existingDokens);
     }
 
     removeApproval(approvalVuid: string): boolean {

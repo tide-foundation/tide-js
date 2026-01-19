@@ -47,10 +47,10 @@ export class PolicyAuthorizedTideRequestSignatureFormat extends TideSignatureFor
 {
 	Name = "PolicyAuthorizedTideRequest";
 	Version = "1";
-    constructor(issueTimeBytes, exp, modelId, draftHash){
+    constructor(issueTimeBytes, exp: bigint | number, modelId, draftHash){
         const expiry = new Uint8Array(8);
         const expiry_view = new DataView(expiry.buffer);
-        expiry_view.setBigInt64(0, exp, true);
+        expiry_view.setBigInt64(0, typeof exp === "number" ? BigInt(exp) : exp, true);
 
         const message = Serialization.ConcatUint8Arrays([issueTimeBytes, expiry, StringToUint8Array(modelId), draftHash]);
         super(message);

@@ -17,6 +17,7 @@
 
 import { BaseComponent, BasePrivateComponent, BasePublicComponent, Seed } from "./Components/BaseComponent";
 import { Registery } from "./Components/ComponentRegistry";
+import BaseScheme from "./Components/Schemes/BaseScheme";
 import { Ed25519SeedComponent } from "./Components/Schemes/Ed25519/Ed25519Components";
 import Ed25519Scheme from "./Components/Schemes/Ed25519/Ed25519Scheme";
 import { SchemeType } from "./Components/Schemes/SchemeRegistry";

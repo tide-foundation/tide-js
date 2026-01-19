@@ -15,7 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { AES, DH } from "../Cryptide/index";
+import { Encryption } from "../Cryptide/index";
 import ClientBase from "./ClientBase";
 import { BigIntFromByteArray, ConcatUint8Arrays, CreateTideMemory, CreateTideMemoryFromArray, GetValue, StringToUint8Array, base64ToBytes, bytesToBase64 } from "../Cryptide/Serialization";
 import BaseTideRequest from "../Models/BaseTideRequest";
@@ -46,7 +46,7 @@ export default class NodeClient extends ClientBase {
     async EnableTideDH(orkPublic, gSessKey?, sessKey?) {
         if(!this.sessionKeyPrivateRaw) throw Error("Add a session key to the client first");
         this.enabledTideDH = true;
-        this.DHKey = await DH.computeSharedKey(orkPublic, this.sessionKeyPrivateRaw);
+        this.DHKey = await Encryption.DH.computeSharedKey(orkPublic, this.sessionKeyPrivateRaw);
         return this;
     }
     /**
@@ -57,7 +57,7 @@ export default class NodeClient extends ClientBase {
      */
     async PreSign(index, vuid, request, voucher) {
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
-        const encrypted = await AES.encryptData(CreateTideMemoryFromArray([request.encode()]), this.DHKey);
+        const encrypted = await Encryption.AES.encryptData(CreateTideMemoryFromArray([request.encode()]), this.DHKey);
         const data = this._createFormData(
             {
                 'encrypted': encrypted,
@@ -69,7 +69,7 @@ export default class NodeClient extends ClientBase {
 
         const response = await this._post(`/Authentication/Key/v1/PreSign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'PreSign');
-        const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
+        const decrypted = await Encryption.AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
         const GRSection = GetValue(decrypted, 0);
         if (GRSection.length % 32 != 0) throw new Error("Unexpected response legnth. Must be divisible by 32");
         let GRis = [];
@@ -103,7 +103,7 @@ export default class NodeClient extends ClientBase {
             ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes())]),
             this.orkCacheId
         ]);
-        const encrypted = await AES.encryptData(payload, this.DHKey);
+        const encrypted = await Encryption.AES.encryptData(payload, this.DHKey);
         const data = this._createFormData(
             {
                 'encrypted': encrypted,
@@ -115,7 +115,7 @@ export default class NodeClient extends ClientBase {
 
         const response = await this._post(`/Authentication/Key/v1/Sign?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'Sign');
-        const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
+        const decrypted = await Encryption.AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
         const signatureSection = GetValue(decrypted, 0);
         let Sij = [];
         for (let i = 0; i < signatureSection.length; i += 32) {
@@ -136,7 +136,7 @@ export default class NodeClient extends ClientBase {
      */
     async Decrypt(index, vuid, request, voucher){
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
-        const encrypted = await AES.encryptData(CreateTideMemoryFromArray([request.encode()]), this.DHKey);
+        const encrypted = await Encryption.AES.encryptData(CreateTideMemoryFromArray([request.encode()]), this.DHKey);
         const data = this._createFormData(
             {
                 'encrypted': encrypted,
@@ -148,7 +148,7 @@ export default class NodeClient extends ClientBase {
 
         const response = await this._post(`/Authentication/Key/v1/Decrypt?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'Decrypt');
-        const decrypted = await AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
+        const decrypted = await Encryption.AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
         if (decrypted.length % 32 != 0) throw new Error("Unexpected response legnth. Must be divisible by 32");
         let appliedC1s = [];
         for (let i = 0; i < decrypted.length; i += 32) {

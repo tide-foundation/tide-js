@@ -18,7 +18,7 @@
 import { SHA256_Digest } from "../Cryptide/Hashing/Hash";
 import { ConcatUint8Arrays, bytesToBase64, numberToUint8Array } from "../Cryptide/Serialization";
 import { RandomBigInt, mod } from "../Cryptide/Math";
-import { EdDSA } from "../Cryptide/index";
+import { Signing } from "../Cryptide/index";
 import { decryptData, encryptData, encryptDataRawOutput } from "../Cryptide/Encryption/AES";
 import Datum from "../Models/Datum";
 import SerializedField from "../Models/SerializedField";
@@ -99,7 +99,7 @@ export default class EncryptRequest{
                 numberToUint8Array(plainRequest.Tags[i], 8),
                 numberToUint8Array(plainRequest.Timestamp, 8)
             ]));
-            const valid = await EdDSA.verifyRaw(CVKSi[i], plainRequest.GCVKRi[i], gCVK, M);
+            const valid = await Signing.EdDSA.verifyRaw(CVKSi[i], plainRequest.GCVKRi[i], gCVK, M);
             if(valid == false){
                 throw Error("Generalize Serialized Fields: Not all fields passed verification");
             }

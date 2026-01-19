@@ -19,7 +19,7 @@ import { CurrentTime } from "../Tools/Utils";
 import { Ed25519PublicComponent } from "./Components/Schemes/Ed25519/Ed25519Components";
 import { etc, Point } from "./Ed25519";
 import { SHA256_Digest } from "./Hashing/Hash";
-import { EdDSA } from "./index";
+import * as EdDSA from "./Signing/EdDSA";
 import { CreateVRKPackage } from "./TideMemoryObjects";
 
 /**
@@ -131,7 +131,7 @@ export function CreateTideMemory(initialValue, totalLength, version = 1) {
  * @param {Uint8Array[]} datas 
  */
 export function CreateTideMemoryFromArray(datas){
-    if(!datas.every(d => d instanceof Uint8Array)) throw Error("Expecting all datas to be Uint8Array");
+    if(datas.length == 0) return new Uint8Array();
     const length = datas.reduce((sum, next) => sum + 4 + next.length, 0);
     const mem = CreateTideMemory(datas[0], length);
     for(let i = 1; i < datas.length; i++){

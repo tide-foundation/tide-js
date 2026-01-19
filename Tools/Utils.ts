@@ -17,14 +17,8 @@
 
 import OrkInfo from "../Models/Infos/OrkInfo";
 
-declare global {
-    interface Window {
-        tide_env?: string;
-    }
-}
-
-export const Threshold = (typeof window !== 'undefined' && (window as any).tide_env) === 'staging' ? 3 : 14;
-export const Max = (typeof window !== 'undefined' && (window as any).tide_env) === 'staging' ? 5 : 20;
+export const Threshold = 14;
+export const Max = 20;
 
 export function CurrentTime(){
 	return Math.floor(Date.now() / 1000); // this will be affected by the 2038 problem
