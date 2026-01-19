@@ -25,6 +25,20 @@ export class TideSignatureFormat{
     }
 }
 
+export class PolicyAuthorizedTideRequestSignatureFormat extends TideSignatureFormat
+{
+	Name = "PolicyAuthorizedTideRequest";
+	Version = "1";
+    constructor(issueTimeBytes, exp, modelId, draftHash){
+        const expiry = new Uint8Array(8);
+        const expiry_view = new DataView(expiry.buffer);
+        expiry_view.setBigInt64(0, exp, true);
+
+        const message = Serialization.ConcatUint8Arrays([issueTimeBytes, expiry, StringToUint8Array(modelId), draftHash]);
+        super(message);
+    }	
+}
+
 export class URLSignatureFormat extends TideSignatureFormat{
     Name = "URL";
     Version = "1";
