@@ -26,7 +26,9 @@ export function AuthorizedSigningFlow(config) {
         throw new Error("The 'AuthorizedSigningFlow' constructor must be invoked with 'new'.")
     }
 
-    if(!config.token.payload.sessionKey.Equals(config.sessionKey.get_public_component())) throw Error("Mismatch between session key private and Doken session key public");
+    if(config.token){
+        if(!config.token.payload.sessionKey.Equals(config.sessionKey.get_public_component())) throw Error("Mismatch between session key private and Doken session key public");
+    } 
 
     var signingFlow = this;
     signingFlow.vvkId = config.vendorId;
@@ -39,9 +41,10 @@ export function AuthorizedSigningFlow(config) {
 
     /**
      * @param {Uint8Array} tideSerializedRequest 
+     * @param {bool} waitForAll 
      */
-    signingFlow.signv2 = async function(tideSerializedRequest){
+    signingFlow.signv2 = async function(tideSerializedRequest, waitForAll){
         const flow = new dVVKSigningFlow(this.vvkId, signingFlow.vvkInfo.UserPublic, signingFlow.vvkInfo.OrkInfo, signingFlow.sessKey, signingFlow.token, this.voucherURL);
-        return flow.start(tideSerializedRequest);
+        return flow.start(BaseTideRequest.decode(tideSerializedRequest), waitForAll);
     }
 }

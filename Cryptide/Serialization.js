@@ -64,7 +64,11 @@ export function readInt64LittleEndian(bytes) {
 }
 export class AuthorizerPack{
 	constructor(data){
-		if(!(data instanceof Uint8Array)) throw Error("Data must be byte array");
+		// Cross-realm safe check
+		const isUint8Like = data && (data instanceof Uint8Array ||
+			(ArrayBuffer.isView(data) && data.constructor?.name === 'Uint8Array') ||
+			(typeof data === 'object' && typeof data.length === 'number' && data.buffer instanceof ArrayBuffer));
+		if(!isUint8Like) throw Error("Data must be byte array");
 		this.AuthFlow = StringFromUint8Array(GetValue(data, 0));
 		this.Authorizer = new GVRK_Pack(GetValue(data, 1));
 		
@@ -182,13 +186,11 @@ export function WriteValue(memory, index, value) {
  * @returns 
  */
 export function GetValue(a, index) {
-    // 'a' should be an ArrayBuffer or Uint8Array
-    let buffer;
-    if (a instanceof Uint8Array) {
-        buffer = a;
-    } else {
-        throw new TypeError("Input must be an Uint8Array.");
+    if (!(a instanceof Uint8Array)) {
+        console.error('[GetValue] Invalid input type:', typeof a, 'value:', a);
+        throw new TypeError("Input must be a Uint8Array.");
     }
+    const buffer = a;
 
     if (buffer.length < 4) {
         throw new Error("Insufficient data to read.");
@@ -230,10 +232,10 @@ export function GetValue(a, index) {
 
 export function TryGetValue(a, index, returnObj){
 	try{
-		returnObj = GetValue(a, index);
+		returnObj["result"] = GetValue(a, index);
 		return true;
 	}catch{
-		returnObj = null;
+		returnObj["result"] = null;
 		return false;
 	}
 
