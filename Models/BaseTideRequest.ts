@@ -21,7 +21,7 @@ export default class BaseTideRequest {
     expiry: number;
     policy: TideMemory;
 
-    constructor(name: string, version: string, authFlow: string, draft: Uint8Array, dyanmicData: Uint8Array) {
+    constructor(name: string, version: string, authFlow: string, draft: Uint8Array = new Uint8Array(), dyanmicData: Uint8Array = new Uint8Array()) {
         this.name = name;
         this.version = version;
         this.authFlow = authFlow

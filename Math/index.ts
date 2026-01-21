@@ -15,7 +15,5 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-export { default as DecryptRequest } from './DecryptRequest';
-export { default as EncryptRequest } from './EncryptRequest';
 export * from './KeyDecryption';
 export * from './KeySigning';

@@ -17,6 +17,7 @@
 
 import { Uint8ArrayToNumber, numberToUint8Array } from "../Cryptide/Serialization";
 import {  Serialization } from "../Cryptide/index";
+import { TideMemory } from "../Tools/TideMemory";
 
 export default class SerializedField{
     static version = 1;
@@ -27,27 +28,17 @@ export default class SerializedField{
      * @param {Uint8Array} encKey
      * @param {Uint8Array} signature
      */
-    static create(encData, c1?, tag?, timestamp?, gcvkr?, encKey=null, signature=null){
-        // Handle different calling signatures
-        if (arguments.length <= 4) {
-            // Old signature: create(encData, timestamp, encKey, signature)
-            timestamp = c1;
-            encKey = tag;
-            signature = timestamp;
-        }
-        // New signature: create(encData, c1, tag, timestamp, gcvkr, encKey)
-        // Already has correct parameters
-        // version
+    static create(encData, timestamp, encKey=null, signature=null){
         const versionByte = numberToUint8Array(this.version, 1); // 1 byte
         const timestampBits = numberToUint8Array(timestamp, 8); // 64 bits (8 bytes)- let's hope Tide is still around past 2038 (otherwise i could've saved 32 bits here) https://en.wikipedia.org/wiki/Year_2038_problem
 
-        const d = Serialization.CreateTideMemory(versionByte, 4 + 1 + 4 + encData.length + 4 + timestampBits.length + (signature == null ? 4 : 4 + signature.length)  + (encKey == null ? 4 : 4 + encKey.length));
-        Serialization.WriteValue(d, 1, encData);
-        Serialization.WriteValue(d, 2, timestampBits);
-        Serialization.WriteValue(d, 3, encKey == null ? new Uint8Array() : encKey);
-        Serialization.WriteValue(d, 4, signature == null ? new Uint8Array() : signature);
-
-        return d;
+        return TideMemory.CreateFromArray([
+            versionByte,
+            encData,
+            timestampBits,
+            encKey == null ? new Uint8Array() : encKey,
+            signature == null ? new Uint8Array() : signature
+        ]);
     }
     /**
      * @param {Uint8Array} serializedField 

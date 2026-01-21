@@ -160,39 +160,6 @@ export default class NodeClient extends ClientBase {
         }
 
     }
-    /**
-     * @param {number} i
-     * @param {string} uid 
-     * @param {Point} gSessKeyPub 
-     * @param {bigint} channelId
-     * @param {string} homeOrkUrl
-     * @param {string} voucher
-     */
-    async RecoverAccount(i, uid, gSessKeyPub, channelId, homeOrkUrl, voucher) {
-
-        const data = this._createFormData({
-            'gSessKeyPub': gSessKeyPub.toBase64(),
-            'homeOrkUrl': homeOrkUrl,
-            'channelId': channelId.toString(),
-            'voucher': voucher
-        })
-
-        const response = await this._post(`/Authentication/AccountRecovery/StartRecovery?aruid=${uid}`, data);
-        const responseData = await this._handleError(response, "StartRecovery");
-        if (responseData !== "Email sent successfully") throw Error("orks.failedToSendEmail");
-        return {
-            index: i,
-            responseData
-        }
-    }
-
-    async FinalizeAccountRecovery(uid, channelId) {
-        const response = await this._post(`/Authentication/AccountRecovery/CleanUpSession?uid=${uid}&channelId=${channelId}`, {});
-        const responseData = await this._handleError(response, "CleanUpRecovery");
-        if (responseData !== "Session has been cleaned up") throw Error("orks.errorFinalizingAccountRecovery");
-        return { responseData }
-
-    }
 
     async CreateCheckoutSession(vendorData, redirectUrl, licensingTier) {
         const licenseRequest = {
