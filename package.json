@@ -2,10 +2,15 @@
   "name": "tide-js",
   "version": "0.0.1",
   "description": "Browser side modules required to interact with the Tide's Cybersecurity Fabric.",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
+    "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "files": [
+    "dist"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tide-foundation/tide-js.git"
@@ -16,7 +21,7 @@
     "url": "https://github.com/tide-foundation/tide-js/issues"
   },
   "homepage": "https://github.com/tide-foundation/tide-js#readme",
-  "dependencies": {
-    "asgard-tide": "file:./asgard-copy"
+  "devDependencies": {
+    "typescript": "^5.9.3"
   }
 }
