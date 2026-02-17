@@ -20,6 +20,8 @@ import { RandomBigInt } from "../Math";
 import { encryptDataRawOutput, decryptData, decryptDataRawOutput } from "./AES";
 import { SHA256_Digest } from "../Hashing/Hash";
 import { BigIntFromByteArray, ConcatUint8Arrays, base64ToBytes, bytesToBase64 } from "../Serialization";
+import TideKey from "../TideKey";
+import { Ed25519PrivateComponent } from "../Components/Schemes/Ed25519";
 
 export default class ElGamal {
     /**
@@ -41,6 +43,22 @@ export default class ElGamal {
         const c1 = Point.BASE.mul(r).toRawBytes();
         const c2 = await encryptDataRawOutput(secretData, await SHA256_Digest(publicKey.mul(r).toRawBytes()));
         return ConcatUint8Arrays([c1, c2]);
+    }
+
+    /**
+     * 
+     * @param {Uint8Array} secretData 
+     * @param {Point} publicKey 
+     */
+    static async encryptDataRaw_withAuthentication(secretData, publicKey, authMsg: Uint8Array) {
+        const r = RandomBigInt();
+        const c1 = Point.BASE.mul(r).toRawBytes();
+        const c2 = await encryptDataRawOutput(secretData, await SHA256_Digest(publicKey.mul(r).toRawBytes()));
+        const authSig = await (new TideKey(new Ed25519PrivateComponent(r)).sign(authMsg));
+        return {
+            cipher: ConcatUint8Arrays([c1, c2]),
+            auth: authSig
+        }
     }
 
     /**

@@ -19,8 +19,8 @@ import { Uint8ArrayToNumber, numberToUint8Array } from "../Cryptide/Serializatio
 import {  Serialization } from "../Cryptide/index";
 import { TideMemory } from "../Tools/TideMemory";
 
-export default class SerializedField{
-    static version = 1;
+export default class PolicyProtectedSerializedField{
+    static version = 2;
     /**
      *
      * @param {Uint8Array} encData
