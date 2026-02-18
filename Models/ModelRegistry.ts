@@ -216,7 +216,7 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
 
         summary['Version'] = policy.version;
         summary['ContractId'] = policy.contractId;
-        summary['ModelId'] = policy.modelId;
+        summary['ModelId'] = policy.modelIds.join(", ");
         summary["KeyId"] = policy.keyId;
         summary['Approval Type'] = ApprovalType[policy.approvalType];
         summary["Execution Type"] = ExecutionType[policy.executionType];
