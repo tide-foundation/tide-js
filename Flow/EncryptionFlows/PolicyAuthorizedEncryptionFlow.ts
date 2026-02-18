@@ -153,11 +153,20 @@ export class PolicyAuthorizedEncryptionFlow {
         const entries = deserializedDatas.map((data, i) => {
             if (data.encKey) {
                 // We must decrypt the encrypted key, not the data itself
-                const entry = CreateTideMemoryFromArray([data.encKey, data.signature, data.timestamp, ...data.tags]);
+                const entry = CreateTideMemoryFromArray([
+                    data.encKey.slice(0, 32), // only send c1 (point)
+                    data.signature,
+                    data.timestamp,
+                    ...data.tags]);
+
                 return entry;
             } else {
                 // decrypt data directly
-                const entry = CreateTideMemoryFromArray([data.encFieldChk, data.signature, data.timestamp, ...data.tags]);
+                const entry = CreateTideMemoryFromArray([
+                    data.encFieldChk.slice(0, 32), // only send c1 (point) 
+                    data.signature, 
+                    data.timestamp, 
+                    ...data.tags]);
                 return entry;
             }
 
