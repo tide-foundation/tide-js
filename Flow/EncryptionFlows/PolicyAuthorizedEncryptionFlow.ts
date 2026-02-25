@@ -17,7 +17,7 @@
 
 import { Encryption, Serialization } from "../../Cryptide/index";
 import { decryptDataRawOutput, encryptDataRawOutput } from "../../Cryptide/Encryption/AES";
-import { CreateTideMemoryFromArray, numberToUint8Array, StringToUint8Array } from "../../Cryptide/Serialization";
+import { CreateTideMemoryFromArray, GetValue, numberToUint8Array, StringToUint8Array, TryGetValue } from "../../Cryptide/Serialization";
 import { CurrentTime } from "../../Tools/Utils";
 import BaseTideRequest from "../../Models/BaseTideRequest";
 import dVVKSigningFlow from "../SigningFlows/dVVKSigningFlow";
@@ -26,23 +26,24 @@ import dVVKDecryptionFlow from "../DecryptionFlows/dVVKDecryptionFlow";
 import TideKey from "../../Cryptide/TideKey";
 import KeyInfo from "../../Models/Infos/KeyInfo";
 import PolicyProtectedSerializedField from "../../Models/PolicyProtectedSerializedField";
+import { Tools } from "../..";
+import { TideMemory } from "../../Tools";
 
 interface EncryptionFlowConfig {
     vendorId: string;
     token: any; // Doken - constructor function, not a class
-    policy: Uint8Array;
     sessionKey: TideKey;
     voucherURL: string;
     homeOrkUrl: string | null;
     keyInfo: KeyInfo;
 }
 
-interface DataToEncrypt {
+export interface DataToEncrypt {
     data: Uint8Array;
     tags: string[];
 }
 
-interface DataToDecrypt {
+export interface DataToDecrypt {
     encrypted: Uint8Array;
     tags: string[];
 }
@@ -64,11 +65,10 @@ export class PolicyAuthorizedEncryptionFlow {
         this.token = config.token;
         this.sessKey = config.sessionKey;
         this.voucherURL = config.voucherURL;
-        this.policy = config.policy;
         this.vvkInfo = config.keyInfo;
     }
 
-    async encrypt(datasToEncrypt: DataToEncrypt[]): Promise<Uint8Array[]> {
+    async createEncryptionRequest(datasToEncrypt: DataToEncrypt[], addHeavyDataToReq = false) {
         const encReqs = await Promise.all(datasToEncrypt.map(async d => {
             const d_b = d.data;
             if (d_b.length < 32) {
@@ -113,15 +113,34 @@ export class PolicyAuthorizedEncryptionFlow {
         encReqs.forEach((enc) => {
             const entry = CreateTideMemoryFromArray([
                 enc.encryptionToSign.slice(0, 32), // only get C1 point for draft
-                enc.encryptionAuthData, 
+                enc.encryptionAuthData,
                 ...enc.tags])
             arr.push(entry);
         })
 
         const draft = CreateTideMemoryFromArray(arr);
+        const request = new BaseTideRequest("PolicyEnabledEncryption", "1", "Policy:1", draft);
 
-        const encryptionRequest = new BaseTideRequest("PolicyEnabledEncryption", "1", "Policy:1", draft);
-        encryptionRequest.addPolicy(this.policy);
+        if (addHeavyDataToReq) {
+            request.setCustomExpiry(604800); // default one week - assuming this req is drafted
+
+            // we need to store the actual encrypted data (if size larger than 32) in request as well
+            // this is for when we create the PolicyProtectedSerializedField object after committion
+            const dataToStoreLater = Serialization.CreateTideMemoryFromArray(encReqs.map((e) =>
+                PolicyProtectedSerializedField.create(
+                    e.encryptedData,
+                    timestamp,
+                    e.sizeLessThan32 ? null : e.encryptionToSign,
+                    null))); // no signature for now
+            request.addAuthorizerCertificate(dataToStoreLater); // authorizer cert not used by the tide network in this flow but useful for us to serialize the data for local storage
+        }
+
+        return { request, encReqs, timestamp };
+    }
+
+    async encrypt(datasToEncrypt: DataToEncrypt[], policy: Uint8Array): Promise<Uint8Array[]> {
+        const { request: encryptionRequest, encReqs, timestamp } = await this.createEncryptionRequest(datasToEncrypt);
+        encryptionRequest.addPolicy(policy);
 
         // Initiate signing flow
         const encryptingSigningFlow = new dVVKSigningFlow(this.vvkId, this.vvkInfo.UserPublic, this.vvkInfo.OrkInfo, this.sessKey, this.token, this.voucherURL);
@@ -137,7 +156,43 @@ export class PolicyAuthorizedEncryptionFlow {
         )
     }
 
-    async decrypt(datasToDecrypt: DataToDecrypt[]): Promise<Uint8Array[]> {
+    async commitEncrypt(request: Uint8Array, policy: Uint8Array) {
+        // Remove authorizer cert from request before sending it up to the orks
+        const readyEncRequest = BaseTideRequest.decode(request);
+        const encryptedData = readyEncRequest.authorizerCert;
+        readyEncRequest.authorizerCert = new Tools.TideMemory(); // clear request of the heavy data
+
+        // Deserialize data stored in the request previously
+        let encryptedDatas = []
+        let resultObj = { result: undefined };
+        for (let i = 0; Serialization.TryGetValue(encryptedData, i, resultObj); i++) {
+            encryptedDatas.push(resultObj.result);
+        }
+        const deserializedDatas = encryptedDatas.map(e => {
+            const b = PolicyProtectedSerializedField.deserialize(e);
+            if (b.signature != null) throw Error("There shouldn't be any signatures in this data");
+            return b;
+        })
+
+        // Add the policy to the request
+        readyEncRequest.addPolicy(policy);
+
+        // Initiate signing flow
+        const encryptingSigningFlow = new dVVKSigningFlow(this.vvkId, this.vvkInfo.UserPublic, this.vvkInfo.OrkInfo, this.sessKey, this.token, this.voucherURL);
+        const signatures = await encryptingSigningFlow.start(readyEncRequest);
+
+        // Construct final serialized payloads for client to store WITH SIGNATURE - that's the only reason we are doing this again
+        return signatures.map((sig, i) =>
+            PolicyProtectedSerializedField.create(
+                deserializedDatas[i].encFieldChk,
+                deserializedDatas[i].timestamp,
+                deserializedDatas[i].encKey ? deserializedDatas[i].encKey : null,
+                sig)
+        )
+
+    }
+
+    createDecryptionRequest(datasToDecrypt: DataToDecrypt[], addHeavyDataToReq=false) {
         // Deserialize all datasToDecrypt + include tags in object
         const deserializedDatas = datasToDecrypt.map(d => {
             const b = PolicyProtectedSerializedField.deserialize(d.encrypted);
@@ -163,9 +218,9 @@ export class PolicyAuthorizedEncryptionFlow {
             } else {
                 // decrypt data directly
                 const entry = CreateTideMemoryFromArray([
-                    data.encFieldChk.slice(0, 32), // only send c1 (point) 
-                    data.signature, 
-                    data.timestamp, 
+                    data.encFieldChk.slice(0, 32), // only send c1 (point)
+                    data.signature,
+                    data.timestamp,
                     ...data.tags]);
                 return entry;
             }
@@ -173,9 +228,21 @@ export class PolicyAuthorizedEncryptionFlow {
         })
 
         const draft = CreateTideMemoryFromArray(entries);
+        const request = new BaseTideRequest("PolicyEnabledDecryption", "1", "Policy:1", draft);
+        if(addHeavyDataToReq) {
+            request.setCustomExpiry(604800); // default for now - assuming this req is drafted
+            const dynData = TideMemory.CreateFromArray(deserializedDatas.map(d => {
+                return TideMemory.CreateFromArray([d.encFieldChk, d.encKey ? d.encKey: new Uint8Array()]);
+            })) // efficient serialized of heavy data
+            request.addAuthorizerCertificate(dynData); // authorizer cert not used by the tide network in this flow but useful for us to serialize the data for local storage
+        }
 
-        const decryptionRequest = new BaseTideRequest("PolicyEnabledDecryption", "1", "Policy:1", draft);
-        decryptionRequest.addPolicy(this.policy);
+        return { request, deserializedDatas };
+    }
+
+    async decrypt(datasToDecrypt: DataToDecrypt[], policy: Uint8Array): Promise<Uint8Array[]> {
+        const { request: decryptionRequest, deserializedDatas } = this.createDecryptionRequest(datasToDecrypt);
+        decryptionRequest.addPolicy(policy);
 
         const flow = new dVVKDecryptionFlow(this.vvkId, this.vvkInfo.UserPublic, this.vvkInfo.OrkInfo, this.sessKey, this.token, this.voucherURL);
         const dataKeys = await flow.start(decryptionRequest);
@@ -192,6 +259,37 @@ export class PolicyAuthorizedEncryptionFlow {
                 return await decryptDataRawOutput(data.encFieldChk.slice(32), dataKeys[i]);
             }
         }));
+
+        // Return as bytes
+        return decryptedDatas;
+    }
+
+    async commitDecrypt(request: Uint8Array, policy: Uint8Array) {
+        const decryptionRequest = BaseTideRequest.decode(request);
+        decryptionRequest.addPolicy(policy);
+        const heavyData = decryptionRequest.authorizerCert;
+        decryptionRequest.authorizerCert = new TideMemory(); // clear decryption request of heavy data
+
+        const flow = new dVVKDecryptionFlow(this.vvkId, this.vvkInfo.UserPublic, this.vvkInfo.OrkInfo, this.sessKey, this.token, this.voucherURL);
+        const dataKeys = await flow.start(decryptionRequest);
+
+        // Decrypt all datas
+        let resultObj = {result:undefined};
+        let decryptedDatas = [];
+        for(let i = 0; TryGetValue(heavyData, i, resultObj); i++){
+            const encFieldChk = GetValue(resultObj.result, 0);
+            const encKey = GetValue(resultObj.result, 1);
+
+            // if encKey exists - decrypt with elgamal that
+            // then decrypt encField with key
+            if (encKey.length > 0) {
+                const key = await decryptDataRawOutput(encKey.slice(32), dataKeys[i]);
+                decryptedDatas.push(await decryptDataRawOutput(encFieldChk, key));
+            } else {
+                // else - decrypt encField with elgamal
+                decryptedDatas.push(await decryptDataRawOutput(encFieldChk.slice(32), dataKeys[i]));
+            }
+        }
 
         // Return as bytes
         return decryptedDatas;

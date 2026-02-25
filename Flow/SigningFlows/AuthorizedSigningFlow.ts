@@ -19,6 +19,7 @@ import BaseTideRequest from "../../Models/BaseTideRequest";
 import dVVKSigningFlow from "../SigningFlows/dVVKSigningFlow";
 import TideKey from "../../Cryptide/TideKey";
 import KeyInfo from "../../Models/Infos/KeyInfo";
+import { Models, Tools } from "../..";
 
 /**
  * 
@@ -36,9 +37,9 @@ export function AuthorizedSigningFlow(config) {
         throw new Error("The 'AuthorizedSigningFlow' constructor must be invoked with 'new'.")
     }
 
-    if(config.token){
-        if(!config.token.payload.sessionKey.Equals(config.sessionKey.get_public_component())) throw Error("Mismatch between session key private and Doken session key public");
-    } 
+    if (config.token) {
+        if (!config.token.payload.sessionKey.Equals(config.sessionKey.get_public_component())) throw Error("Mismatch between session key private and Doken session key public");
+    }
 
     var signingFlow = this;
     signingFlow.vvkId = config.vendorId;
@@ -53,8 +54,31 @@ export function AuthorizedSigningFlow(config) {
      * @param {Uint8Array} tideSerializedRequest 
      * @param {bool} waitForAll 
      */
-    signingFlow.signv2 = async function(tideSerializedRequest, waitForAll){
+    signingFlow.signv2 = async function (tideSerializedRequest, waitForAll) {
         const flow = new dVVKSigningFlow(this.vvkId, signingFlow.vvkInfo.UserPublic, signingFlow.vvkInfo.OrkInfo, signingFlow.sessKey, signingFlow.token, this.voucherURL);
         return flow.start(BaseTideRequest.decode(tideSerializedRequest), waitForAll);
+    }
+
+    /**
+     * @param {Models.BaseTideRequest} tideReqToInitialize 
+     * @param {bool} waitForAll 
+     */
+    signingFlow.initializeRequest = async function (tideReqToInitialize: Models.BaseTideRequest, waitForAll) {
+        const requestToInitializeDetails = await tideReqToInitialize.getRequestInitDetails();
+        const initRequest = new BaseTideRequest(
+            "TideRequestInitialization",
+            "1",
+            "Doken:1",
+            Tools.TideMemory.CreateFromArray([
+                requestToInitializeDetails.creationTime,
+                requestToInitializeDetails.expireTime,
+                requestToInitializeDetails.modelId,
+                requestToInitializeDetails.draftHash
+            ]),
+            new Tools.TideMemory()
+        );
+        const flow = new dVVKSigningFlow(this.vvkId, signingFlow.vvkInfo.UserPublic, signingFlow.vvkInfo.OrkInfo, signingFlow.sessKey, signingFlow.token, this.voucherURL);
+        const sig = (await flow.start(initRequest, waitForAll))[0];
+        tideReqToInitialize.addCreationSignature(requestToInitializeDetails.creationTime, sig);
     }
 }

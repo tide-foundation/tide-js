@@ -16,4 +16,4 @@
 //
 
 export { AuthorizedEncryptionFlow } from './AuthorizedEncryptionFlow';
-export { PolicyAuthorizedEncryptionFlow } from './PolicyAuthorizedEncryptionFlow'
+export { PolicyAuthorizedEncryptionFlow, DataToDecrypt, DataToEncrypt } from './PolicyAuthorizedEncryptionFlow'

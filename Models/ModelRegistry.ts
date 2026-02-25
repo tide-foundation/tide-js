@@ -272,6 +272,38 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
     }
 }
 
+class PolicyEnabledEncryptionRequestBuilder extends HumanReadableModelBuilder {
+     _name = "PolicyEnabledEncryption";
+    _version = "1";
+    get _id() { return this._name + ":" + this._version; }
+    constructor(data, expiry) {
+        super(data, expiry);
+        if(data){
+            const timestamp = GetValue(this.request.draft, 0);
+            let resultObj = {result: undefined};
+            let i = 1;
+            while(TryGetValue(this.request.draft, i, resultObj)){i++;}
+            const count = i - 1; // subtract 1 as i starts at 1 (skipping timestamp)
+            this._humanReadableName = `Encrypt ${count} piece${count != 1 ? "s" : ""} of data`
+        }
+    }
+}
+
+class PolicyEnabledDecryptionRequestBuilder extends HumanReadableModelBuilder {
+     _name = "PolicyEnabledDecryption";
+    _version = "1";
+    get _id() { return this._name + ":" + this._version; }
+    constructor(data, expiry) {
+        super(data, expiry);
+        if(data){
+            let resultObj = {result: undefined};
+            let i = 0;
+            while(TryGetValue(this.request.draft, i, resultObj)){i++;}
+            this._humanReadableName = `Decrypt ${i} piece${i != 1 ? "s" : ""} of data`
+        }
+    }
+}
+
 class LicenseSignRequestBuilder extends HumanReadableModelBuilder {
     _name = "RotateVRK";
     _version = "1";
@@ -313,5 +345,7 @@ const modelBuildersMap = {
     [new LicenseSignRequestBuilder(null as any, null as any)._id]: LicenseSignRequestBuilder,
     [new TestInitSignRequestBuilder(null as any, null as any)._id]: TestInitSignRequestBuilder,
     [new PolicySignRequestBuilder(null as any, null as any)._id]: PolicySignRequestBuilder,
-    [new HederaSignRequestBuilder(null as any, null as any)._id]: HederaSignRequestBuilder
+    [new HederaSignRequestBuilder(null as any, null as any)._id]: HederaSignRequestBuilder,
+    [new PolicyEnabledEncryptionRequestBuilder(null as any, null as any)._id]: PolicyEnabledEncryptionRequestBuilder,
+    [new PolicyEnabledDecryptionRequestBuilder(null as any, null as any)._id]: PolicyEnabledDecryptionRequestBuilder,
 }

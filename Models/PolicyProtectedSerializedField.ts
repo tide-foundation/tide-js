@@ -24,13 +24,13 @@ export default class PolicyProtectedSerializedField{
     /**
      *
      * @param {Uint8Array} encData
-     * @param {number} timestamp
+     * @param {number|Uint8Array} timestamp
      * @param {Uint8Array} encKey
      * @param {Uint8Array} signature
      */
     static create(encData, timestamp, encKey=null, signature=null){
         const versionByte = numberToUint8Array(this.version, 1); // 1 byte
-        const timestampBits = numberToUint8Array(timestamp, 8); // 64 bits (8 bytes)- let's hope Tide is still around past 2038 (otherwise i could've saved 32 bits here) https://en.wikipedia.org/wiki/Year_2038_problem
+        const timestampBits = typeof(timestamp) === "number" ? numberToUint8Array(timestamp, 8) : timestamp; // 64 bits (8 bytes)- let's hope Tide is still around past 2038 (otherwise i could've saved 32 bits here) https://en.wikipedia.org/wiki/Year_2038_problem
 
         return TideMemory.CreateFromArray([
             versionByte,
