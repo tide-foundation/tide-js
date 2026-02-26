@@ -21,14 +21,7 @@ import { TideMemory } from "../Tools/TideMemory";
 
 export default class SerializedField{
     static version = 1;
-    /**
-     *
-     * @param {Uint8Array} encData
-     * @param {number} timestamp
-     * @param {Uint8Array} encKey
-     * @param {Uint8Array} signature
-     */
-    static create(encData, timestamp, encKey=null, signature=null){
+    static create(encData: Uint8Array, timestamp: number, encKey: Uint8Array = null, signature: Uint8Array = null){
         const versionByte = numberToUint8Array(this.version, 1); // 1 byte
         const timestampBits = numberToUint8Array(timestamp, 8); // 64 bits (8 bytes)- let's hope Tide is still around past 2038 (otherwise i could've saved 32 bits here) https://en.wikipedia.org/wiki/Year_2038_problem
 
@@ -40,10 +33,7 @@ export default class SerializedField{
             signature == null ? new Uint8Array() : signature
         ]);
     }
-    /**
-     * @param {Uint8Array} serializedField 
-     */
-    static deserialize(serializedField){
+    static deserialize(serializedField: Uint8Array){
         // Make sure version is 1
         const version = Uint8ArrayToNumber(Serialization.GetValue(serializedField, 0));
         if(version != this.version) throw Error("Serialized tide data must be version " + this.version);

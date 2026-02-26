@@ -28,10 +28,11 @@ import KeyInfo from "../../Models/Infos/KeyInfo";
 import PolicyProtectedSerializedField from "../../Models/PolicyProtectedSerializedField";
 import { Tools } from "../..";
 import { TideMemory } from "../../Tools";
+import { Doken } from "../../Models/Doken";
 
 interface EncryptionFlowConfig {
     vendorId: string;
-    token: any; // Doken - constructor function, not a class
+    token: Doken;
     sessionKey: TideKey;
     voucherURL: string;
     homeOrkUrl: string | null;
@@ -50,7 +51,7 @@ export interface DataToDecrypt {
 
 export class PolicyAuthorizedEncryptionFlow {
     vvkId: string;
-    token: any;
+    token: Doken;
     sessKey: TideKey;
     voucherURL: string;
     policy: Uint8Array;

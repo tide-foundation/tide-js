@@ -21,10 +21,7 @@ import { Policy, ApprovalType, ExecutionType } from "./Policy";
 import { Serialization } from "../Cryptide/index";
 
 export class ModelRegistry {
-    /**
-     * @returns {HumanReadableModelBuilder}
-     */
-    static getHumanReadableModelBuilder(reqId, data) {
+    static getHumanReadableModelBuilder(reqId: string, data: Uint8Array): HumanReadableModelBuilder {
         const r = BaseTideRequest.decode(data);
         const nameMatch = r.name.match(/^Custom<(.*)>$/)?.[1];
         const versionMatch = r.version.match(/^Custom<(.*)>$/)?.[1];

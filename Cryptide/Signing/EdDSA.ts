@@ -23,11 +23,8 @@ import { base64ToBytes, BigIntFromByteArray, BigIntToByteArray, bytesToBase64, C
 
 /**
  * Sign the msg with a private key in non-standard way as it uses a random number generator. Non-deterministic.
- * @param {string | Uint8Array} msg 
- * @param {bigint} priv
- * @returns A base64 encoding of the signature
  */
-export async function sign(msg, priv){
+export async function sign(msg: string | Uint8Array, priv: bigint){
     if(typeof(msg) == 'string'){
         msg = StringToUint8Array(msg);
     }
@@ -46,12 +43,8 @@ export async function sign(msg, priv){
 
 /**
  * Verify a EdDSA signature, given a signature, public key and message.
- * @param {string} sig In base64
- * @param {string | Point} pub 
- * @param {string | Uint8Array} msg 
- * @returns Boolean dependant on whether the signature is valid or not.
  */
-export async function verify(sig, pub, msg){
+export async function verify(sig: string, pub: string | Point, msg: string | Uint8Array){
     try{
         if(typeof(msg) == 'string'){
             msg = StringToUint8Array(msg);
@@ -72,12 +65,8 @@ export async function verify(sig, pub, msg){
 
 /**
  * Verify a message with raw S and R
- * @param {bigint} S 
- * @param {Point} R 
- * @param {Point} A 
- * @param {Uint8Array} M 
  */
-export async function verifyRaw(S, R, A, M){
+export async function verifyRaw(S: bigint, R: Point, A: Point, M: Uint8Array){
     if(S < BigInt(0) || S >= CURVE.n){
         return false;
     } 

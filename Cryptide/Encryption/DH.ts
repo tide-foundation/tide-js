@@ -19,11 +19,7 @@ import { Point } from "../Ed25519";
 import { SHA256_Digest } from "../Hashing/Hash";
 import { BigIntFromByteArray, base64ToBytes } from "../Serialization";
 
-/**
- * @param {Point} pub 
- * @param {BigInt|string|Uint8Array} priv 
- */
-export async function computeSharedKey(pub, priv){
+export async function computeSharedKey(pub: Point, priv: bigint | string | Uint8Array){
     let privNum;
     if(typeof(priv) == "string"){
         privNum =  BigIntFromByteArray(base64ToBytes(priv))
@@ -35,12 +31,7 @@ export async function computeSharedKey(pub, priv){
     return await SHA256_Digest(pub.mul(privNum).toRawBytes());
 }
 
-/**
- * 
- * @param {Point[]} pubs 
- * @param {bigint|string|Uint8Array} priv 
- */
-export async function generateECDHi(pubs, priv){
+export async function generateECDHi(pubs: Point[], priv: bigint | string | Uint8Array){
     const pre_ecdhi = pubs.map(async(pub) => computeSharedKey(pub, priv));
     const ecdhi = await Promise.all(pre_ecdhi);
     return ecdhi;

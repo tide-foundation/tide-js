@@ -17,22 +17,15 @@
 
 export default class ClientBase {
     url: string;
-    token: any;
+    token: string;
     sessionKeyPrivateRaw: any;
     sessionKeyPublicEncoded: any;
 
-    /**
-    * @param {string} url
-    */
-    constructor(url) {
+    constructor(url: string) {
         this.url = url
     }
 
-    /**
-     * @param {Object} form
-     * @returns {FormData}
-     */
-    _createFormData(form) {
+    _createFormData(form: Object): FormData {
         const formData = new FormData();
 
         Object.entries(form).forEach(([key, value]) => {
@@ -48,12 +41,7 @@ export default class ClientBase {
         return formData
     }
 
-    /** 
-     * @param {string} endpoint 
-     * @param {number} timeout
-     * @returns {Promise<Response>}
-     */
-    async _get(endpoint, timeout = 20000, signal = null) {
+    async _get(endpoint: string, timeout: number = 20000, signal: AbortSignal = null): Promise<Response> {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeout);
 
@@ -71,13 +59,10 @@ export default class ClientBase {
         return response;
     }
 
-    /** 
-    * Silent get, makes a returns a response without handling response errors. 
-    * @param {string} endpoint 
-    * @param {number} timeout
-    * @returns {Promise<Response>}
+    /**
+    * Silent get, makes a returns a response without handling response errors.
     */
-    async _getSilent(endpoint, timeout = 20000, signal = null) {
+    async _getSilent(endpoint: string, timeout: number = 20000, signal: AbortSignal = null): Promise<Response> {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeout);
 
@@ -95,12 +80,7 @@ export default class ClientBase {
         return response;
     }
 
-    /** 
-     * @param {string} endpoint 
-     * @param {FormData} data
-     * @returns {Promise<Response>}
-     */
-    async _post(endpoint, data, timeout = 20000) {
+    async _post(endpoint: string, data: FormData, timeout: number = 20000): Promise<Response> {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeout);
 
@@ -121,24 +101,14 @@ export default class ClientBase {
         return response;
     }
 
-    /** 
-     * @param {string} endpoint 
-     * @param {FormData} data
-     * @returns {Promise<Response>}
-     */
-    async _put(endpoint, data) {
+    async _put(endpoint: string, data: FormData): Promise<Response> {
         return fetch(this.url + endpoint, {
             method: 'PUT',
             body: data
         });
     }
 
-    /** 
-     * @param {string} endpoint 
-     * @param {Object} data
-     * @returns {Promise<Response>}
-     */
-    async _postJSON(endpoint, data) {
+    async _postJSON(endpoint: string, data: Object): Promise<Response> {
         return fetch(this.url + endpoint, {
             method: 'POST',
             headers: {
@@ -149,13 +119,10 @@ export default class ClientBase {
         });
     }
 
-    /** 
-     * Post silent returns the response without handling response errors. 
-     * @param {string} endpoint 
-     * @param {FormData} data
-     * @returns {Promise<Response>}
+    /**
+     * Post silent returns the response without handling response errors.
      */
-    async _postSilent(endpoint, data, timeout = 20000) {
+    async _postSilent(endpoint: string, data: FormData, timeout: number = 20000): Promise<Response> {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeout);
 
@@ -173,13 +140,7 @@ export default class ClientBase {
         return response;
     }
 
-    /**
-     * @param {Response} response 
-     * @param {string} functionName 
-     * @param {boolean} throwError 
-     * @returns {Promise<string>}
-     */
-    async _handleError(response, functionName = "", throwError=false) {
+    async _handleError(response: Response, functionName: string = "", throwError: boolean = false): Promise<string> {
         var error = "";
 
         const responseData = await response.text();
@@ -196,11 +157,7 @@ export default class ClientBase {
         return responseData;
     }
 
-    /**
-    * @param {Response} response 
-    * @returns {Promise<string>}
-    */
-    async _handleErrorSimulator(response) {
+    async _handleErrorSimulator(response: Response): Promise<string> {
         var error = "";
 
         const responseData = await response.text();
@@ -210,13 +167,7 @@ export default class ClientBase {
 
         return responseData;
     }
-    /**
-     * @param {Uint8Array} sessionKeyPrivate
-     * @param {string} sessionKeyPublicEncoded
-     * @param {string} token 
-     * @returns 
-     */
-    AddBearerAuthorization(sessionKeyPrivate, sessionKeyPublicEncoded, token){
+    AddBearerAuthorization(sessionKeyPrivate: Uint8Array, sessionKeyPublicEncoded: string, token: string){
         this.sessionKeyPrivateRaw = sessionKeyPrivate;
         this.sessionKeyPublicEncoded = sessionKeyPublicEncoded;
         this.token = token;

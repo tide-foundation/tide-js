@@ -24,16 +24,7 @@ export function CurrentTime(){
 	return Math.floor(Date.now() / 1000); // this will be affected by the 2038 problem
 }
 
-/**
- * This probably won't work at first
- * @param {Promise[]} promises 
- * @param {string} keyType 
- * @param {number} amountRequired
- * @param {number} customTimeout
- * @param {function} customPromiseChecker
- * @returns 
- */
-async function PromiseRace(promises, keyType, amountRequired, customTimeout=null, customPromiseChecker=null) { 
+async function PromiseRace(promises: Promise<any>[], keyType: string, amountRequired: number, customTimeout: number = null, customPromiseChecker: Function = null) {
     let results = [];
     let failed = [];
     let timeoutReached = false;
@@ -55,7 +46,7 @@ async function PromiseRace(promises, keyType, amountRequired, customTimeout=null
 
     while (promises.length > 0 && fullyCompletedPromises < initLength) {
         const racePromises = promises.map((p, index) => p.then(result => ({result, index})).catch(error => ({error, index})));
-        const fastestPromise = await Promise.race(racePromises);
+        const fastestPromise: any = await Promise.race(racePromises);
 
         if (fastestPromise.result === '1s') {
             oneSecCheckPassed = true;
@@ -112,20 +103,7 @@ async function PromiseRace(promises, keyType, amountRequired, customTimeout=null
 }
 
 
-/**
- * 
- * @param {OrkInfo[]} orkList_Ref List of ORK infos
- * @param {Promise[]} pre_responses Unresolved Promises
- * @param {string} keyType CMK, CVK?
- * @param {number} number Amount of ORKs to wait for
- * @param {number} amountRequired
- * @param {(0 | 1)[]} bitwise_p
- * @param {*[]} optionalArray
- * @param {number} customTimeout
- * @param {function} customPromiseChecker
- * @returns 
- */
-export async function WaitForNumberofORKs(orkList_Ref, pre_responses, keyType, amountRequired=Threshold, bitwise_p=null, optionalArray=null, customTimeout=null, customPromiseChecker=null){
+export async function WaitForNumberofORKs(orkList_Ref: OrkInfo[], pre_responses: Promise<any>[], keyType: string, amountRequired: number = Threshold, bitwise_p: (0 | 1)[] = null, optionalArray: any[] = null, customTimeout: number = null, customPromiseChecker: Function = null){
     // See Utils.cs on Midgard Core for how this can be improved
     // Basically, you don't need indexes in the responses, just use .indexOf
 
@@ -206,13 +184,7 @@ export async function WaitForNumberofORKs(orkList_Ref, pre_responses, keyType, a
 	});
 	return {fulfilledResponses: cleanedResponses, bitwise};
 }
-/**
- * 
- * @param {any[]} array 
- * @param {number} targetArraySize 
- * @returns {any[]}
- */
-export function removeRandomElements(array, targetArraySize) {
+export function removeRandomElements(array: any[], targetArraySize: number): any[] {
     let newArray = array.slice();
     // Check if the array size is > n
     if (newArray.length < targetArraySize) {
@@ -245,10 +217,7 @@ export function randBetween(x, y) {
     return rand + BigInt(x);
 }
 
-  /**
-   * @param {OrkInfo[]} orks 
-   */
-export function sortORKs(orks){ 
+export function sortORKs(orks: OrkInfo[]){
     const orkRef = orks.slice(); // don't modify original
     return orkRef.sort((a, b) => {
         if(BigInt(a.orkID) < BigInt(b.orkID)) return -1;

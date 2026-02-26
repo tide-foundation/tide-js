@@ -20,19 +20,9 @@ import dVVKSigningFlow from "../SigningFlows/dVVKSigningFlow";
 import TideKey from "../../Cryptide/TideKey";
 import KeyInfo from "../../Models/Infos/KeyInfo";
 import { Models, Tools } from "../..";
+import { Doken } from "../../Models/Doken";
 
-/**
- * 
- * @param {{
-* vendorId: string,
-* token: Doken,
-* sessionKey: TideKey
-* voucherURL: string,
-* homeOrkUrl: string | null
-* keyInfo: KeyInfo
-* }} config 
-*/
-export function AuthorizedSigningFlow(config) {
+export function AuthorizedSigningFlow(config: { vendorId: string, token: Doken, sessionKey: TideKey, voucherURL: string, homeOrkUrl: string | null, keyInfo: KeyInfo }) {
     if (!(this instanceof AuthorizedSigningFlow)) {
         throw new Error("The 'AuthorizedSigningFlow' constructor must be invoked with 'new'.")
     }
@@ -50,20 +40,12 @@ export function AuthorizedSigningFlow(config) {
 
     signingFlow.vvkInfo = config.keyInfo;
 
-    /**
-     * @param {Uint8Array} tideSerializedRequest 
-     * @param {bool} waitForAll 
-     */
-    signingFlow.signv2 = async function (tideSerializedRequest, waitForAll) {
+    signingFlow.signv2 = async function (tideSerializedRequest: Uint8Array, waitForAll: boolean) {
         const flow = new dVVKSigningFlow(this.vvkId, signingFlow.vvkInfo.UserPublic, signingFlow.vvkInfo.OrkInfo, signingFlow.sessKey, signingFlow.token, this.voucherURL);
         return flow.start(BaseTideRequest.decode(tideSerializedRequest), waitForAll);
     }
 
-    /**
-     * @param {Models.BaseTideRequest} tideReqToInitialize 
-     * @param {bool} waitForAll 
-     */
-    signingFlow.initializeRequest = async function (tideReqToInitialize: Models.BaseTideRequest, waitForAll) {
+    signingFlow.initializeRequest = async function (tideReqToInitialize: Models.BaseTideRequest, waitForAll: boolean) {
         const requestToInitializeDetails = await tideReqToInitialize.getRequestInitDetails();
         const initRequest = new BaseTideRequest(
             "TideRequestInitialization",

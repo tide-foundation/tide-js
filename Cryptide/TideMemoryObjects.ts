@@ -20,12 +20,7 @@ import { Utils } from "../index";
 import { Ed25519PublicComponent } from "./Components/Schemes/Ed25519/Ed25519Components";
 import { AuthorizerSignatureFormat } from "./Signing/TideSignature";
 
-/**
- * 
- * @param {Ed25519PublicComponent} gvrk 
- * @param {number | bigint} expiry 
- */
-export function CreateVRKPackage(gvrk, expiry){
+export function CreateVRKPackage(gvrk: Ed25519PublicComponent, expiry: number | bigint){
     const serializedgvrk = gvrk.Serialize().ToBytes();
     const ex = typeof expiry == "bigint" ? expiry : BigInt(expiry);
     if(ex < BigInt(Utils.CurrentTime() + 5)) throw Error("Expiry must be at least 5 seconds into future");
@@ -36,13 +31,6 @@ export function CreateVRKPackage(gvrk, expiry){
     WriteValue(vrk_pack, 1, time_b);
     return vrk_pack;
 }
-/**
- * 
- * @param {string} authFlow 
- * @param {string[]} signModels 
- * @param {Uint8Array} vrk_pack 
- * @returns 
- */
-export function CreateAuthorizerPackage(authFlow, signModels, vrk_pack){
+export function CreateAuthorizerPackage(authFlow: string, signModels: string[], vrk_pack: Uint8Array){
     return new AuthorizerSignatureFormat(authFlow, signModels, vrk_pack).format();
 }

@@ -21,25 +21,19 @@ import TideKey from "../../Cryptide/TideKey";
 import Ed25519Scheme from "../../Cryptide/Components/Schemes/Ed25519/Ed25519Scheme";
 
 export default class VoucherFlow{
-    orkPaymentPublics: any;
-    voucherURL: any;
-    action: any;
-    /**
-     * @param {Point[]} orkPaymentPublics
-     * @param {string} voucherURL
-     * @param {string} action
-     */
-    constructor(orkPaymentPublics, voucherURL, action){
+    orkPaymentPublics: Point[];
+    voucherURL: string;
+    action: string;
+
+    constructor(orkPaymentPublics: Point[], voucherURL: string, action: string){
         this.orkPaymentPublics = orkPaymentPublics;
         this.voucherURL = voucherURL;
         this.action = action;
     }
     /**
      * I'm making this so I can use keycloak's client that has all of the keycloak's authorization built in.
-     * @param {(request: string) => Promise<string>} clientFunction 
-     * @returns 
      */
-    async GetVouchers(clientFunction = null){
+    async GetVouchers(clientFunction: ((request: string) => Promise<string>) | null = null){
         let vouchers = undefined;
         const k = TideKey.NewKey(Ed25519Scheme);
         const blurKeyPub = await k.prepVouchersReq(this.orkPaymentPublics);
