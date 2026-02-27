@@ -20,28 +20,17 @@ import { base64ToBytes, BigIntToByteArray, bytesToBase64, ConcatUint8Arrays } fr
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-/**
- * 
- * @param {Uint8Array} rawKey 
- * @param {Iterable} keyUsage 
- * @returns 
- */
-export function createAESKey(rawKey, keyUsage) {
+export function createAESKey(rawKey: Uint8Array, keyUsage: KeyUsage[]) {
     return window.crypto.subtle.importKey(
         "raw",
-        rawKey,
+        rawKey as unknown as BufferSource,
         "AES-GCM",
         true,
         keyUsage
     );
 }
 
-/**
- * @param {string|Uint8Array} secretData 
- * @param {Uint8Array|bigint|string} key 
- * @returns 
- */
-export async function encryptData(secretData, key) {
+export async function encryptData(secretData: string | Uint8Array, key: Uint8Array | bigint | string) {
     var aesKey;
     if (key instanceof Uint8Array) {
         aesKey = key;
@@ -56,31 +45,21 @@ export async function encryptData(secretData, key) {
     const encrypted = await encryptDataRawOutput(encoded, aesKey);
     return bytesToBase64(encrypted);
 }
-/**
- * @param {Uint8Array} encodedData
- * @param {Uint8Array} aesKey 
- * @returns 
- */
-export async function encryptDataRawOutput(encodedData, aesKey){
+export async function encryptDataRawOutput(encodedData: Uint8Array, aesKey: Uint8Array){
     const cryptoKey = await createAESKey(aesKey, ["encrypt"]);
     // iv will be needed for decryption
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
     const encryptedBuffer = await window.crypto.subtle.encrypt(
         { name: "AES-GCM", iv: iv },
         cryptoKey,
-        encodedData
+        encodedData as unknown as BufferSource
     );
     const buff = ConcatUint8Arrays([iv, new Uint8Array(encryptedBuffer)]);
     return buff;
 }
 
 
-/**
- * @param {string} encryptedData 
- * @param {Uint8Array|bigint|string} key  
- * @returns 
- */
-export async function decryptData(encryptedData, key) {
+export async function decryptData(encryptedData: string, key: Uint8Array | bigint | string) {
     var aesKey;
     if (key instanceof Uint8Array) {
         aesKey = key;
@@ -97,11 +76,7 @@ export async function decryptData(encryptedData, key) {
     return dec.decode(decryptedContent);
 }
 
-/**
- * @param {Uint8Array} encryptedData 
- * @param {Uint8Array} key 32 bytes
- */
-export async function decryptDataRawOutput(encryptedData, key){
+export async function decryptDataRawOutput(encryptedData: Uint8Array, key: Uint8Array){
     const aesKey = await createAESKey(key, ["decrypt"]);
     const iv = encryptedData.slice(0, 12);
     const data = encryptedData.slice(12);

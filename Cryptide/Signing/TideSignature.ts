@@ -19,26 +19,20 @@ import { Serialization } from "../index";
 import { ConcatUint8Arrays, StringToUint8Array } from "../Serialization";
 
 export class TideSignatureFormat{
-    Name: any;
-    Version: any;
-    Message: any;
+    Name: string;
+    Version: string;
+    Message: Uint8Array;
     Header = () => "=====TIDE_" + this.Name + ":" + this.Version + "_START=====\n";
     Footer = () => "\n=====TIDE_" + this.Name + ":" + this.Version + "_END=====";
-    /**
-     * @param {string|Uint8Array} message
-     */
-    constructor(message){
+
+    constructor(message: string | Uint8Array){
         if(typeof(message) == 'string'){
             this.Message = StringToUint8Array(message);
         }else if(message instanceof Uint8Array) {
             this.Message = message.slice();
         }else throw Error("Unknown type provided");
     }
-    /**
-     * 
-     * @returns {Uint8Array}
-     */
-    format(){
+    format(): Uint8Array {
         return ConcatUint8Arrays([StringToUint8Array(this.Header()), this.Message, StringToUint8Array(this.Footer())]);
     }
 }

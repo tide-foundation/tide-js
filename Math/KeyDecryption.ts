@@ -19,12 +19,7 @@ import { Point } from "../Cryptide/Ed25519";
 import { SHA256_Digest } from "../Cryptide/Hashing/Hash";
 import { AggregatePointArrays, GetLis } from "../Cryptide/Interpolation";
 
-/**
- * 
- * @param {Point[][]} appliedC1s 
- * @param {bigint[]} ids 
- */
-export async function GetKeys(appliedC1s, ids){
+export async function GetKeys(appliedC1s: Point[][], ids: bigint[]){
     // Apply Lis to points, sum result
     const lis = GetLis(ids);
     const appliedC1sWithLi = appliedC1s.map((c1, i) => c1.map(c => c.mul(lis[i])));

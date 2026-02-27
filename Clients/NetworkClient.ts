@@ -20,20 +20,13 @@ import OrkInfo from "../Models/Infos/OrkInfo";
 import ClientBase from "./ClientBase"
 
 export default class NetworkClient extends ClientBase {
-    /**
-     * @param {string} url
-     */
-    constructor(url=null){ 
+    constructor(url: string = null){
         if(url == null) super(window.location.origin);
         else super(url); // no gaurantee that the home ork will be part of selected orks, we need a selected ork url here for uncommitted entries
         
     }
 
-    /**
-     * @param {string} uid 
-     * @returns {OrkInfo[]}
-     */
-    async FindReservers(uid){
+    async FindReservers(uid: string): Promise<OrkInfo[]> {
         const response = await this._get(`/Network/Authentication/Users/GetReservers/${uid}`);
         try{
             const responseData = await this._handleError(response, "Find Reservers");
@@ -64,12 +57,7 @@ export default class NetworkClient extends ClientBase {
         return randomUrl;
     }
 
-    /**
-     * 
-     * @param {string} uid 
-     * @returns 
-     */
-    async GetKeyInfo(uid){
+    async GetKeyInfo(uid: string){
         const response = await this._get(`/Network/Authentication/Users/UserInfo/${uid}`);
         let responseData;
         try{

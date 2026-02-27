@@ -16,18 +16,12 @@
 //
 
 export default class VendorSettings{
-    regOn: any;
-    backupOn: any;
-    imageURL: any;
-    logoURL: any;
+    regOn: boolean;
+    backupOn: boolean;
+    imageURL: string;
+    logoURL: string;
 
-    /**
-     * @param {boolean} regOn
-     * @param {boolean} backupOn
-     * @param {string} imageURL
-     * @param {string} logoURL
-     */
-    constructor(regOn, backupOn, imageURL, logoURL){
+    constructor(regOn: boolean, backupOn: boolean, imageURL: string, logoURL: string){
         this.regOn = regOn
         this.backupOn = backupOn
         this.imageURL = imageURL

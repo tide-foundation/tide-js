@@ -16,23 +16,14 @@
 //
 
 export default class VoucherResponse{
-    voucherPacks: any;
-    qPub: any;
-    payerPub: any;
-    Yhat: any;
-    blurerK: any;
-    UDeObf: any;
+    voucherPacks: string[];
+    qPub: string;
+    payerPub: string;
+    Yhat: string;
+    blurerK: string;
+    UDeObf: string;
 
-    /**
-     *
-     * @param {string[]} voucherPacks
-     * @param {string} qPub
-     * @param {string} payerPub
-     * @param {string} YHat
-     * @param {string} blurerK
-     * @param {string} UDeObf
-     */
-    constructor(voucherPacks, qPub, payerPub, Yhat, blurerK, UDeObf){
+    constructor(voucherPacks: string[], qPub: string, payerPub: string, Yhat: string, blurerK: string, UDeObf: string){
         this.voucherPacks = voucherPacks;
         this.qPub = qPub;
         this.payerPub = payerPub;
@@ -41,17 +32,12 @@ export default class VoucherResponse{
         this.UDeObf = UDeObf;
     }
 
-    static from(data, blurerK){
+    static from(data: string, blurerK: string){
         const json = JSON.parse(data);
         return new VoucherResponse(json.voucherPacks, json.QPub, json.PayerPub, json.YHat, blurerK, json.UDeObf);
     }
 
-    /**
-     * 
-     * @param {number} index 
-     * @returns 
-     */
-    toORK(index){
+    toORK(index: number){
         return JSON.stringify({
             VoucherPack: this.voucherPacks[index],
             YHat: this.Yhat,

@@ -26,27 +26,17 @@ import VoucherFlow from "../VoucherFlows/VoucherFlow";
 import { TestSignatureFormat } from "../../Cryptide/Signing/TideSignature";
 
 export default class dTestVVKSigningFlow{
-    vvkid: any;
+    vvkid: string;
     vvkPublic: any;
-    orks: any;
-    sessKey: any;
+    orks: OrkInfo[];
+    sessKey: Uint8Array;
     gSessKey: any;
-    vrk: any;
-    authorizer: any;
-    authorizerCert: any;
-    voucherURL: any;
-    /**
-     * @param {string} vvkid
-     * @param {Point} vvkPublic
-     * @param {OrkInfo[]} orks
-     * @param {Uint8Array} sessKey
-     * @param {Point} gSessKey
-     * @param {BigInt} vrk
-     * @param {Uint8Array} authorizer
-     * @param {Uint8Array} authorizerCert
-     * @param {string} voucherURL
-     */
-    constructor(vvkid, vvkPublic, orks, sessKey, gSessKey, vrk, authorizer, authorizerCert, voucherURL){
+    vrk: bigint;
+    authorizer: Uint8Array;
+    authorizerCert: Uint8Array;
+    voucherURL: string;
+
+    constructor(vvkid: string, vvkPublic: any, orks: OrkInfo[], sessKey: Uint8Array, gSessKey: any, vrk: bigint, authorizer: Uint8Array, authorizerCert: Uint8Array, voucherURL: string){
         this.vvkid = vvkid;
         this.vvkPublic = vvkPublic;
         this.orks = orks;
@@ -83,7 +73,7 @@ export default class dTestVVKSigningFlow{
 
         const pre_SignResponses = clients.map(client => client.Sign(this.vvkid, request, GRj, serializeBitArray(bitwise)));
         const SignResponses = await Promise.all(pre_SignResponses);
-        const Sj = SumS(SignResponses);
+        const Sj = SumS(SignResponses.map(s => s.Sij));
 
         if(GRj.length != Sj.length) throw Error("Weird amount of GRjs and Sjs");
         const testSig = bytesToBase64(ConcatUint8Arrays([GRj[0].toRawBytes(), BigIntToByteArray(Sj[0])]));

@@ -20,14 +20,7 @@ import { Point } from "../Ed25519";
 import { SHA512_Digest } from "../Hashing/Hash";
 import { BigIntFromByteArray, BigIntToByteArray, ConcatUint8Arrays, bytesToBase64 } from "../Serialization";
 import * as EdDSA from "./EdDSA";
-/**
- * 
- * @param {Point} gR 
- * @param {Point} pub 
- * @param {Uint8Array} message 
- * @param {bigint} multiplier 
- */
-export async function genBlindMessage(gR, pub, message, multiplier){
+export async function genBlindMessage(gR: Point, pub: Point, message: Uint8Array, multiplier: bigint){
     const blur = RandomBigInt();
     const gRMul = gR.mul(mod_inv(blur));
     const eddsaH = mod(BigIntFromByteArray(await SHA512_Digest(ConcatUint8Arrays([gRMul.toRawBytes(), pub.toRawBytes(), message]))));
@@ -35,24 +28,12 @@ export async function genBlindMessage(gR, pub, message, multiplier){
 
     return {blurHCMKMul, blur, gRMul};
 }
-/**
- * 
- * @param {bigint} blindS 
- * @param {bigint} blur 
- */
-export async function unblindSignature(blindS, blur){
+export async function unblindSignature(blindS: bigint, blur: bigint){
     const s = mod(blindS * mod_inv(blur));
     return s;
 }
 
-/**
- * 
- * @param {bigint} S 
- * @param {Point} noncePublic 
- * @param {Point} pub
- * @param {Uint8Array} message 
- */
-export async function verifyBlindSignature(S, noncePublic, pub, message){
+export async function verifyBlindSignature(S: bigint, noncePublic: Point, pub: Point, message: Uint8Array){
     const valid = await EdDSA.verifyRaw(S, noncePublic, pub, message);
     
     if(!valid){
@@ -61,10 +42,6 @@ export async function verifyBlindSignature(S, noncePublic, pub, message){
     return valid;
 }
 
-/**
- * @param {bigint} S 
- * @param {Point} noncePublic 
- */
-export function serializeBlindSig(S, noncePublic){
+export function serializeBlindSig(S: bigint, noncePublic: Point){
     return ConcatUint8Arrays([BigIntToByteArray(S), noncePublic.toRawBytes()]);
 }

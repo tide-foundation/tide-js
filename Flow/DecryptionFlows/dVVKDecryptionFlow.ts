@@ -24,22 +24,15 @@ import { Doken } from "../../Models/Doken";
 import TideKey from "../../Cryptide/TideKey";
 
 export default class dVVKDecryptionFlow{
-    vvkid: any;
+    vvkid: string;
     vvkPublic: any;
     orks: any;
-    sessKey: any;
-    doken: any;
-    getVouchersFunction: any;
-    voucherURL: any;
-    /**
-     * @param {string} vvkid
-     * @param {Point} vvkPublic
-     * @param {OrkInfo[]} orks
-     * @param {TideKey} sessKey
-     * @param {Doken} doken
-     * @param {string} voucherURL
-     */
-    constructor(vvkid, vvkPublic, orks, sessKey, doken, voucherURL){
+    sessKey: TideKey;
+    doken: Doken;
+    getVouchersFunction: ((request: string) => Promise<string>) | null;
+    voucherURL: string;
+
+    constructor(vvkid: string, vvkPublic: any, orks: any, sessKey: TideKey, doken: Doken, voucherURL: string){
         this.vvkid = vvkid;
         this.vvkPublic = vvkPublic;
         this.orks = orks;
@@ -52,19 +45,11 @@ export default class dVVKDecryptionFlow{
 
         this.voucherURL = voucherURL;
     }
-    /**
-     * @param {(request: string) => Promise<string> } getVouchersFunction
-     * @returns {dVVKSigningFlow}
-     */
-    setVoucherRetrievalFunction(getVouchersFunction){
+    setVoucherRetrievalFunction(getVouchersFunction: (request: string) => Promise<string>){
         this.getVouchersFunction = getVouchersFunction;
         return this;
     }
-    /**
-     * @param {BaseTideRequest} request 
-     * @param {bool} waitForAll
-     */
-    async start(request, waitForAll=false){
+    async start(request: BaseTideRequest, waitForAll: boolean = false){
         const pre_clients = this.orks.map(info => new NodeClient(info.orkURL).AddBearerAuthorization(this.sessKey.get_private_component().rawBytes, this.sessKey.get_public_component().Serialize().ToString(), this.doken.serialize()).EnableTideDH(info.orkPublic));
         
         const voucherFlow = new VoucherFlow(this.orks.map(o => o.orkPaymentPublic), this.voucherURL, "vendordecrypt");

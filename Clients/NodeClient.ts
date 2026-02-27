@@ -26,10 +26,7 @@ export default class NodeClient extends ClientBase {
     DHKey: any;
     orkCacheId: any;
 
-    /**
-     * @param {string} url
-     */
-    constructor(url) {
+    constructor(url: string) {
         super(url)
         this.enabledTideDH = false;
     }
@@ -40,22 +37,13 @@ export default class NodeClient extends ClientBase {
         return responseData;
     }
 
-    /**
-     * @param {Point} orkPublic
-     */
-    async EnableTideDH(orkPublic, gSessKey?, sessKey?) {
+    async EnableTideDH(orkPublic: Point, gSessKey?, sessKey?) {
         if(!this.sessionKeyPrivateRaw) throw Error("Add a session key to the client first");
         this.enabledTideDH = true;
         this.DHKey = await Encryption.DH.computeSharedKey(orkPublic, this.sessionKeyPrivateRaw);
         return this;
     }
-    /**
-     * @param {number} index 
-     * @param {string} vuid 
-     * @param {BaseTideRequest} request 
-     * @param {string} voucher
-     */
-    async PreSign(index, vuid, request, voucher) {
+    async PreSign(index: number, vuid: string, request: BaseTideRequest, voucher: string) {
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
         const encrypted = await Encryption.AES.encryptData(CreateTideMemoryFromArray([request.encode()]), this.DHKey);
         const data = this._createFormData(
@@ -87,15 +75,7 @@ export default class NodeClient extends ClientBase {
         }
     }
 
-    /**
-     * 
-     * @param {string} vuid 
-     * @param {BaseTideRequest} request
-     * @param {Point[]} GRs
-     * @param {Uint8Array} bitwise
-     * @param {Uint8Array} sessId
-     */
-    async Sign(vuid, request, GRs, bitwise, sessId) {
+    async Sign(vuid: string, request: BaseTideRequest, GRs: Point[], bitwise: Uint8Array, sessId?: Uint8Array) {
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
         if (!this.orkCacheId) throw Error("Call PreSign first");
         const payload = CreateTideMemoryFromArray([
@@ -128,13 +108,7 @@ export default class NodeClient extends ClientBase {
             AdditionalData: GetValue(decrypted, 1)
         }
     }
-    /**
-     * @param {number} index 
-     * @param {string} vuid 
-     * @param {BaseTideRequest} request 
-     * @param {string} voucher
-     */
-    async Decrypt(index, vuid, request, voucher){
+    async Decrypt(index: number, vuid: string, request: BaseTideRequest, voucher: string){
         if (!this.enabledTideDH) throw Error("TideDH must be enabled");
         const encrypted = await Encryption.AES.encryptData(CreateTideMemoryFromArray([request.encode()]), this.DHKey);
         const data = this._createFormData(
