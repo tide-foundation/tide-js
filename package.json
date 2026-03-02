@@ -1,5 +1,5 @@
 {
-  "name": "tide-js",
+  "name": "@tide/js",
   "version": "0.0.1",
   "description": "Browser side modules required to interact with the Tide's Cybersecurity Fabric.",
   "main": "dist/index.js",
