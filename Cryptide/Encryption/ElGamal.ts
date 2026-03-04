@@ -20,34 +20,33 @@ import { RandomBigInt } from "../Math";
 import { encryptDataRawOutput, decryptData, decryptDataRawOutput } from "./AES";
 import { SHA256_Digest } from "../Hashing/Hash";
 import { BigIntFromByteArray, ConcatUint8Arrays, base64ToBytes, bytesToBase64 } from "../Serialization";
+import TideKey from "../TideKey";
+import { Ed25519PrivateComponent } from "../Components/Schemes/Ed25519";
 
 export default class ElGamal {
-    /**
-     * 
-     * @param {Uint8Array} secretData 
-     * @param {Point} publicKey 
-     */
-    static async encryptData(secretData, publicKey) {
+    static async encryptData(secretData: Uint8Array, publicKey: Point) {
         return bytesToBase64(await this.encryptDataRaw(secretData, publicKey));
     }
 
-    /**
-     * 
-     * @param {Uint8Array} secretData 
-     * @param {Point} publicKey 
-     */
-    static async encryptDataRaw(secretData, publicKey) {
+    static async encryptDataRaw(secretData: Uint8Array, publicKey: Point) {
         const r = RandomBigInt();
         const c1 = Point.BASE.mul(r).toRawBytes();
         const c2 = await encryptDataRawOutput(secretData, await SHA256_Digest(publicKey.mul(r).toRawBytes()));
         return ConcatUint8Arrays([c1, c2]);
     }
 
-    /**
-     * @param {string} base64_c1_c2 
-     * @param {bigint | Uint8Array} k 
-     */
-    static async decryptData(base64_c1_c2, k) {
+    static async encryptDataRaw_withAuthentication(secretData: Uint8Array, publicKey: Point, authMsg: Uint8Array) {
+        const r = RandomBigInt();
+        const c1 = Point.BASE.mul(r).toRawBytes();
+        const c2 = await encryptDataRawOutput(secretData, await SHA256_Digest(publicKey.mul(r).toRawBytes()));
+        const authSig = await (new TideKey(new Ed25519PrivateComponent(r)).sign(authMsg));
+        return {
+            cipher: ConcatUint8Arrays([c1, c2]),
+            auth: authSig
+        }
+    }
+
+    static async decryptData(base64_c1_c2: string, k: bigint | Uint8Array) {
         const priv = typeof(k) == 'bigint'? k : BigIntFromByteArray(k);
         const b = base64ToBytes(base64_c1_c2);
         const c1 = b.slice(0, 32);
@@ -58,11 +57,7 @@ export default class ElGamal {
         return decrypted;
     }
 
-    /**
-     * @param {Uint8Array} base64_c1_c2 
-     * @param {bigint | Uint8Array} k 
-     */
-    static async decryptDataRaw(base64_c1_c2, k) {
+    static async decryptDataRaw(base64_c1_c2: Uint8Array, k: bigint | Uint8Array) {
         const priv = typeof(k) == 'bigint'? k : BigIntFromByteArray(k);
         const c1 = base64_c1_c2.slice(0, 32);
         const c2 = base64_c1_c2.slice(32);

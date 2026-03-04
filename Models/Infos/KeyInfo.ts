@@ -19,19 +19,12 @@ import { Point } from "../../Cryptide/Ed25519";
 import OrkInfo from "./OrkInfo";
 
 export default class KeyInfo{
-    UserId: any;
-    UserPublic: any;
-    UserM: any;
-    OrkInfo: any;
+    UserId: string;
+    UserPublic: Point;
+    UserM: string;
+    OrkInfo: OrkInfo[];
 
-    /**
-     *
-     * @param {string} userId
-     * @param {Point} userPublic
-     * @param {string} userM
-     * @param {OrkInfo[]} orkInfo
-     */
-    constructor(userId, userPublic, userM, orkInfo){
+    constructor(userId: string, userPublic: Point, userM: string, orkInfo: OrkInfo[]){
         this.UserId = userId
         this.UserPublic = userPublic
         this.UserM = userM;
@@ -56,14 +49,14 @@ export default class KeyInfo{
         }
     }
 
-    static from(data){
+    static from(data: string){
         const json = JSON.parse(data);
         const pub = Point.fromBase64(json.UserPublic);
         const orkInfo = json.OrkInfos.map(orkInfo => OrkInfo.from(orkInfo));
         return new KeyInfo(json.UserId, pub, json.UserM, orkInfo);
     }
 
-    static fromNativeTypeObject(json){
+    static fromNativeTypeObject(json: any){
         return new KeyInfo(json.UserId, Point.fromBase64(json.UserPublic), json.UserM, json.OrkInfos.map(o => OrkInfo.fromNativeTypeObject(o)));
     }
 }

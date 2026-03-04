@@ -70,17 +70,13 @@ export class BaseComponent{
     EqualsComponent(component){ throw Error("Equals not implemented"); }
     ModComponent(){ throw Error("Mod not implemented"); }
     ModInvComponent(){ throw Error("Mod inv not implemented"); }
-    SerializeComponent(){ throw Error("Serialize not implemented"); }
+    SerializeComponent(): Uint8Array { throw Error("Serialize not implemented"); }
     /**@returns {BaseScheme} */
     get Scheme(): any { throw Error("Not implemented"); }
     /**@returns {string} */
     get ComponentType(): string { throw Error("Not implemented"); }
 
-    /**
-     * 
-     * @returns {SerializedComponent}
-     */
-    Serialize(){
+    Serialize(): SerializedComponent {
         let raw = this.SerializeComponent();
         let schemeInt = SchemeType.indexOf(this.Scheme as any);
         let componentTypeInt = ComponentKeyType.indexOf(this.ComponentType as any);
@@ -92,11 +88,7 @@ export class BaseComponent{
         return new SerializedComponent(ConcatUint8Arrays([header, raw]), this.ComponentType);
     }
 
-    /**
-    * @param {Uint8Array|string} serialized 
-    * @returns {BaseComponent}
-    */
-    static DeserializeComponent(serialized){
+    static DeserializeComponent(serialized: Uint8Array | string): BaseComponent {
         let b: any = [];
         if(!(serialized instanceof Uint8Array)){
             try{
@@ -121,28 +113,29 @@ export class BaseComponent{
 export class BaseSeedComponent extends BaseComponent{
     get ComponentType() { return Seed; }
     static New() { throw Error("Not implemented"); }
-    GetPublic() { throw Error("Not implemented"); }
-    GetPrivate() { throw Error("Not implemented"); }
-    get rawBytes() { throw Error("Not implemented"); }
+    GetPublic(): BasePublicComponent { throw Error("Not implemented"); }
+    GetPrivate(): BasePrivateComponent { throw Error("Not implemented"); }
+    get rawBytes(): Uint8Array { throw Error("Not implemented"); }
 }
 
 export class BasePrivateComponent extends BaseComponent{
     get ComponentType() { return Private; }
     static New() { throw Error("Not implemented"); }
-    GetPublic() { throw Error("Not implemented"); }
-    get priv() { throw Error("Not implemented"); }
+    GetPublic(): BasePublicComponent { throw Error("Not implemented"); }
+    get priv(): bigint { throw Error("Not implemented"); }
+    get rawBytes(): Uint8Array { throw Error("Not implemented"); }
 }
 
 export class BasePublicComponent extends BaseComponent{
     get ComponentType() { return Public; }
-    get public() { throw Error("Not implemented"); }
+    get public(): any { throw Error("Not implemented"); }
 }
 
 export class SerializedComponent{
     Bytes;
     ComponentType;
 
-    constructor(bytes, compentType){
+    constructor(bytes: Uint8Array, compentType: string){
         this.Bytes = bytes;
         this.ComponentType = compentType;
     }

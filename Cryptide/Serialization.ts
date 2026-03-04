@@ -22,12 +22,7 @@ import { SHA256_Digest } from "./Hashing/Hash";
 import * as EdDSA from "./Signing/EdDSA";
 import { CreateVRKPackage } from "./TideMemoryObjects";
 
-/**
- * 
- * @param {BigInt} value 
- * @returns 
- */
-export function writeInt64LittleEndian(value) {
+export function writeInt64LittleEndian(value: bigint) {
     const INT64_MIN = -9223372036854775808n; // -2^63
     const INT64_MAX = 9223372036854775807n;  // 2^63 - 1
 
@@ -42,12 +37,7 @@ export function writeInt64LittleEndian(value) {
 
     return bytes;
 }
-/**
- * 
- * @param {Uint8Array} bytes 
- * @returns 
- */
-export function readInt64LittleEndian(bytes) {
+export function readInt64LittleEndian(bytes: Uint8Array) {
     if (bytes.length !== 8) {
         throw new Error("Invalid byte array length. Expected 8 bytes.");
     }
@@ -66,11 +56,12 @@ export class AuthorizerPack{
 	AuthFlow: any;
 	Authorizer: any;
 	SignModels: any[];
-	constructor(data){
+	constructor(data: Uint8Array){
 		// Cross-realm safe check
-		const isUint8Like = data && (data instanceof Uint8Array ||
-			(ArrayBuffer.isView(data) && data.constructor?.name === 'Uint8Array') ||
-			(typeof data === 'object' && typeof data.length === 'number' && data.buffer instanceof ArrayBuffer));
+		const d: any = data;
+		const isUint8Like = d && (d instanceof Uint8Array ||
+			(ArrayBuffer.isView(d) && d.constructor?.name === 'Uint8Array') ||
+			(typeof d === 'object' && typeof d.length === 'number' && d.buffer instanceof ArrayBuffer));
 		if(!isUint8Like) throw Error("Data must be byte array");
 		this.AuthFlow = StringFromUint8Array(GetValue(data, 0));
 		this.Authorizer = new GVRK_Pack(GetValue(data, 1));
@@ -87,8 +78,7 @@ export class AuthorizerPack{
 export class GVRK_Pack{
 	GVRK: any;
 	Expiry: any;
-	constructor(data){
-        /** @type {Ed25519PublicComponent} */
+	constructor(data: Uint8Array){
 		this.GVRK = Ed25519PublicComponent.DeserializeComponent(GetValue(data, 0));
 		this.Expiry = readInt64LittleEndian(GetValue(data, 1)); // we do not allow vrks without expiry on enclave for now
 	}
@@ -96,14 +86,7 @@ export class GVRK_Pack{
         return CreateVRKPackage(this.GVRK, this.Expiry);
     }
 }
-/**
- * 
- * @param {Uint8Array} initialValue 
- * @param {number} totalLength 
- * @param {number} version 
- * @returns 
- */
-export function CreateTideMemory(initialValue, totalLength, version = 1) {
+export function CreateTideMemory(initialValue: Uint8Array, totalLength: number, version: number = 1) {
     if (totalLength < initialValue.length + 4) {
         throw new Error("Not enough space to allocate requested data. Make sure to request more space in totalLength than length of InitialValue plus 4 bytes for length.");
     }
@@ -127,10 +110,7 @@ export function CreateTideMemory(initialValue, totalLength, version = 1) {
 
     return buffer;
 }
-/**
- * @param {Uint8Array[]} datas 
- */
-export function CreateTideMemoryFromArray(datas){
+export function CreateTideMemoryFromArray(datas: Uint8Array[]){
     if(datas.length == 0) return new Uint8Array();
     const length = datas.reduce((sum, next) => sum + 4 + next.length, 0);
     const mem = CreateTideMemory(datas[0], length);
@@ -139,13 +119,7 @@ export function CreateTideMemoryFromArray(datas){
     }
     return mem;
 }
-/**
- * 
- * @param {Uint8Array} memory 
- * @param {number} index 
- * @param {Uint8Array} value 
- */
-export function WriteValue(memory, index, value) {
+export function WriteValue(memory: Uint8Array, index: number, value: Uint8Array) {
     if (index < 0) throw new Error("Index cannot be less than 0");
     if (index === 0) throw new Error("Use CreateTideMemory to set value at index 0");
     if (memory.length < 4 + value.length) throw new Error("Could not write to memory. Memory too small for this value");
@@ -184,13 +158,7 @@ export function WriteValue(memory, index, value) {
     // Write value starting from current position
     memory.set(value, dataLocationIndex);
 }
-/**
- * 
- * @param {Uint8Array} a 
- * @param {number} index 
- * @returns 
- */
-export function GetValue(a, index) {
+export function GetValue(a: Uint8Array, index: number) {
     if (!(a instanceof Uint8Array)) {
         console.error('[GetValue] Invalid input type:', typeof a, 'value:', a);
         throw new TypeError("Input must be a Uint8Array.");
@@ -235,7 +203,7 @@ export function GetValue(a, index) {
     return buffer.subarray(dataLocationIndex, dataLocationIndex + finalDataLength);
 }
 
-export function TryGetValue(a, index, returnObj){
+export function TryGetValue(a: Uint8Array, index: number, returnObj: any){
 	try{
 		returnObj["result"] = GetValue(a, index);
 		return true;
@@ -246,15 +214,11 @@ export function TryGetValue(a, index, returnObj){
 
 }
 
-export function DeserializeNetworkKey(data){
+export function DeserializeNetworkKey(data: string){
 	return Point.fromBytes(Hex2Bytes(data.toLowerCase()));
 }
 
-/**
- * 
- * @param {Point} p 
- */
-export async function EdPointToJWK(p){
+export async function EdPointToJWK(p: Point){
 	return JSON.stringify({
 		"kty": "OKP",
 		"kid": Bytes2Hex(await SHA256_Digest(p.toRawBytes())),
@@ -264,12 +228,7 @@ export async function EdPointToJWK(p){
 	});
 }
 
-/**
- * 
- * @param {string} key 
- * @param {string} prefix 
- */
-export function DeserializeTIDE_KEY(key, prefix){
+export function DeserializeTIDE_KEY(key: string, prefix: string){
 	const header = key.substring(0, 8);
 	const data = base64ToBytes(key.substring(8, key.length));
 	if(header != "tide" + prefix + "key") throw Error("Unexpected header in deserialization");
@@ -277,31 +236,19 @@ export function DeserializeTIDE_KEY(key, prefix){
 	return BigIntFromByteArray(data);
 }
 
-export async function GetUID(str){
+export async function GetUID(str: string){
 	return Bytes2Hex(await SHA256_Digest(str.toLowerCase()));
 }
 
-/**
- * @param {BigInt} num 
- * @returns {Uint8Array}
- */
-export function BigIntToByteArray(num) {
+export function BigIntToByteArray(num: bigint): Uint8Array {
 	return etc.bigIntToBytes(num);
 }
 
-/**
- * @param {Uint8Array} bytes 
- * @returns {bigint}
- */
-export function BigIntFromByteArray(bytes) {
+export function BigIntFromByteArray(bytes: Uint8Array): bigint {
 	return etc.bytesToBigInt(bytes);
 }
 
-/**
- * 
- * @param {Uint8Array[]} arrays 
- */
-export function ConcatUint8Arrays(arrays) {
+export function ConcatUint8Arrays(arrays: Uint8Array[]) {
 	const totalLength = arrays.reduce((sum, next) => next.length + sum, 0);
 	var newArray = new Uint8Array(totalLength);
 	var offset = 0;
@@ -312,11 +259,7 @@ export function ConcatUint8Arrays(arrays) {
 	return newArray;
 }
 
-/**
- * @param {Uint8Array} array1 
- * @param {Uint8Array} array2 
- */
-export function XOR(array1, array2){
+export function XOR(array1: Uint8Array, array2: Uint8Array){
 	if (array1.length !== array2.length) {
         throw new Error('Arrays have different lengths, cannot XOR them.');
     }
@@ -326,32 +269,19 @@ export function XOR(array1, array2){
     }
     return result;
 }
-/**
- * 
- * @param {Array} array 
- * @param {number} length 
- * @param {object} padding 
- * @returns 
- */
-export function PadRight(array, length, padding=0) {
+export function PadRight(array: any[], length: number, padding: any = 0) {
     while (array.length < length) {
         array.push(padding);
     }
     return array;
 }
 
-/**
- * @param {string} string 
- */
-export function StringToUint8Array(string) {
+export function StringToUint8Array(string: string) {
 	const enc = new TextEncoder();
 	return enc.encode(string);
 }
 
-/**
- * @param {Uint8Array} bytes 
- */
-export function StringFromUint8Array(bytes){
+export function StringFromUint8Array(bytes: Uint8Array){
 	const decoder = new TextDecoder('utf-8');
     return decoder.decode(bytes);
 }
@@ -366,16 +296,12 @@ export class Byte {
     }
 	/**
 	 * Sets a bit at the start of the array (index 0)
-	 * @param {number} bit 
 	 */
-	setFirstBit(bit){
+	setFirstBit(bit: number){
 		const b = bit === 0 ? 0 : 1;
 		this.bits[0] = b;
 	}
-	/**
-	 * @returns {Uint8Array}
-	 */
-    toUint8Array() {
+    toUint8Array(): Uint8Array {
 		let number = 0;
 		for (let i = 0; i < 8; i++) {
 			number += this.bits[i] * Math.pow(2, 7 - i); 
@@ -387,11 +313,7 @@ export class Byte {
 		return byteArray;
 	}
 
-	/**
-	 * @param {Uint8Array} uint8Array 
-	 * @returns {Byte}
-	 */
-    static fromUint8Array(uint8Array) {
+    static fromUint8Array(uint8Array: Uint8Array): Byte {
         let bitArray = new Byte();
 		for (let i = 7; i >= 0; i--) {
 			bitArray.bits.push((uint8Array[0] >> i) & 1); // only get first byte of byte array
@@ -400,10 +322,8 @@ export class Byte {
     }
 	/**
 	 * Maximum number of 255
-	 * @param {number} number 
-	 * @returns {Byte}
 	 */
-	static fromNumber(number) {
+	static fromNumber(number: number): Byte {
 		if (number < 0 || number > 255) {
 			throw Error("Number must be between 0 and 255"); // Adjusted the range check
 		}
@@ -415,7 +335,7 @@ export class Byte {
 		return byte;
 	}
 }
-export function getBytesFromInt16(schemeInt) {
+export function getBytesFromInt16(schemeInt: number) {
     // Create an ArrayBuffer with 2 bytes (16 bits)
     const buffer = new ArrayBuffer(2);
     const view = new DataView(buffer);
@@ -424,12 +344,7 @@ export function getBytesFromInt16(schemeInt) {
     // Return the bytes as a Uint8Array
     return new Uint8Array(buffer);
 }
-/**
- * @param {number} num 
- * @param {number} len Length of bytes requested
- * @returns 
- */
-export function numberToUint8Array(num, len=-1) {
+export function numberToUint8Array(num: number, len: number = -1) {
 	if (num < 0 || !Number.isInteger(num)) {
         throw new Error('Number must be a non-negative integer.');
     }
@@ -450,10 +365,7 @@ export function numberToUint8Array(num, len=-1) {
 		return ConcatUint8Arrays([byteArray, padding]);
 	}
 }
-/**
- * @param {Uint8Array} array 
- */
-export function Uint8ArrayToNumber(byteArray){
+export function Uint8ArrayToNumber(byteArray: Uint8Array){
 	if (!(byteArray instanceof Uint8Array)) {
         throw new Error('Input must be a Uint8Array.');
     }
@@ -464,19 +376,11 @@ export function Uint8ArrayToNumber(byteArray){
     }
     return num;
 }
-/**
- * @param {string} base64 
- * @returns 
- */
-export function base64ToBase64Url(base64) {
+export function base64ToBase64Url(base64: string) {
     return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/** 
- * @param {string} base64Url 
- * @returns 
- */
-export function base64UrlToBase64(base64Url) {
+export function base64UrlToBase64(base64Url: string) {
     let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
     while (base64.length % 4) {
         base64 += '=';
@@ -484,11 +388,7 @@ export function base64UrlToBase64(base64Url) {
     return base64;
 }
 
-/**
- * @param {number[]} array 
- * @returns 
- */
-export function bitArrayToUint8Array(array) {
+export function bitArrayToUint8Array(array: number[]) {
 	// Made without ChatGPT (but had some help)
 	const byteArray = new Uint8Array(Math.ceil(array.length/8));
 	let bitCount = 0;
@@ -504,10 +404,8 @@ export function bitArrayToUint8Array(array) {
 }
 /**
  * Works for .NET functions.
- * @param {number[]} array 
- * @returns 
  */
-export function serializeBitArray(bitArray_p) { 
+export function serializeBitArray(bitArray_p: number[]) {
 	// If anyone does a deep dive into this function and notices the bits are reversed, blame .NET's BitArray class.
 	let bitArray = bitArray_p.slice();
     // Ensure the bit array length is a multiple of 8 by padding if necessary
@@ -528,21 +426,13 @@ export function serializeBitArray(bitArray_p) {
 
     return byteArray;
 }
-/**
- * 
- * @param {(0|1)[]} bitarray1 
- * @param {(0|1)[]} bitarray2 
- * @returns 
- */
-export function bitArrayAND(bitarray1, bitarray2){
+export function bitArrayAND(bitarray1: (0 | 1)[], bitarray2: (0 | 1)[]){
 	return bitarray1.map((b, i) => b == 1 && bitarray2[i] == 1 ? 1 : 0)
 }
 /**
  * Works for .NET functions.
- * @param {Uint8Array} byteArray 
- * @returns 
  */
-export function deserializeBitArray(byteArray) {
+export function deserializeBitArray(byteArray: Uint8Array) {
     const bitArray = [];
 
     byteArray.forEach(byte => {
@@ -558,7 +448,7 @@ export function deserializeBitArray(byteArray) {
 
     return bitArray;
 }
-export function uint8ArrayToBitArray(byteArray) {
+export function uint8ArrayToBitArray(byteArray: Uint8Array) {
     // always produces a bitArray of length 20
     const bitArray = [];
     let count = 0;
@@ -573,11 +463,7 @@ export function uint8ArrayToBitArray(byteArray) {
     
     return bitArray;
 }
-/**
- * @param {string} string 
- * @returns {Uint8Array}
- */
-export function Hex2Bytes(string) {
+export function Hex2Bytes(string: string): Uint8Array {
     const hexRegex = /^0x[0-9A-Fa-f]+$|^[0-9A-Fa-f]+$/;
     if (!hexRegex.test(string)) throw Error("Invalid Hex");
 
@@ -596,11 +482,7 @@ export function Hex2Bytes(string) {
     return bytes;
 }
 
-/**
- * @param {Uint8Array} byteArray 
- * @returns {string}
- */
-export function Bytes2Hex(byteArray) {
+export function Bytes2Hex(byteArray: Uint8Array): string {
 	const chars = new Uint8Array(byteArray.length * 2);
 	const alpha = 'a'.charCodeAt(0) - 10;
 	const digit = '0'.charCodeAt(0);
@@ -649,11 +531,7 @@ function getBase64Code(charCode) {
 	return code;
 }
 
-/**
- * @param {Uint8Array} bytes 
- * @returns {string}
- */
-export function bytesToBase64(bytes) {
+export function bytesToBase64(bytes: Uint8Array): string {
 	let result = '', i, l = bytes.length;
 	for (i = 2; i < l; i += 3) {
 		result += base64abc[bytes[i - 2] >> 2];
@@ -675,11 +553,7 @@ export function bytesToBase64(bytes) {
 	return result;
 }
 
-/**
- * @param {string} str 
- * @returns {Uint8Array}
- */
-export function base64ToBytes(str) {
+export function base64ToBytes(str: string): Uint8Array {
 	const base64Regex = /^(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?$/;
     if(!base64Regex.test(str)) throw Error("Not valid base64");
 	if (str.length % 4 !== 0) {

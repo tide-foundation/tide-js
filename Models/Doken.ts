@@ -1,16 +1,16 @@
-// 
+//
 // Tide Protocol - Infrastructure for a TRUE Zero-Trust paradigm
 // Copyright (C) 2022 Tide Foundation Ltd
-// 
-// This program is free software and is subject to the terms of 
-// the Tide Community Open Code License as published by the 
-// Tide Foundation Limited. You may modify it and redistribute 
+//
+// This program is free software and is subject to the terms of
+// the Tide Community Open Code License as published by the
+// Tide Foundation Limited. You may modify it and redistribute
 // it in accordance with and subject to the terms of that License.
-// This program is distributed WITHOUT WARRANTY of any kind, 
-// including without any implied warranty of MERCHANTABILITY or 
+// This program is distributed WITHOUT WARRANTY of any kind,
+// including without any implied warranty of MERCHANTABILITY or
 // FITNESS FOR A PARTICULAR PURPOSE.
 // See the Tide Community Open Code License for more details.
-// You should have received a copy of the Tide Community Open 
+// You should have received a copy of the Tide Community Open
 // Code License along with this program.
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
@@ -33,7 +33,7 @@ class DokenPayload{
     realm_access: any;
     resource_access: any;
 
-    constructor(json){
+    constructor(json: any){
         var s = BaseComponent.DeserializeComponent(json["t.ssk"]);
         if(s instanceof Ed25519PublicComponent){
             this.sessionKey = s;
@@ -80,36 +80,31 @@ class DokenPayload{
     }
 }
 
-/**
- *
- * @param {string} data
- */
-export function Doken(data){
-    if (!(this instanceof Doken)) {
-        throw new Error("The 'Doken' constructor must be invoked with 'new'.")
+export class Doken {
+    dataRef: string;
+    header: any;
+    payload: DokenPayload;
+    signature: Uint8Array;
+    private parts: string[];
+
+    constructor(data: string) {
+        const parts = data.split(".");
+        if(parts.length != 3) throw Error("Doken must be a 3 part token (including signature)");
+        this.parts = parts;
+        this.dataRef = data.slice(0);
+
+        this.header = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(parts[0]))));
+        this.payload = new DokenPayload(JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(parts[1])))));
+        this.signature = base64ToBytes(base64UrlToBase64(parts[2]));
     }
 
-    let doken = this;
-
-    doken.dataRef = undefined;
-    doken.header = undefined;
-    doken.payload = undefined;
-    doken.signature = undefined;
-
-    const parts = data.split(".");
-    if(parts.length != 3) throw Error("Doken must be a 3 part token (including signature)");
-    doken.dataRef = data.slice(0);
-
-    doken.header = JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(parts[0]))));
-    doken.payload = new DokenPayload(JSON.parse(StringFromUint8Array(base64ToBytes(base64UrlToBase64(parts[1])))));
-    doken.signature = base64ToBytes(base64UrlToBase64(parts[2]));
-
-    doken.isExpired = function(){
+    isExpired(): boolean {
         return this.payload.exp < CurrentTime();
     }
-    doken.setNewSessionKey = function (sessionKey){
-        const temp = doken.dataRef.split(".");
-        let payload = StringFromUint8Array(base64ToBytes(base64UrlToBase64(parts[1])));
+
+    setNewSessionKey(sessionKey: string) {
+        const temp = this.dataRef.split(".");
+        let payload = StringFromUint8Array(base64ToBytes(base64UrlToBase64(this.parts[1])));
 
         payload = payload.replace(
             /("t.ssk"\s*:\s*)"[^"]*"/,
@@ -119,50 +114,41 @@ export function Doken(data){
         // WE DO ALL THESE MANUAL UPDATES BECAUSE JAVASCRIPT DOES NOT GUARANTEE ORDER IN JSON
         // SINCE WE DON'T SEND THE DOKEN TO GET SIGNED, WE CONTRCUST THE MESSAGE HERE
         // WE NEED TO ENSURE ITS THE SAME THING THE ORK SIGNS
-        doken.dataRef = temp[0] + "." + base64ToBase64Url(bytesToBase64(StringToUint8Array(payload))) + (temp.length > 2 ? "." + temp[2] : ""); // update encoded string
-        doken.payload.sessionKey = BaseComponent.DeserializeComponent(sessionKey); // update session key object in payload
+        this.dataRef = temp[0] + "." + base64ToBase64Url(bytesToBase64(StringToUint8Array(payload))) + (temp.length > 2 ? "." + temp[2] : ""); // update encoded string
+        this.payload.sessionKey = BaseComponent.DeserializeComponent(sessionKey); // update session key object in payload
     }
-    doken.setNewSignature = function(sig){
-        doken.signature = sig.slice(); // update sig object
 
-        const temp = doken.dataRef.split(".");
+    setNewSignature(sig: Uint8Array) {
+        this.signature = sig.slice(); // update sig object
 
-        doken.dataRef = temp[0] + "." + temp[1] + "." + base64ToBase64Url(bytesToBase64(doken.signature)); // update dataref object
+        const temp = this.dataRef.split(".");
+
+        this.dataRef = temp[0] + "." + temp[1] + "." + base64ToBase64Url(bytesToBase64(this.signature)); // update dataref object
     }
-    /**
-     * 
-     * @param {TideKey} sessionKeyToCheck 
-     */
-    doken.validate = function (sessionKeyToCheck=null){
+
+    validate(sessionKeyToCheck: TideKey = null): {success: boolean, reason?: string} {
         // When an error is thrown - its a criticial error so the whole page should stop
         // But if validation just fails, then we return false with a reason why
 
-        if(doken.header.alg != "EdDSA") throw Error("Doken header alg expected to be EdDSA but got " + doken.header.alg);
-        if(doken.header.typ != "doken") throw Error("Doken header typ expected to be doken but got " + doken.header.typ);
+        if(this.header.alg != "EdDSA") throw Error("Doken header alg expected to be EdDSA but got " + this.header.alg);
+        if(this.header.typ != "doken") throw Error("Doken header typ expected to be doken but got " + this.header.typ);
 
         // Check expiry
-        if(Utils.CurrentTime() > doken.payload.exp) return {success: false, reason: "expired"}
+        if(Utils.CurrentTime() > this.payload.exp) return {success: false, reason: "expired"}
 
         // Check session key matches
         if(sessionKeyToCheck){
-            if(!sessionKeyToCheck.get_public_component().Equals(doken.payload.sessionKey)) return {success: false, reason: `sessionkey mismatch. actual: ${sessionKeyToCheck.get_public_component().Serialize().ToString()}. expected: ${doken.payload.sessionKey.Serialize().ToString()}`};
+            if(!sessionKeyToCheck.get_public_component().Equals(this.payload.sessionKey)) return {success: false, reason: `sessionkey mismatch. actual: ${sessionKeyToCheck.get_public_component().Serialize().ToString()}. expected: ${this.payload.sessionKey.Serialize().ToString()}`};
         }
 
         return {success: true}
     }
-    /**
-     * 
-     * @param {Ed25519PublicComponent} vendorPublic 
-     */
-    doken.verify = async function (vendorPublic){
+
+    async verify(vendorPublic: Ed25519PublicComponent) {
         return new TideKey(vendorPublic).verify(StringToUint8Array(this.dataRef), this.signature);
     }
 
-    /**
-     * 
-     * @returns {string}
-     */
-    doken.serialize = function(){
-        return doken.dataRef;
+    serialize(): string {
+        return this.dataRef;
     }
 }

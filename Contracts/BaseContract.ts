@@ -47,7 +47,7 @@ export abstract class BaseContract{
     async testPolicy(policy: Uint8Array | Policy, executorDoken : string | undefined = null): Promise<PolicyRunResult> {
         const p = policy instanceof Uint8Array ? Policy.from(policy) : policy;
         if(p.contractId !== this.id) throw `Mismatch between policy provided's contract (${p.contractId}) and this contract's id (${this.id})`;
-        if(p.modelId !== this.tideRequest.id() && p.modelId !== "any") throw `Mismatch between policy provided model id (${p.modelId}) and tide request id (${this.tideRequest.id()})`
+        if(!p.modelIds.includes(this.tideRequest.id()) && p.modelIds[0] !== "any") throw `Mismatch between policy provided model id (${p.modelIds}) and tide request id (${this.tideRequest.id()})`
         try{
             await this.validateData(p);
             if(p.approvalType == ApprovalType.EXPLICIT) await this.validateApprovers(p, this.dokens);
