@@ -179,14 +179,7 @@ function strxor(a, b) {
     return arr;
 }; //does bitwise xor on all values in 2 arrays and returns a new array with the results
 
-/**
- * 
- * @param {Uint8Array} msg 
- * @param {Uint8Array} DST 
- * @param {number} len_in_bytes 
- * @returns 
- */
-async function expand_message_xmd(msg, DST, len_in_bytes){
+async function expand_message_xmd(msg: Uint8Array, DST: Uint8Array, len_in_bytes: number){
     const b_in_bytes = 64;
     const r_in_bytes = 128;
     const ell = Math.ceil(len_in_bytes/b_in_bytes);
@@ -227,10 +220,8 @@ async function hashtofield(msg){
 }; //takes in a message hashes it with expand_message_xmd and splits the resulting value into 2 parts
 /**
  * Hashes a msg to a point on the ed25519 curve.
- * @param {string|Uint8Array} msg 
- * @returns {Promise<Point>}
  */
-export default async function HashToPoint(msg){
+export default async function HashToPoint(msg: string | Uint8Array): Promise<Point> {
     const arr = typeof (msg) === 'string' ? new TextEncoder().encode(msg) : msg;
     const u = await hashtofield(arr)
     const x0y0 = map_to_curve_elligator2_edwards25519_(u[0][0]);

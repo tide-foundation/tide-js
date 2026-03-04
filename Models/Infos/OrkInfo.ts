@@ -19,19 +19,12 @@ import { Point } from "../../Cryptide/Ed25519";
 import { base64ToBytes, Hex2Bytes } from "../../Cryptide/Serialization";
 
 export default class OrkInfo{
-    orkID: any;
-    orkPublic: any;
-    orkURL: any;
-    orkPaymentPublic: any;
+    orkID: string;
+    orkPublic: Point;
+    orkURL: string;
+    orkPaymentPublic: Point;
 
-    /**
-     *
-     * @param {string} orkID
-     * @param {Point} orkPublic
-     * @param {string} orkURL
-     * @param {Point} orkPaymentPublic
-     */
-    constructor(orkID, orkPublic, orkURL, orkPaymentPublic){
+    constructor(orkID: string, orkPublic: Point, orkURL: string, orkPaymentPublic: Point){
         this.orkID = orkID
         this.orkPublic = orkPublic
         this.orkURL = orkURL
@@ -56,11 +49,11 @@ export default class OrkInfo{
         }
     }
 
-    static fromNativeTypeObject(json){
+    static fromNativeTypeObject(json: any){
         return new OrkInfo(json.Id, Point.fromBase64(json.PublicKey), json.URL, Point.fromBase64(json.PaymentPublicKey));
     }
 
-    static from(json) {
+    static from(json: any) {
         const { publickey, paymentpublickey, id, url } = normalizeKeys(json);
         const pub = Point.fromBytes(Hex2Bytes(publickey).slice(3));
         const paymentPub = Point.fromBytes(Hex2Bytes(paymentpublickey).slice(3));

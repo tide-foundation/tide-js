@@ -15,35 +15,26 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
+import { Point } from "../Ed25519";
 import { ConcatUint8Arrays } from "../Serialization";
-/**
- * @param {string|Uint8Array} message 
- * @returns 
- */
-export async function SHA256_Digest(message) {
+export async function SHA256_Digest(message: string | Uint8Array) {
   const data = typeof (message) === 'string' ? new TextEncoder().encode(message) : message;
-  const hash = await crypto.subtle.digest('SHA-256', data);
+  const hash = await crypto.subtle.digest('SHA-256', data as unknown as BufferSource);
   return new Uint8Array(hash);
 
 }
 
-/**
- * @param {string|Uint8Array} message 
- * @returns 
- */
-export async function SHA512_Digest(message) {
+export async function SHA512_Digest(message: string | Uint8Array) {
   const data = typeof (message) === 'string' ? new TextEncoder().encode(message) : message;
-  const hash = await crypto.subtle.digest('SHA-512', data);
+  const hash = await crypto.subtle.digest('SHA-512', data as unknown as BufferSource);
   return new Uint8Array(hash);
 
 }
 
 /**
  * DO NOT USE THIS TO SIGN. THE KEY IS THE HASH OF THE FIRST MESSAGE PASSED. THIS FUNCTION IS FOR HASHING MULTIPLE MESSAGES.
- * @param {string} message
- * @param {Point} pub
  */
-export async function HMAC_forHashing(message, pub){
+export async function HMAC_forHashing(message: string, pub: Point){
   const tx = new TextEncoder();
   const key = await SHA256_Digest(tx.encode(message));
   const cryptoKey = await crypto.subtle.importKey(

@@ -15,22 +15,16 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
+import { Point } from "../Cryptide/Ed25519";
 import { Ed25519PublicComponent } from "../Cryptide/Components/Schemes/Ed25519/Ed25519Components";
 import AuthRequest from "./AuthRequest";
 export default class VendorData{
-    VUID: any;
-    gCMKAuth: any;
-    blindSig: any;
-    AuthToken: any;
+    VUID: string;
+    gCMKAuth: Point;
+    blindSig: string;
+    AuthToken: AuthRequest;
 
-    /**
-     *
-     * @param {string} VUID
-     * @param {Point} gCMKAuth
-     * @param {string} blindSig
-     * @param {AuthRequest} AuthToken
-     */
-    constructor(VUID, gCMKAuth, blindSig, AuthToken){
+    constructor(VUID: string, gCMKAuth: Point, blindSig: string, AuthToken: AuthRequest){
         this.VUID = VUID
         this.gCMKAuth = gCMKAuth
         this.blindSig = blindSig
@@ -46,7 +40,7 @@ export default class VendorData{
         })
     }
 
-    static from(data){
+    static from(data: string){
         const json = JSON.parse(data);
         return new VendorData(json.VUID, json.gCMKAuth, json.blindSig, AuthRequest.from(json.AuthToken));
     }

@@ -10,10 +10,10 @@ export enum ExecutionType {
     PUBLIC
 }
 export class Policy {
-    static latestVersion: string = "2";
+    static latestVersion: string = "3";
     version: string;
     contractId: string;
-    modelId: string;
+    modelIds: string[];
     keyId: string;
     approvalType: ApprovalType;
     executionType: ExecutionType;
@@ -22,13 +22,21 @@ export class Policy {
     dataToVerify: TideMemory | undefined;
     signature: Uint8Array | undefined;
 
-    constructor(data: { version: string, contractId: string, modelId: string, keyId: string, approvalType: ApprovalType, executionType: ExecutionType, params: Map<string, any> | PolicyParameters }) {
+    constructor(data: { version: string, contractId: string, modelId: string[] | string, keyId: string, approvalType: ApprovalType, executionType: ExecutionType, params: Map<string, any> | PolicyParameters }) {
         if (typeof data["version"] !== "string") throw 'Version is not a string';
+        // if Policy is constructed directly (not via a subclass), enforce latest version
+        if(new.target === Policy){
+            if(data["version"] !== Policy.latestVersion){
+                throw 'Breaking changes made to Policies. Update how you create a policy in your application'
+            } 
+        }
+
         this.version = data["version"];
+
         if (typeof data["contractId"] !== "string") throw 'ContractId is not a string';
         this.contractId = data["contractId"];
-        if (typeof data["modelId"] !== "string") throw 'ModelId is not a string';
-        this.modelId = data["modelId"];
+        if (!Array.isArray(data["modelId"]) && typeof data["modelId"] !== "string") throw 'ModelId is not a string';
+        this.modelIds = typeof data["modelId"] === "string" ? [data["modelId"]] : data["modelId"];
         if (typeof data["keyId"] !== "string") throw 'KeyId is not a string';
         this.keyId = data["keyId"];
 
@@ -41,7 +49,7 @@ export class Policy {
         this.dataToVerify = TideMemory.CreateFromArray([
             StringToUint8Array(this.version),
             StringToUint8Array(this.contractId),
-            StringToUint8Array(this.modelId),
+            TideMemory.CreateFromArray(this.modelIds.map(i => StringToUint8Array(i))),
             StringToUint8Array(this.keyId),
             StringToUint8Array(ApprovalType[this.approvalType]),
             StringToUint8Array(ExecutionType[this.executionType]),
@@ -59,13 +67,20 @@ export class Policy {
             switch (version) {
                 case PolicyV1.thisVersion:
                     return PolicyV1.from(d);
+                case PolicyV2.thisVersion:
+                    return PolicyV2.from(d);
                 default:
                     throw Error("Unknown policy version: " + version);
             }
         }
 
         const contractId = StringFromUint8Array(dataToVerify.GetValue(1));
-        const modelId = StringFromUint8Array(dataToVerify.GetValue(2));
+        const modelIdSection = dataToVerify.GetValue(2);
+        const modelIds = []
+        let returnObj = {result: undefined}
+        for(let i = 0; modelIdSection.TryGetValue(i, returnObj); i++){
+            modelIds.push(StringFromUint8Array(returnObj.result))
+        }
         const keyId = StringFromUint8Array(dataToVerify.GetValue(3));
         const approvalType: ApprovalType = ApprovalType[StringFromUint8Array(dataToVerify.GetValue(4)) as keyof typeof ApprovalType];
         const executionType: ExecutionType = ExecutionType[StringFromUint8Array(dataToVerify.GetValue(5)) as keyof typeof ExecutionType];
@@ -75,7 +90,7 @@ export class Policy {
         const p = new Policy({
             version,
             contractId,
-            modelId,
+            modelId: modelIds,
             keyId,
             approvalType,
             executionType,
@@ -94,7 +109,7 @@ export class Policy {
             TideMemory.CreateFromArray([
                 StringToUint8Array(this.version),
                 StringToUint8Array(this.contractId),
-                StringToUint8Array(this.modelId),
+                TideMemory.CreateFromArray(this.modelIds.map(i => StringToUint8Array(i))),
                 StringToUint8Array(this.keyId),
                 StringToUint8Array(ApprovalType[this.approvalType]),
                 StringToUint8Array(ExecutionType[this.executionType]),
@@ -247,9 +262,60 @@ export class PolicyParameters {
     }
 }
 
+class PolicyV2 extends Policy{
+    static thisVersion = "2";
+    static from(data: TideMemory): Policy {
+        const dataToVerify = data.GetValue(0);
+        const v = StringFromUint8Array(dataToVerify.GetValue(0));
+        if (v != PolicyV2.thisVersion) {
+            throw Error("Dev error");
+        }
+
+        const contractId = StringFromUint8Array(dataToVerify.GetValue(1));
+        const modelId = StringFromUint8Array(dataToVerify.GetValue(2));
+        const keyId = StringFromUint8Array(dataToVerify.GetValue(3));
+        const approvalType: ApprovalType = ApprovalType[StringFromUint8Array(dataToVerify.GetValue(4)) as keyof typeof ApprovalType];
+        const executionType: ExecutionType = ExecutionType[StringFromUint8Array(dataToVerify.GetValue(5)) as keyof typeof ExecutionType];
+
+        const params = new PolicyParameters(dataToVerify.GetValue(6));
+
+        const p = new PolicyV2({
+            version: v,
+            contractId,
+            modelId,
+            keyId,
+            approvalType: approvalType,
+            executionType: executionType,
+            params
+        });
+
+        const sigRes = { result: undefined };
+        if (data.TryGetValue(1, sigRes)) {
+            p.signature = sigRes.result;
+        }
+
+        return p;
+    }
+    toBytes() {
+        let d: Uint8Array[] = [
+            TideMemory.CreateFromArray([
+                StringToUint8Array(this.version),
+                StringToUint8Array(this.contractId),
+                StringToUint8Array(this.modelIds[0]),
+                StringToUint8Array(this.keyId),
+                StringToUint8Array(ApprovalType[this.approvalType]),
+                StringToUint8Array(ExecutionType[this.executionType]),
+                this.params.toBytes()
+            ])];
+
+        if (this.signature) d.push(this.signature);
+
+        return TideMemory.CreateFromArray(d);
+    }
+}
+
 class PolicyV1 extends Policy {
     static thisVersion = "1";
-    version: string = PolicyV1.thisVersion;
     static from(data: TideMemory): Policy {
         const dataToVerify = data.GetValue(0);
         const v = StringFromUint8Array(dataToVerify.GetValue(0));
@@ -285,7 +351,7 @@ class PolicyV1 extends Policy {
             TideMemory.CreateFromArray([
                 StringToUint8Array(PolicyV1.thisVersion),
                 StringToUint8Array(this.contractId),
-                StringToUint8Array(this.modelId),
+                StringToUint8Array(this.modelIds[0]),
                 StringToUint8Array(this.keyId),
                 this.params.toBytes()
             ])];

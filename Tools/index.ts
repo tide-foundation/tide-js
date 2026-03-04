@@ -16,3 +16,4 @@
 //
 
 export * from './Utils';
+export * from './TideMemory';
