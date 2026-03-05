@@ -19,18 +19,14 @@ import { base64ToBytes, bytesToBase64 } from "../Cryptide/Serialization";
 
 // FieldData on Heimdall turns into Datum on enclave
 export default class Datum{
-    data: any;
-    tag: any;
+    data: Uint8Array;
+    tag: number;
 
-    /**
-     * @param {string|Uint8Array} Data
-     * @param {number} Tag
-     */
-    constructor(Data, Tag){
+    constructor(Data: string | Uint8Array, Tag: number){
         this.data = typeof(Data) == "string" ? base64ToBytes(Data) : Data;
         this.tag = Tag;
     }
-    static fromJSON(json){
+    static fromJSON(json: any){
         return new Datum(json.Data, json.Tag);
     }
     toObject(){

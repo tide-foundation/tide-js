@@ -20,20 +20,11 @@ import VoucherResponse from "../Models/Responses/Vendor/VoucherResponse";
 import { Point } from "../Cryptide/Ed25519";
 
 export default class VoucherClient extends ClientBase{
-    /**
-     * @param {string} url 
-     */
-    constructor(url){
+    constructor(url: string){
         super(url);
     }
 
-    /**
-     * 
-     * @param {Point[]} blurPORKi 
-     * @param {string} actionRequest 
-     * @param {Point} blurerK 
-     */
-    async GetVouchers(blurPORKi, actionRequest, blurerK){
+    async GetVouchers(blurPORKi: Point[], actionRequest: string, blurerK: Point){
         const request = JSON.stringify({
             BlurPORKi: blurPORKi.map(blur => blur.toBase64()),
             ActionRequest: actionRequest,

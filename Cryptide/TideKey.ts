@@ -32,34 +32,26 @@ export default class TideKey{
         return new TideKey(seedFactory.Create(undefined));
     }
 
-    static FromSerializedComponent(c){
+    static FromSerializedComponent(c: Uint8Array | string){
         return new TideKey(BaseComponent.DeserializeComponent(c));
     }
     
-    /**@type { BaseComponent } */
-    component = undefined;
-    privateComponent;
-    publicComponent;
+    component: BaseComponent = undefined;
+    privateComponent: BasePrivateComponent;
+    publicComponent: BasePublicComponent;
 
-    constructor(c){
+    constructor(c: BaseComponent){
         if(c instanceof BaseComponent) this.component = c;
         else throw Error("Expecting object derived from BaseComponent");
     }
-    /**
-     * 
-     * @returns {BasePrivateComponent}
-     */
-    get_private_component(){
+    get_private_component(): BasePrivateComponent {
         if(!hasOwnInstanceMethod(this.component, "GetPrivate") && !(this.component instanceof BasePrivateComponent)) throw Error("Cannot generate or find private component");
-        this.privateComponent = this.component instanceof BasePrivateComponent ? this.component : this.component.GetPrivate();
+        this.privateComponent = this.component instanceof BasePrivateComponent ? this.component : (this.component as any).GetPrivate();
         return this.privateComponent;
     }
-    /**
-     * @returns {BasePublicComponent}
-     */
-    get_public_component(){
+    get_public_component(): BasePublicComponent {
         if(!hasOwnInstanceMethod(this.component, "GetPublic") && !(this.component instanceof BasePublicComponent)) throw Error("Cannot generate or find public component");
-        this.publicComponent = this.component instanceof BasePublicComponent ? this.component : this.component.GetPublic();
+        this.publicComponent = this.component instanceof BasePublicComponent ? this.component : (this.component as any).GetPublic();
         return this.publicComponent;
     }
 

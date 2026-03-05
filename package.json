@@ -1,5 +1,5 @@
 {
-  "name": "tide-js",
+  "name": "@tideorg/js",
   "version": "0.0.1",
   "description": "Browser side modules required to interact with the Tide's Cybersecurity Fabric.",
   "main": "dist/index.js",
@@ -16,7 +16,7 @@
     "url": "git+https://github.com/tide-foundation/tide-js.git"
   },
   "author": "",
-  "license": "ISC",
+  "license": "SEE LICENSE IN LICENSE",
   "bugs": {
     "url": "https://github.com/tide-foundation/tide-js/issues"
   },

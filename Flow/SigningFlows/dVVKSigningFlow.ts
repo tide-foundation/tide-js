@@ -26,22 +26,15 @@ import { Doken } from "../../Models/Doken";
 import TideKey from "../../Cryptide/TideKey";
 
 export default class dVVKSigningFlow {
-    vvkid: any;
+    vvkid: string;
     vvkPublic: any;
-    orks: any;
-    sessKey: any;
-    doken: any;
-    getVouchersFunction: any;
-    voucherURL: any;
-    /**
-     * @param {string} vvkid
-     * @param {Point} vvkPublic
-     * @param {OrkInfo[]} orks
-     * @param {TideKey} sessKey
-     * @param {Doken} doken
-     * @param {string} voucherURL
-     */
-    constructor(vvkid, vvkPublic, orks, sessKey, doken, voucherURL) {
+    orks: OrkInfo[];
+    sessKey: TideKey;
+    doken: string;
+    getVouchersFunction: ((request: string) => Promise<string>) | null;
+    voucherURL: string;
+
+    constructor(vvkid: string, vvkPublic: any, orks: OrkInfo[], sessKey: TideKey, doken: Doken, voucherURL: string) {
         this.vvkid = vvkid;
         this.vvkPublic = vvkPublic;
         this.orks = orks;
@@ -57,20 +50,12 @@ export default class dVVKSigningFlow {
         this.voucherURL = voucherURL;
 
     }
-    /**
-     * @param {(request: string) => Promise<string> } getVouchersFunction
-     * @returns {dVVKSigningFlow}
-     */
-    setVoucherRetrievalFunction(getVouchersFunction) {
+    setVoucherRetrievalFunction(getVouchersFunction: (request: string) => Promise<string>): dVVKSigningFlow {
         this.getVouchersFunction = getVouchersFunction;
         return this;
     }
 
-    /**
-     * @param {BaseTideRequest} request 
-     * @param {bool} waitForAll
-     */
-    async start(request, waitForAll = false) {
+    async start(request: BaseTideRequest, waitForAll: boolean = false) {
 
         const voucherFlow = new VoucherFlow(this.orks.map(o => o.orkPaymentPublic), this.voucherURL, "vendorsign");
         const pre_vouchers = voucherFlow.GetVouchers(this.getVouchersFunction);
