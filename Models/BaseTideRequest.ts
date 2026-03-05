@@ -1,4 +1,5 @@
-import { Doken } from "../Contracts/BaseContract";
+import { Doken as ContractDoken } from "../Contracts/BaseContract";
+import { Doken } from "./Doken";
 import { TideMemory } from "../Tools/TideMemory";
 import { Policy } from "./Policy";
 import { SHA512_Digest } from "../Cryptide/Hashing/Hash";
@@ -164,10 +165,8 @@ export default class BaseTideRequest {
 
     /**
      * Add an approval for this request. To be used for policy auth flow
-     * @param {Doken} doken 
-     * @param {Uint8Array} sig 
      */
-    addApproval(doken, sig) {
+    addApproval(doken: Doken, sig: Uint8Array) {
         // Ensure creation authorization has been added
         let res = {};
         if (!Serialization.TryGetValue(this.authorization, 0, res)) throw Error("Creation authorization hasn't been added yet");
@@ -212,7 +211,7 @@ export default class BaseTideRequest {
             let keepTheseDokensList = [];
             let keepTheseApprovalSigs = [];
             while (this.authorizer.TryGetValue(i, res)) {
-                const d = new Doken(res.result);
+                const d = new ContractDoken(res.result);
                 if (d.hasVuid(approvalVuid)) {
                     dokenWithVuidFound = {
                         index: i,

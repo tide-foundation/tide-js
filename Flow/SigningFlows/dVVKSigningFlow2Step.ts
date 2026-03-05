@@ -26,26 +26,19 @@ import { Doken } from "../../Models/Doken";
 import TideKey from "../../Cryptide/TideKey";
 
 export default class dVVKSigningFlow2Step {
-    vvkid: any;
+    vvkid: string;
     vvkPublic: any;
-    orks: any;
-    sessKey: any;
-    doken: any;
-    getVouchersFunction: any;
-    voucherURL: any;
-    vendorAction: any;
-    request: any;
+    orks: OrkInfo[];
+    sessKey: TideKey;
+    doken: string;
+    getVouchersFunction: ((request: string) => Promise<string>) | null;
+    voucherURL: string;
+    vendorAction: string;
+    request: BaseTideRequest;
     vouchers: any;
     preSignState: any;
-    /**
-     * @param {string} vvkid
-     * @param {Point} vvkPublic
-     * @param {OrkInfo[]} orks
-     * @param {TideKey} sessKey
-     * @param {Doken} doken
-     * @param {string} voucherURL
-     */
-    constructor(vvkid, vvkPublic, orks, sessKey, doken, voucherURL) {
+
+    constructor(vvkid: string, vvkPublic: any, orks: OrkInfo[], sessKey: TideKey, doken: Doken, voucherURL: string) {
         this.vvkid = vvkid;
         this.vvkPublic = vvkPublic;
         this.orks = orks;
@@ -62,11 +55,7 @@ export default class dVVKSigningFlow2Step {
         this.vendorAction = "vendorsign";
 
     }
-    /**
-     * @param {(request: string) => Promise<string> } getVouchersFunction
-     * @returns {dVVKSigningFlow}
-     */
-    setVoucherRetrievalFunction(getVouchersFunction) {
+    setVoucherRetrievalFunction(getVouchersFunction: (request: string) => Promise<string>) {
         this.getVouchersFunction = getVouchersFunction;
         return this;
     }
@@ -85,17 +74,12 @@ export default class dVVKSigningFlow2Step {
         if(!this.vouchers) throw 'Call preSign first';
         return this.vouchers;
     }
-    /**
-     * 
-     * @param {Uint8Array | Uint8Array[]} dynamicData 
-     * @returns {Promise<Uint8Array[]>}
-     */
-    async preSign(dynamicData){
+    async preSign(dynamicData: Uint8Array | Uint8Array[]): Promise<Uint8Array[]> {
         let dynDataisArray = false;
         if(dynamicData){
             if(!(dynamicData instanceof Uint8Array) && !(Array.isArray(dynamicData))) throw 'Dynamic data must be Uint8Array or Uint8Array[]';
             if(dynamicData instanceof Uint8Array){
-                this.request.dyanmicData = dynamicData;
+                this.request.setNewDynamicData(dynamicData);
             }else dynDataisArray = true;
         }
 
@@ -103,7 +87,7 @@ export default class dVVKSigningFlow2Step {
         const pre_vouchers = voucherFlow.GetVouchers(this.getVouchersFunction);
 
         const pre_clients = this.orks.map(info => new NodeClient(info.orkURL).AddBearerAuthorization(this.sessKey.get_private_component().rawBytes, this.sessKey.get_public_component().Serialize().ToString(), this.doken).EnableTideDH(info.orkPublic));
-        const clients = await Promise.all(pre_clients); 
+        const clients = await Promise.all(pre_clients);
 
         const { vouchers, k } = await pre_vouchers;
         this.vouchers = {
@@ -111,7 +95,7 @@ export default class dVVKSigningFlow2Step {
             ...vouchers
         }
 
-        const pre_PreSignResponses = clients.map((client, i) => client.PreSign(i, this.vvkid, dynDataisArray ? this.request.replicate().setNewDynamicData(dynamicData[i]) : this.request, vouchers.toORK(i)));
+        const pre_PreSignResponses = clients.map((client, i) => client.PreSign(i, this.vvkid, dynDataisArray ? this.request.replicate().setNewDynamicData((dynamicData as Uint8Array[])[i]) : this.request, vouchers.toORK(i)));
         const { fulfilledResponses, bitwise } = await WaitForNumberofORKs(this.orks, pre_PreSignResponses, "VVK", Threshold, null, clients);
         const GRj = PreSign(fulfilledResponses.map(f => f.GRis));
 
@@ -123,16 +107,12 @@ export default class dVVKSigningFlow2Step {
 
         return fulfilledResponses.map(f => f.AdditionalData);
     }
-    /**
-     * @param {Uint8Array | Uint8Array[]} dynamicData 
-     * @returns 
-     */
-    async sign(dynamicData){
+    async sign(dynamicData: Uint8Array | Uint8Array[]){
         let dynDataisArray = false;
         if(dynamicData){
             if(!(dynamicData instanceof Uint8Array) && !(Array.isArray(dynamicData))) throw 'Dynamic data must be Uint8Array or Uint8Array[]';
             if(dynamicData instanceof Uint8Array){
-                this.request.dyanmicData = dynamicData;
+                this.request.setNewDynamicData(dynamicData);
             }else {
                 if(dynamicData.length != this.preSignState.clients.length) throw Error("Supplied datas array must equal client amount");
                 dynDataisArray = true;
@@ -140,7 +120,7 @@ export default class dVVKSigningFlow2Step {
         }
         if(!this.preSignState) throw 'Execute preSign first';
 
-        const pre_SignResponses = this.preSignState.clients.map((client, i) => client.Sign(this.vvkid, dynDataisArray ? this.request.replicate().setNewDynamicData(dynamicData[i]) : this.request, this.preSignState.GRj, serializeBitArray(this.preSignState.bitwise)));
+        const pre_SignResponses = this.preSignState.clients.map((client, i) => client.Sign(this.vvkid, dynDataisArray ? this.request.replicate().setNewDynamicData((dynamicData as Uint8Array[])[i]) : this.request, this.preSignState.GRj, serializeBitArray(this.preSignState.bitwise)));
         const SignResponses = await Promise.all(pre_SignResponses);
         const Sj = SumS(SignResponses.map(s => s.Sij));
 

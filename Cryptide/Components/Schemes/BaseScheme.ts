@@ -17,9 +17,7 @@
 
 export default class BaseScheme{
     static get Name(): string { throw Error("Name not implemented"); }
-    /**@returns {(msg: Uint8Array, signature: Uint8Array, pub: BasePublicComponent) => Promise<(boolean)>} */
     static GetVerifyingFunction = (): any => { throw Error("Verifying function not implemented"); }
-    /**@returns {(msg: Uint8Array, priv: BasePrivateComponent) => Promise<(Uint8Array)>} */
     static GetSigningFunction = (): any => { throw Error("Signing function not implemented"); }
     static GetEncryptingFunction = (): any => { throw Error("Encrypting function not implemented"); }
 }

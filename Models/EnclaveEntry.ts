@@ -18,24 +18,15 @@
 import { base64ToBytes, bytesToBase64 } from "../Cryptide/Serialization";
 import KeyInfo from "./Infos/KeyInfo";
 export default class EnclaveEntry{
-    username: any;
-    persona: any;
-    expired: any;
-    userInfo: any;
-    orksBitwise: any;
-    selfRequesti: any;
-    sessKey: any;
+    username: string;
+    persona: string;
+    expired: bigint;
+    userInfo: KeyInfo;
+    orksBitwise: (0 | 1)[];
+    selfRequesti: string[];
+    sessKey: Uint8Array;
 
-    /**
-     * @param {string} username
-     * @param {string} persona
-     * @param {bigint} expired
-     * @param {KeyInfo} userInfo
-     * @param {(0|1)[]} orksBitwise
-     * @param {string[]} selfRequesti
-     * @param {Uint8Array} sessKey
-     */
-    constructor(username, persona, expired, userInfo, orksBitwise, selfRequesti, sessKey){
+    constructor(username: string, persona: string, expired: bigint, userInfo: KeyInfo, orksBitwise: (0 | 1)[], selfRequesti: string[], sessKey: Uint8Array){
         this.username = username;
         this.persona = persona;
         this.expired = expired;
@@ -55,7 +46,7 @@ export default class EnclaveEntry{
             sessKey: bytesToBase64(this.sessKey)
         });
     }
-    static from(data){
+    static from(data: string){
         const json = JSON.parse(data);
         const expired = BigInt(json.expired);
         const userInfo = KeyInfo.fromNativeTypeObject(json.userInfo); // includes uid + gCMK, ork URL + id + pubs 

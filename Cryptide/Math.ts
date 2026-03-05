@@ -25,22 +25,12 @@ const _0n = BigInt(0);
 const _1n = BigInt(1);
 const _2n = BigInt(2);
 
-/**
- * @param {bigint} a 
- * @param {bigint} b 
- * @returns {bigint}
- */
-export function mod(a, b = CURVE.n) {
+export function mod(a: bigint, b: bigint = CURVE.n): bigint {
 	var res = a % b;
 	return res >= BigInt(0) ? res : b + res;
 }
 
-/**
- * 
- * @param {bigint[]} numbers 
- * @returns 
- */
-export function median(numbers) {
+export function median(numbers: bigint[]) {
 	const sorted: any = Array.from(numbers).sort();
 	const middle = Math.floor(sorted.length / 2);
 
@@ -51,10 +41,7 @@ export function median(numbers) {
 	return sorted[middle];
 }
 
-/**
- * @returns {bigint}
- */
-export function RandomBigInt() {
+export function RandomBigInt(): bigint {
 	const buf = new Uint8Array(32);
 	window.crypto.getRandomValues(buf);
 	return mod(BigIntFromByteArray(buf), CURVE.n);
@@ -63,29 +50,16 @@ export function RandomBigInt() {
 export function GenSessKey(){
 	return BigIntToByteArray(RandomBigInt());
 }
-/**
- * @param {Point} gPassPRISM 
- * @returns 
- */
-export async function CreateGPrismAuth(gPassPRISM){
+export async function CreateGPrismAuth(gPassPRISM: Point){
 	return Point.BASE.mul(await gPassPRISM.hash());
 }
 
-/**
- * 
- * @param {bigint | Uint8Array} a 
- */
-export function GetPublic(a){
+export function GetPublic(a: bigint | Uint8Array){
 	let num = typeof(a) == 'bigint'? a : BigIntFromByteArray(a);
 	return Point.BASE.mul(num);
 }
 
-/**
- * 
- * @param {number[]} arr 
- * @returns 
- */
-export function Min(arr){
+export function Min(arr: number[]){
 	let minValue = arr[0]; // Initialize with the first element
 
 	for (let i = 1; i < arr.length; i++) {
@@ -96,12 +70,7 @@ export function Min(arr){
 	return minValue;
 }
 
-/**
- * @param {bigint} number 
- * @param {bigint} modulo 
- * @returns {bigint}
- */
-export function mod_inv(number, modulo = CURVE.n) {
+export function mod_inv(number: bigint, modulo: bigint = CURVE.n): bigint {
 	if (number === _0n || modulo <= _0n) {
 		throw new Error(`invert: expected positive integers, got n=${number} mod=${modulo}`);
 	}
@@ -122,10 +91,6 @@ export function mod_inv(number, modulo = CURVE.n) {
 	return mod(x, modulo);
 }
 
-/**
-* 
-* @param {Point[]} points 
-*/
-export function SumPoints(points) {
+export function SumPoints(points: Point[]) {
 	return points.reduce((sum, next) => sum.add(next));
 }
