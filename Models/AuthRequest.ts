@@ -22,13 +22,15 @@ export default class AuthRequest{
     keyPub: string;
     expiry: bigint;
     sessionId: string;
+    clientDPoPKey: string | undefined;
 
-    constructor(keyId: string, purpose: string, keyPub: string, expiry: bigint, sessionId: string = null){
+    constructor(keyId: string, purpose: string, keyPub: string, expiry: bigint, sessionId: string = null, clientDPoPKey: string = null){
         this.keyId = keyId
         this.purpose = purpose
         this.keyPub = keyPub
         this.expiry = expiry // in seconds
         this.sessionId = sessionId
+        this.clientDPoPKey = clientDPoPKey;
     }
 
     toUint8Array(){
@@ -40,17 +42,18 @@ export default class AuthRequest{
             'Purpose': this.purpose,
             'Key': this.keyPub,
             'Expiry': this.expiry.toString(),
-            'SessionId': !this.sessionId ? "" : this.sessionId // SessionId is optional (although mandatory for apps like keycloak)
+            'SessionId': !this.sessionId ? "" : this.sessionId, // SessionId is optional (although mandatory for apps like keycloak)
+            'ClientDPoPKey': this.clientDPoPKey ? this.clientDPoPKey : ""
         };
         return JSON.stringify(json);
     }
 
-    static new(keyId: string, purpose: string, clientKey: string, expiry: bigint, sessionId: string = null){
-        return new AuthRequest(keyId, purpose, clientKey, expiry, sessionId); // 30 seconds
+    static new(keyId: string, purpose: string, clientKey: string, expiry: bigint, sessionId: string = null, clientDPoPKey:string = null){
+        return new AuthRequest(keyId, purpose, clientKey, expiry, sessionId, clientDPoPKey); // 30 seconds
     }
 
     static from(data: string){
         const json = JSON.parse(data);
-        return new AuthRequest(json.User, json.Purpose, json.Key, BigInt(json.Expiry), json.SessionId);
+        return new AuthRequest(json.User, json.Purpose, json.Key, BigInt(json.Expiry), json.SessionId, json.ClientDPoPKey);
     }
 }
