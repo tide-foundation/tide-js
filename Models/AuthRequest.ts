@@ -22,15 +22,15 @@ export default class AuthRequest{
     keyPub: string;
     expiry: bigint;
     sessionId: string;
-    clientDPoPKey: string | undefined;
+    dPoPApproval: string | undefined;
 
-    constructor(keyId: string, purpose: string, keyPub: string, expiry: bigint, sessionId: string = null, clientDPoPKey: string = null){
+    constructor(keyId: string, purpose: string, keyPub: string, expiry: bigint, sessionId: string = null, dPopApproval: string = null){
         this.keyId = keyId
         this.purpose = purpose
         this.keyPub = keyPub
         this.expiry = expiry // in seconds
         this.sessionId = sessionId
-        this.clientDPoPKey = clientDPoPKey;
+        this.dPoPApproval = dPopApproval;
     }
 
     toUint8Array(){
@@ -43,7 +43,7 @@ export default class AuthRequest{
             'Key': this.keyPub,
             'Expiry': this.expiry.toString(),
             'SessionId': !this.sessionId ? "" : this.sessionId, // SessionId is optional (although mandatory for apps like keycloak)
-            'ClientDPoPKey': this.clientDPoPKey ? this.clientDPoPKey : ""
+            'DPoPApproval': this.dPoPApproval ? this.dPoPApproval : ""
         };
         return JSON.stringify(json);
     }
