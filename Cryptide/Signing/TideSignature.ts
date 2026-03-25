@@ -16,7 +16,7 @@
 //
 
 import { Serialization } from "../index";
-import { ConcatUint8Arrays, StringToUint8Array } from "../Serialization";
+import { ConcatUint8Arrays, numberToUint8Array, StringToUint8Array } from "../Serialization";
 
 export class TideSignatureFormat{
     Name: string;
@@ -107,6 +107,15 @@ export class TestSignatureFormat extends TideSignatureFormat{
     Version = "1";
     constructor(message){
         super(message);
+    }
+}
+
+export class TideWitnessSignatureFormat extends TideSignatureFormat{
+    Name = "TideWitness";
+    Version = "1";
+    constructor(timestamp: number, message: Uint8Array){
+        const combined = ConcatUint8Arrays([numberToUint8Array(timestamp), message]);
+        super(combined);
     }
 }
 
