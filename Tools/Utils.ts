@@ -21,7 +21,9 @@ export const Threshold = 14;
 export const Max = 20;
 
 export function CurrentTime(){
-	return Math.floor(Date.now() / 1000); // this will be affected by the 2038 problem
+    const timeSkew = window.localStorage?.getItem("timeSkew");
+    const now = Math.floor(Date.now() / 1000);
+    return timeSkew ? now + Number(timeSkew) : now;
 }
 
 async function PromiseRace(promises: Promise<any>[], keyType: string, amountRequired: number, customTimeout: number = null, customPromiseChecker: Function = null) {
