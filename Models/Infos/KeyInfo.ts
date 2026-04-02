@@ -73,6 +73,7 @@ export default class KeyInfo{
     }
 
     static fromNativeTypeObject(json: any){
+        if(json.UserS === undefined || json.UserGR === undefined || json.UserOrksBitwise === undefined) throw Error("Wipe Entry");
         return new KeyInfo(
             json.UserId,
             Point.fromBase64(json.UserPublic),
