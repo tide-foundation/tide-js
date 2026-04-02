@@ -15,8 +15,12 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
+import { Point } from "../Cryptide/Ed25519";
+import { base64ToBytes, deserializeBitArray } from "../Cryptide/Serialization";
+import { verifyRaw } from "../Cryptide/Signing/EdDSA";
 import KeyInfo from "../Models/Infos/KeyInfo";
 import OrkInfo from "../Models/Infos/OrkInfo";
+import { sortORKs } from "../Tools/Utils";
 import ClientBase from "./ClientBase"
 
 export default class NetworkClient extends ClientBase {
@@ -65,6 +69,24 @@ export default class NetworkClient extends ClientBase {
         }catch{
             throw Error("simulator.invalidAccount");
         }
-        return KeyInfo.from(responseData);
+        const keyInfo = KeyInfo.from(responseData);
+
+        // Verify accountability signature
+        const sortedOrks = sortORKs(keyInfo.OrkInfo);
+        const bitArray = deserializeBitArray(keyInfo.OrksBitwise);
+        let markedOrkPublicSum = Point.ZERO;
+        for(let i = 0; i < sortedOrks.length; i++){
+            if(bitArray[i] === 1){
+                markedOrkPublicSum = markedOrkPublicSum.add(sortedOrks[i].orkPublic);
+            }
+        }
+        const accountableKey = keyInfo.UserPublic.add(markedOrkPublicSum);
+        const M_bytes = base64ToBytes(keyInfo.UserM);
+        const verified = await verifyRaw(keyInfo.CommitS, keyInfo.CommitR, accountableKey, M_bytes);
+        if(!verified){
+            throw new Error("UserInfo signature verification failed");
+        }
+
+        return keyInfo;
     }
 }
