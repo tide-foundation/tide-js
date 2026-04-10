@@ -1,6 +1,6 @@
 {
   "name": "@tideorg/js",
-  "version": "0.0.1",
+  "version": "0.13.27",
   "description": "Browser side modules required to interact with the Tide's Cybersecurity Fabric.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
