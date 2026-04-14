@@ -17,8 +17,8 @@
 
 import OrkInfo from "../Models/Infos/OrkInfo";
 
-export const Threshold = 14;
-export const Max = 20;
+export const Threshold = 3;
+export const Max = 5;
 
 export function CurrentTime(){
     const timeSkew = window.localStorage?.getItem("timeSkew");
