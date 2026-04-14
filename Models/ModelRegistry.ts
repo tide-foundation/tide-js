@@ -347,19 +347,16 @@ class ServerCertSignRequestBuilder extends HumanReadableModelBuilder {
     getDetailsMap(): any {
         let summary: any = {};
 
-        // Extract what we can from DynamicData
+        // DynamicData is JSON bytes, parse as string
         if (this.request && this.request.dyanmicData && this.request.dyanmicData.length > 0) {
-            let resultObj: any = { result: undefined };
-            let index = 0;
-            const fields = ["realm", "clientId", "instanceId", "spiffeId"];
-            for (const field of fields) {
-                if (TryGetValue(this.request.dyanmicData, index, resultObj)) {
-                    try {
-                        summary[field] = StringFromUint8Array(resultObj.result);
-                    } catch { /* skip non-string fields */ }
-                }
-                index++;
-            }
+            try {
+                const jsonStr = new TextDecoder().decode(this.request.dyanmicData);
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.realm) summary["Realm"] = parsed.realm;
+                if (parsed.clientId) summary["Client ID"] = parsed.clientId;
+                if (parsed.instanceId) summary["Instance ID"] = parsed.instanceId;
+                if (parsed.spiffeId) summary["SPIFFE ID"] = parsed.spiffeId;
+            } catch { /* DynamicData not parseable as JSON */ }
         }
 
         return summary;
@@ -373,38 +370,6 @@ class ServerCertSignRequestBuilder extends HumanReadableModelBuilder {
     }
 }
 
-class VrkEncSignRequestBuilder extends HumanReadableModelBuilder {
-    _name = "vrkEnc";
-    _version = "1";
-    _humanReadableName = "Encrypt with Vendor Rotating Key";
-    get _id() { return this._name + ":" + this._version; }
-    constructor(data, expiry) {
-        super(data, expiry);
-        if (data) {
-            let resultObj = { result: undefined };
-            let i = 0;
-            while (TryGetValue(this.request.draft, i, resultObj)) { i++; }
-            this._humanReadableName = `Encrypt ${i} piece${i != 1 ? "s" : ""} of data with VRK`;
-        }
-    }
-}
-
-class VrkDecSignRequestBuilder extends HumanReadableModelBuilder {
-    _name = "vrkDec";
-    _version = "1";
-    _humanReadableName = "Decrypt with Vendor Rotating Key";
-    get _id() { return this._name + ":" + this._version; }
-    constructor(data, expiry) {
-        super(data, expiry);
-        if (data) {
-            let resultObj = { result: undefined };
-            let i = 0;
-            while (TryGetValue(this.request.draft, i, resultObj)) { i++; }
-            this._humanReadableName = `Decrypt ${i} piece${i != 1 ? "s" : ""} of data with VRK`;
-        }
-    }
-}
-
 const modelBuildersMap = {
     [new UserContextSignRequestBuilder(null as any, null as any)._id]: UserContextSignRequestBuilder,
     [new OffboardSignRequestBuilder(null as any, null as any)._id]: OffboardSignRequestBuilder,
@@ -415,6 +380,4 @@ const modelBuildersMap = {
     [new PolicyEnabledEncryptionRequestBuilder(null as any, null as any)._id]: PolicyEnabledEncryptionRequestBuilder,
     [new PolicyEnabledDecryptionRequestBuilder(null as any, null as any)._id]: PolicyEnabledDecryptionRequestBuilder,
     [new ServerCertSignRequestBuilder(null as any, null as any)._id]: ServerCertSignRequestBuilder,
-    [new VrkEncSignRequestBuilder(null as any, null as any)._id]: VrkEncSignRequestBuilder,
-    [new VrkDecSignRequestBuilder(null as any, null as any)._id]: VrkDecSignRequestBuilder,
 }
