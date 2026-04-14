@@ -336,6 +336,40 @@ class TestInitSignRequestBuilder extends HumanReadableModelBuilder {
     }
 }
 
+class ServerCertSignRequestBuilder extends HumanReadableModelBuilder {
+    _name = "ServerCert";
+    _version = "1";
+    _humanReadableName = "Server Certificate";
+    get _id() { return this._name + ":" + this._version; }
+    constructor(data, reqId) {
+        super(data, reqId);
+    }
+    getDetailsMap(): any {
+        let summary: any = {};
+
+        // DynamicData is JSON bytes, parse as string
+        if (this.request && this.request.dyanmicData && this.request.dyanmicData.length > 0) {
+            try {
+                const jsonStr = new TextDecoder().decode(this.request.dyanmicData);
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.realm) summary["Realm"] = parsed.realm;
+                if (parsed.clientId) summary["Client ID"] = parsed.clientId;
+                if (parsed.instanceId) summary["Instance ID"] = parsed.instanceId;
+                if (parsed.spiffeId) summary["SPIFFE ID"] = parsed.spiffeId;
+            } catch { /* DynamicData not parseable as JSON */ }
+        }
+
+        return summary;
+    }
+    getRequestDataJson() {
+        let data: any = {};
+        if (this._draft && this._draft.length > 0) {
+            data["TBS Certificate (DER)"] = Bytes2Hex(this._draft);
+        }
+        return data;
+    }
+}
+
 const modelBuildersMap = {
     [new UserContextSignRequestBuilder(null as any, null as any)._id]: UserContextSignRequestBuilder,
     [new OffboardSignRequestBuilder(null as any, null as any)._id]: OffboardSignRequestBuilder,
@@ -345,4 +379,5 @@ const modelBuildersMap = {
     [new HederaSignRequestBuilder(null as any, null as any)._id]: HederaSignRequestBuilder,
     [new PolicyEnabledEncryptionRequestBuilder(null as any, null as any)._id]: PolicyEnabledEncryptionRequestBuilder,
     [new PolicyEnabledDecryptionRequestBuilder(null as any, null as any)._id]: PolicyEnabledDecryptionRequestBuilder,
+    [new ServerCertSignRequestBuilder(null as any, null as any)._id]: ServerCertSignRequestBuilder,
 }
