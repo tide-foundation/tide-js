@@ -337,7 +337,7 @@ class TestInitSignRequestBuilder extends HumanReadableModelBuilder {
 }
 
 class ServerCertSignRequestBuilder extends HumanReadableModelBuilder {
-    _name = "sCert";
+    _name = "ServerCert";
     _version = "1";
     _humanReadableName = "Server Certificate";
     get _id() { return this._name + ":" + this._version; }
