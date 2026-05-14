@@ -16,9 +16,33 @@
 //
 
 import OrkInfo from "../Models/Infos/OrkInfo";
+import { TideError, TideErrorDetail } from "../Errors/TideError";
+import { TideJsErrorCodes } from "../Errors/codes";
 
 export const Threshold = 14;
 export const Max = 20;
+
+/**
+ * Reduce an arbitrary thrown value to a {@link TideErrorDetail} entry so the
+ * aggregate threshold-failure error can surface per-ORK context (URL, code,
+ * displayMessage) without forcing callers to introspect untyped exceptions.
+ */
+function _toDetail(err: unknown): TideErrorDetail {
+    if (TideError.isTideError(err)) {
+        return {
+            url: err.url,
+            endpoint: err.endpoint,
+            method: err.method,
+            code: err.code,
+            displayMessage: err.displayMessage,
+            cause: err,
+        };
+    }
+    if (err instanceof Error) {
+        return { displayMessage: err.message, cause: err };
+    }
+    return { displayMessage: String(err), cause: err };
+}
 
 export function CurrentTime(){
     const timeSkew = window.localStorage?.getItem("timeSkew");
@@ -92,14 +116,55 @@ async function PromiseRace(promises: Promise<any>[], keyType: string, amountRequ
     if (fullyCompletedPromises >= amountRequired) {
         return results; // Return results if threshold amount is met
     } else {
+        // Keep the existing developer-visible breadcrumb (per-error stacks
+        // still print individually) so anyone debugging in DevTools can
+        // expand each failure. The THROWN value, however, is now a single
+        // aggregate TideError so callers (admin-ui, login pages, …) get one
+        // structured thing to render instead of N opaque exceptions.
+        if (failed.length > 0) {
+            console.log("Errors in flow:");
+            failed.forEach(f => console.error(f));
+        }
+
+        // Preserve the throttle special-case verbatim — admin-ui already
+        // branches on this string to show the "too many attempts" toast.
         if (failed.some(ex => ex === "Too many attempts")) {
-            throw Error("enclave.throttled");
-        } else if(failed.length > 0){
-            throw Error(failed[0]);
-        }else if (timeoutReached) {
-            throw Error("enclave.thresholdTimeoutFailure");
+            throw new TideError({
+                code: TideJsErrorCodes.NET_THRESHOLD_FAILURE,
+                displayMessage: "enclave.throttled",
+                source: "Tools/Utils.ts:PromiseRace",
+                details: failed.map(_toDetail),
+                cause: failed[0],
+            });
+        }
+
+        const details = failed.map(_toDetail);
+        const got = fullyCompletedPromises;
+        const required = amountRequired;
+        const totalAttempted = initLength;
+
+        if (failed.length > 0) {
+            throw new TideError({
+                code: TideJsErrorCodes.NET_THRESHOLD_FAILURE,
+                displayMessage: `Could not reach enough ${keyType} ORKs (got ${got} of ${required} required, ${failed.length} of ${totalAttempted} failed)`,
+                source: "Tools/Utils.ts:PromiseRace",
+                details,
+                cause: failed[0],
+            });
+        } else if (timeoutReached) {
+            throw new TideError({
+                code: TideJsErrorCodes.NET_THRESHOLD_FAILURE,
+                displayMessage: `enclave.thresholdTimeoutFailure (got ${got} of ${required} required ${keyType} ORKs before timeout)`,
+                source: "Tools/Utils.ts:PromiseRace",
+                details,
+            });
         } else {
-            throw Error(keyType + " Orks for this account are down");
+            throw new TideError({
+                code: TideJsErrorCodes.NET_THRESHOLD_FAILURE,
+                displayMessage: `${keyType} ORKs for this account are down (got ${got} of ${required} required)`,
+                source: "Tools/Utils.ts:PromiseRace",
+                details,
+            });
         }
     }
 }
@@ -178,11 +243,15 @@ export async function WaitForNumberofORKs(orkList_Ref: OrkInfo[], pre_responses:
 		newOptArray.forEach(el => optionalArray.push(el));
 	} 
 	// remove index field from json, return the OTHER (unknown to us) field
-	const cleanedResponses = sortedResponses.map(resp => {
+	const cleanedResponses = sortedResponses.map((resp, idx) => {
 		for(let key in resp){
 			if(resp.hasOwnProperty(key) && key !== "index" && key !== "tag") return resp[key];
 		}
-		throw Error("WaitForThresholdNumberofORKs should only be used on NodeClient responses that return an index in the JSON");
+		throw new TideError({
+			code: TideJsErrorCodes.PARSE_NODECLIENT_RESPONSE_SHAPE,
+			displayMessage: `WaitForThresholdNumberofORKs got unexpected response shape: keyType=${keyType}, index=${idx}, responseKeys=[${Object.keys(resp).join(',')}]`,
+			source: "Tools/Utils.ts:250",
+		});
 	});
 	return {fulfilledResponses: cleanedResponses, bitwise};
 }

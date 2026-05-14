@@ -18,24 +18,32 @@
 import KeyInfo from "../Models/Infos/KeyInfo";
 import OrkInfo from "../Models/Infos/OrkInfo";
 import ClientBase from "./ClientBase"
+import { TideError } from "../Errors/TideError";
+import { TideJsErrorCodes } from "../Errors/codes";
 
 export default class NetworkClient extends ClientBase {
     constructor(url: string = null){
         if(url == null) super(window.location.origin);
         else super(url); // no gaurantee that the home ork will be part of selected orks, we need a selected ork url here for uncommitted entries
-        
+
     }
 
     async FindReservers(uid: string): Promise<OrkInfo[]> {
-        const response = await this._get(`/Network/Authentication/Users/GetReservers/${uid}`);
+        const endpoint = `/Network/Authentication/Users/GetReservers/${uid}`;
+        const response = await this._get(endpoint);
         try{
             const responseData = await this._handleError(response, "Find Reservers");
             const formattedResponse = JSON.parse(responseData);
-            if(formattedResponse.length == 0) throw Error("Username forbidden");
+            if(formattedResponse.length == 0) throw new TideError({
+                code: TideJsErrorCodes.VAL_UID_FORBIDDEN,
+                displayMessage: `Username forbidden (uid prefix=${(uid ?? '').slice(0, 12)}, endpoint=${endpoint ?? this.url})`,
+                source: "Clients/NetworkClient.ts:34",
+            });
             const returnedResponse = formattedResponse.map(orkEntry => OrkInfo.from(orkEntry));
-            return returnedResponse; 
+            return returnedResponse;
         }catch(err){
-            throw Error(err)
+            // If it's already a TideError, propagate verbatim — don't lose code/url/cause.
+            throw err;
         }
     }
 
@@ -62,8 +70,13 @@ export default class NetworkClient extends ClientBase {
         let responseData;
         try{
             responseData = await this._handleError(response, "Get Key Info");
-        }catch{
-            throw Error("simulator.invalidAccount");
+        }catch(err){
+            throw new TideError({
+                code: TideJsErrorCodes.VAL_INVALID_ACCOUNT,
+                displayMessage: "simulator.invalidAccount",   // preserve the sentinel string in displayMessage for any callers matching on .message
+                source: "Clients/NetworkClient.ts:66",
+                cause: err,                                   // preserve the upstream TideError if there is one
+            });
         }
         return KeyInfo.from(responseData);
     }

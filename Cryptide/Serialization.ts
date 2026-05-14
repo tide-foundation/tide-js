@@ -16,6 +16,8 @@
 //
 
 import { CurrentTime } from "../Tools/Utils";
+import { TideError } from "../Errors/TideError";
+import { TideJsErrorCodes } from "../Errors/codes";
 import { Ed25519PublicComponent } from "./Components/Schemes/Ed25519/Ed25519Components";
 import { etc, Point } from "./Ed25519";
 import { SHA256_Digest } from "./Hashing/Hash";
@@ -88,7 +90,11 @@ export class GVRK_Pack{
 }
 export function CreateTideMemory(initialValue: Uint8Array, totalLength: number, version: number = 1) {
     if (totalLength < initialValue.length + 4) {
-        throw new Error("Not enough space to allocate requested data. Make sure to request more space in totalLength than length of InitialValue plus 4 bytes for length.");
+        throw new TideError({
+            code: TideJsErrorCodes.PARSE_BUFFER_OVERFLOW,
+            displayMessage: `Not enough space to allocate requested data. Make sure to request more space in totalLength than length of InitialValue plus 4 bytes for length. (totalLength=${totalLength}, initialValue.length=${initialValue.length}, required>=${initialValue.length + 4})`,
+            source: "Cryptide/Serialization.ts:CreateTideMemory",
+        });
     }
 
     // Total buffer length is 4 (version) + totalLength
@@ -130,7 +136,11 @@ export function WriteValue(memory: Uint8Array, index: number, value: Uint8Array)
     // Navigate through existing data segments
     for (let i = 0; i < index; i++) {
         if (dataLocationIndex + 4 > memory.length) {
-            throw new RangeError("Index out of range.");
+            throw new TideError({
+                code: TideJsErrorCodes.PARSE_INDEX_OUT_OF_RANGE,
+                displayMessage: `Index out of range: while seeking to segment ${index} at sub-index ${i}, offset ${dataLocationIndex}+4 exceeds memory length ${memory.length}`,
+                source: "Cryptide/Serialization.ts:WriteValue",
+            });
         }
 
         // Read data length at current position
@@ -142,7 +152,11 @@ export function WriteValue(memory: Uint8Array, index: number, value: Uint8Array)
 
     // Check if there's enough space to write the value
     if (dataLocationIndex + 4 + value.length > memory.length) {
-        throw new RangeError("Not enough space to write value");
+        throw new TideError({
+            code: TideJsErrorCodes.PARSE_BUFFER_OVERFLOW,
+            displayMessage: `Not enough space to write value: offset ${dataLocationIndex}+4+${value.length} exceeds memory length ${memory.length}`,
+            source: "Cryptide/Serialization.ts:WriteValue",
+        });
     }
 
     // Check if data has already been written to this index
@@ -166,7 +180,11 @@ export function GetValue(a: Uint8Array, index: number) {
     const buffer = a;
 
     if (buffer.length < 4) {
-        throw new Error("Insufficient data to read.");
+        throw new TideError({
+            code: TideJsErrorCodes.PARSE_INSUFFICIENT_DATA,
+            displayMessage: `Insufficient data to read: buffer length is ${buffer.length}, need at least 4 bytes for header`,
+            source: "Cryptide/Serialization.ts:GetValue",
+        });
     }
 
     // Create a DataView for reading integers in little-endian format
@@ -180,7 +198,11 @@ export function GetValue(a: Uint8Array, index: number) {
     for (let i = 0; i < index; i++) {
         // Check if there's enough data to read the length of the next segment
         if (dataLocationIndex + 4 > buffer.length) {
-            throw new RangeError("Index out of range.");
+            throw new TideError({
+                code: TideJsErrorCodes.PARSE_INDEX_OUT_OF_RANGE,
+                displayMessage: `Index out of range: requested segment ${index}, ran out at sub-index ${i}, offset ${dataLocationIndex}+4 exceeds buffer length ${buffer.length}`,
+                source: "Cryptide/Serialization.ts:GetValue",
+            });
         }
 
         const nextDataLength = dataView.getInt32(dataLocationIndex, true);
@@ -189,7 +211,11 @@ export function GetValue(a: Uint8Array, index: number) {
 
     // Check if there's enough data to read the length of the final segment
     if (dataLocationIndex + 4 > buffer.length) {
-        throw new RangeError("Index out of range.");
+        throw new TideError({
+            code: TideJsErrorCodes.PARSE_INDEX_OUT_OF_RANGE,
+            displayMessage: `Index out of range: requested segment ${index}, offset ${dataLocationIndex}+4 (length header) exceeds buffer length ${buffer.length}`,
+            source: "Cryptide/Serialization.ts:GetValue",
+        });
     }
 
     const finalDataLength = dataView.getInt32(dataLocationIndex, true);
@@ -197,7 +223,11 @@ export function GetValue(a: Uint8Array, index: number) {
 
     // Check if the final data segment is within bounds
     if (dataLocationIndex + finalDataLength > buffer.length) {
-        throw new RangeError("Index out of range.");
+        throw new TideError({
+            code: TideJsErrorCodes.PARSE_INDEX_OUT_OF_RANGE,
+            displayMessage: `Index out of range: requested segment ${index}, payload offset ${dataLocationIndex}+${finalDataLength} exceeds buffer length ${buffer.length}`,
+            source: "Cryptide/Serialization.ts:GetValue",
+        });
     }
 
     return buffer.subarray(dataLocationIndex, dataLocationIndex + finalDataLength);

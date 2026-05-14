@@ -20,6 +20,8 @@ import ClientBase from "./ClientBase";
 import { BigIntFromByteArray, ConcatUint8Arrays, CreateTideMemory, CreateTideMemoryFromArray, GetValue, StringToUint8Array, base64ToBytes, bytesToBase64 } from "../Cryptide/Serialization";
 import BaseTideRequest from "../Models/BaseTideRequest";
 import { Point } from "../Cryptide/Ed25519";
+import { TideError } from "../Errors/TideError";
+import { TideJsErrorCodes } from "../Errors/codes";
 
 export default class NodeClient extends ClientBase {
     enabledTideDH: boolean;
@@ -38,13 +40,21 @@ export default class NodeClient extends ClientBase {
     }
 
     async EnableTideDH(orkPublic: Point, gSessKey?, sessKey?) {
-        if(!this.sessionKeyPrivateRaw) throw Error("Add a session key to the client first");
+        if (!this.sessionKeyPrivateRaw) throw new TideError({
+            code: TideJsErrorCodes.VAL_MISSING_SESSION_KEY,
+            displayMessage: "Add a session key to the client first",
+            source: "Clients/NodeClient.ts:EnableTideDH",
+        });
         this.enabledTideDH = true;
         this.DHKey = await Encryption.DH.computeSharedKey(orkPublic, this.sessionKeyPrivateRaw);
         return this;
     }
     async PreSign(index: number, vuid: string, request: BaseTideRequest, voucher: string) {
-        if (!this.enabledTideDH) throw Error("TideDH must be enabled");
+        if (!this.enabledTideDH) throw new TideError({
+            code: TideJsErrorCodes.VAL_MISSING_SESSION_KEY,
+            displayMessage: "TideDH must be enabled",
+            source: "Clients/NodeClient.ts:PreSign",
+        });
         const encrypted = await Encryption.AES.encryptData(CreateTideMemoryFromArray([request.encode()]), this.DHKey);
         const data = this._createFormData(
             {
@@ -59,7 +69,11 @@ export default class NodeClient extends ClientBase {
         const responseData = await this._handleError(response, 'PreSign');
         const decrypted = await Encryption.AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
         const GRSection = GetValue(decrypted, 0);
-        if (GRSection.length % 32 != 0) throw new Error("Unexpected response legnth. Must be divisible by 32");
+        if (GRSection.length % 32 != 0) throw new TideError({
+            code: TideJsErrorCodes.PARSE_UNKNOWN_FORMAT,
+            displayMessage: "Unexpected response length. Must be divisible by 32",
+            source: "Clients/NodeClient.ts:PreSign",
+        });
         let GRis = [];
         for (let i = 0; i < GRSection.length; i += 32) {
             GRis.push(Point.fromBytes(GRSection.slice(i, i + 32)));
@@ -76,8 +90,16 @@ export default class NodeClient extends ClientBase {
     }
 
     async Sign(vuid: string, request: BaseTideRequest, GRs: Point[], bitwise: Uint8Array, sessId?: Uint8Array) {
-        if (!this.enabledTideDH) throw Error("TideDH must be enabled");
-        if (!this.orkCacheId) throw Error("Call PreSign first");
+        if (!this.enabledTideDH) throw new TideError({
+            code: TideJsErrorCodes.VAL_MISSING_SESSION_KEY,
+            displayMessage: "TideDH must be enabled",
+            source: "Clients/NodeClient.ts:Sign",
+        });
+        if (!this.orkCacheId) throw new TideError({
+            code: TideJsErrorCodes.VAL_MISSING_SESSION_KEY,
+            displayMessage: "Call PreSign first",
+            source: "Clients/NodeClient.ts:Sign",
+        });
         const payload = CreateTideMemoryFromArray([
             request.encode(),
             ConcatUint8Arrays([new Uint8Array([GRs.length]), ...GRs.map(r => r.toRawBytes())]),
@@ -109,7 +131,11 @@ export default class NodeClient extends ClientBase {
         }
     }
     async Decrypt(index: number, vuid: string, request: BaseTideRequest, voucher: string){
-        if (!this.enabledTideDH) throw Error("TideDH must be enabled");
+        if (!this.enabledTideDH) throw new TideError({
+            code: TideJsErrorCodes.VAL_MISSING_SESSION_KEY,
+            displayMessage: "TideDH must be enabled",
+            source: "Clients/NodeClient.ts:Decrypt",
+        });
         const encrypted = await Encryption.AES.encryptData(CreateTideMemoryFromArray([request.encode()]), this.DHKey);
         const data = this._createFormData(
             {
@@ -123,7 +149,11 @@ export default class NodeClient extends ClientBase {
         const response = await this._post(`/Authentication/Key/v1/Decrypt?vuid=${vuid}`, data);
         const responseData = await this._handleError(response, 'Decrypt');
         const decrypted = await Encryption.AES.decryptDataRawOutput(base64ToBytes(responseData), this.DHKey);
-        if (decrypted.length % 32 != 0) throw new Error("Unexpected response legnth. Must be divisible by 32");
+        if (decrypted.length % 32 != 0) throw new TideError({
+            code: TideJsErrorCodes.PARSE_UNKNOWN_FORMAT,
+            displayMessage: "Unexpected response length. Must be divisible by 32",
+            source: "Clients/NodeClient.ts:Decrypt",
+        });
         let appliedC1s = [];
         for (let i = 0; i < decrypted.length; i += 32) {
             appliedC1s.push(Point.fromBytes(decrypted.slice(i, i + 32)));
@@ -156,11 +186,18 @@ export default class NodeClient extends ClientBase {
             "timestamp": timestamp,
             "timestampSig": timestampSig
         });
-        const response = await this._postSilent(`/Payer/License/getLicenseDetails?obfGVVK=${vendorId}`, data);
+        const endpoint = `/Payer/License/getLicenseDetails?obfGVVK=${vendorId}`;
+        const response = await this._postSilent(endpoint, data);
         const responseData = await response.text();
         if (responseData.startsWith("--FAILED--")) {
-            console.log("Error getting license details: " + responseData)
-            return;
+            throw new TideError({
+                code: TideJsErrorCodes.PROXY_UPSTREAM_ERROR,
+                displayMessage: `Upstream returned an error for license-details lookup`,
+                endpoint: endpoint,
+                url: this.url + endpoint,
+                source: "Clients/NodeClient.ts:192",
+                cause: new Error(typeof responseData === "string" ? responseData.slice(0, 256) : JSON.stringify(responseData ?? '').slice(0, 256)),
+            });
         }
         return responseData;
     }
@@ -171,11 +208,18 @@ export default class NodeClient extends ClientBase {
             "timestamp": timestamp,
             "timestampSig": timestampSig
         });
-        const response = await this._postSilent(`/Payer/License/GetSubscriptionStatus?obfGVVK=${vendorId}`, data);
+        const endpoint = `/Payer/License/GetSubscriptionStatus?obfGVVK=${vendorId}`;
+        const response = await this._postSilent(endpoint, data);
         const responseData = await response.text();
         if (responseData.startsWith("--FAILED--")) {
-            console.log("Error getting license details: " + responseData)
-            return;
+            throw new TideError({
+                code: TideJsErrorCodes.PROXY_UPSTREAM_ERROR,
+                displayMessage: `Upstream returned an error for license-details lookup`,
+                endpoint: endpoint,
+                url: this.url + endpoint,
+                source: "Clients/NodeClient.ts:207",
+                cause: new Error(typeof responseData === "string" ? responseData.slice(0, 256) : JSON.stringify(responseData ?? '').slice(0, 256)),
+            });
         }
 
         const status = responseData.toLowerCase() === "active" ? "upcoming renewal" : responseData.toLowerCase();

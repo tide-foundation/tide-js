@@ -17,13 +17,29 @@
 
 import { Point } from "../Cryptide/Ed25519";
 import { mod } from "../Cryptide/Math";
+import { TideError } from "../Errors/TideError";
+import { TideJsErrorCodes } from "../Errors/codes";
 
 export function PreSign(GRij: Point[][]){
-    if(!GRij.every(Gri => Gri.length == GRij[0].length)) throw new Error("Orks returned different amount of Grs");
+    if(!GRij.every(Gri => Gri.length == GRij[0].length)) {
+        const arrayOfLengths = GRij.map(arr => arr.length);
+        throw new TideError({
+            code: TideJsErrorCodes.CRYPTO_ORK_ARRAY_LENGTH_MISMATCH,
+            displayMessage: `ORK array length mismatch (GRs): lengths=[${arrayOfLengths.join(', ')}] (expected uniform)`,
+            source: "Math/KeySigning.ts:22",
+        });
+    }
     return GRij[0].map((_, i) => GRij.reduce((sum, next) => sum.add(next[i]), Point.ZERO));
 }
 
 export function Sign(Sis: bigint[][]){
-    if(!Sis.every(Si => Si.length == Sis[0].length)) throw new Error("Orks returned different amount of Si");
+    if(!Sis.every(Si => Si.length == Sis[0].length)) {
+        const arrayOfLengths = Sis.map(arr => arr.length);
+        throw new TideError({
+            code: TideJsErrorCodes.CRYPTO_ORK_ARRAY_LENGTH_MISMATCH,
+            displayMessage: `ORK array length mismatch (Si): lengths=[${arrayOfLengths.join(', ')}] (expected uniform)`,
+            source: "Math/KeySigning.ts:27",
+        });
+    }
     return Sis[0].map((_, i) => mod(Sis.reduce((sum, next) => sum + next[i], BigInt(0))));
 }
