@@ -15,15 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-export * as Clients from './Clients';
-export * as Contracts from './Contracts';
-export * as Cryptide from './Cryptide';
-export * as Errors from './Errors';
-export * as Flow from './Flow';
-export * as Math from './Math';
-export * as Models from './Models';
-export * as Tools from './Tools';
-
-// Backwards compatibility alias
-import * as Utils from './Tools';
-export { Utils };
+export { TideError } from "./TideError";
+export type { TideErrorInit, TideErrorDetail } from "./TideError";
+export { TideJsErrorCodes } from "./codes";
+export type { TideJsErrorCode } from "./codes";
