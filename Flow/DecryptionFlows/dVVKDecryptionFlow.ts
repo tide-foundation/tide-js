@@ -22,6 +22,8 @@ import VoucherFlow from "../VoucherFlows/VoucherFlow";
 import { GetKeys } from "../../Math/KeyDecryption";
 import { Doken } from "../../Models/Doken";
 import TideKey from "../../Cryptide/TideKey";
+import { TideError } from "../../Errors/TideError";
+import { TideJsErrorCodes } from "../../Errors/codes";
 
 export default class dVVKDecryptionFlow{
     vvkid: string;
@@ -38,7 +40,15 @@ export default class dVVKDecryptionFlow{
         this.orks = orks;
         this.orks = sortORKs(this.orks); // sort for bitwise!
 
-        if(!doken.payload.sessionKey.Equals(sessKey.get_public_component())) throw Error("Mismatch between session key private and Doken session key public");
+        if(!doken.payload.sessionKey.Equals(sessKey.get_public_component())) {
+            const dokenFp = String(doken.payload.sessionKey.Serialize().ToString()).slice(0, 8);
+            const suppliedFp = String(sessKey.get_public_component().Serialize().ToString()).slice(0, 8);
+            throw new TideError({
+                code: TideJsErrorCodes.CRYPTO_SESSION_KEY_MISMATCH,
+                displayMessage: `Doken session key (${dokenFp}) does not match supplied session key (${suppliedFp})`,
+                source: "Flow/DecryptionFlows/dVVKDecryptionFlow.ts:41",
+            });
+        }
         this.sessKey = sessKey;
         this.doken = doken;
         this.getVouchersFunction = null;

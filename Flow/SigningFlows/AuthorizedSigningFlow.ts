@@ -21,6 +21,8 @@ import TideKey from "../../Cryptide/TideKey";
 import KeyInfo from "../../Models/Infos/KeyInfo";
 import { Models, Tools } from "../..";
 import { Doken } from "../../Models/Doken";
+import { TideError } from "../../Errors/TideError";
+import { TideJsErrorCodes } from "../../Errors/codes";
 
 export function AuthorizedSigningFlow(config: { vendorId: string, token: Doken, sessionKey: TideKey, voucherURL: string, homeOrkUrl: string | null, keyInfo: KeyInfo }) {
     if (!(this instanceof AuthorizedSigningFlow)) {
@@ -28,7 +30,15 @@ export function AuthorizedSigningFlow(config: { vendorId: string, token: Doken, 
     }
 
     if (config.token) {
-        if (!config.token.payload.sessionKey.Equals(config.sessionKey.get_public_component())) throw Error("Mismatch between session key private and Doken session key public");
+        if (!config.token.payload.sessionKey.Equals(config.sessionKey.get_public_component())) {
+            const dokenFp = String(config.token.payload.sessionKey.Serialize().ToString()).slice(0, 8);
+            const suppliedFp = String(config.sessionKey.get_public_component().Serialize().ToString()).slice(0, 8);
+            throw new TideError({
+                code: TideJsErrorCodes.CRYPTO_SESSION_KEY_MISMATCH,
+                displayMessage: `Doken session key (${dokenFp}) does not match supplied session key (${suppliedFp})`,
+                source: "Flow/SigningFlows/AuthorizedSigningFlow.ts:31",
+            });
+        }
     }
 
     var signingFlow = this;

@@ -29,6 +29,8 @@ import PolicyProtectedSerializedField from "../../Models/PolicyProtectedSerializ
 import { Tools } from "../..";
 import { TideMemory } from "../../Tools";
 import { Doken } from "../../Models/Doken";
+import { TideError } from "../../Errors/TideError";
+import { TideJsErrorCodes } from "../../Errors/codes";
 
 interface EncryptionFlowConfig {
     vendorId: string;
@@ -59,7 +61,13 @@ export class PolicyAuthorizedEncryptionFlow {
 
     constructor(config: EncryptionFlowConfig) {
         if (!config.token.payload.sessionKey.Equals(config.sessionKey.get_public_component())) {
-            throw Error("Mismatch between session key private and Doken session key public");
+            const dokenFp = String(config.token.payload.sessionKey.Serialize().ToString()).slice(0, 8);
+            const suppliedFp = String(config.sessionKey.get_public_component().Serialize().ToString()).slice(0, 8);
+            throw new TideError({
+                code: TideJsErrorCodes.CRYPTO_SESSION_KEY_MISMATCH,
+                displayMessage: `Doken session key (${dokenFp}) does not match supplied session key (${suppliedFp})`,
+                source: "Flow/EncryptionFlows/PolicyAuthorizedEncryptionFlow.ts:62",
+            });
         }
 
         this.vvkId = config.vendorId;
@@ -197,7 +205,17 @@ export class PolicyAuthorizedEncryptionFlow {
         // Deserialize all datasToDecrypt + include tags in object
         const deserializedDatas = datasToDecrypt.map(d => {
             const b = PolicyProtectedSerializedField.deserialize(d.encrypted);
-            if (b.signature == null) throw Error("Signature must be provided in Tide Serialized Data to an Authorized Decryption");
+            if (b.signature == null) throw new TideError({
+                code: TideJsErrorCodes.VAL_INPUT_SHAPE,
+                displayMessage: "The data you are trying to decrypt is missing its authorization signature and cannot be decrypted. Please refresh and try again, or contact support if the problem persists.",
+                source: "Flow/EncryptionFlows/PolicyAuthorizedEncryptionFlow.ts:208",
+                details: [
+                    {
+                        displayMessage: "PolicyProtectedSerializedField.deserialize returned a record with no `signature` field",
+                        code: `encryptedSize=${(d.encrypted as Uint8Array)?.byteLength ?? "<unknown>"} tags=${JSON.stringify(d.tags)}`,
+                    },
+                ],
+            });
             const tags_b = d.tags.map(t => StringToUint8Array(t));
             return {
                 ...b,

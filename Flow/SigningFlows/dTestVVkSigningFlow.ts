@@ -24,6 +24,8 @@ import { PreSign, Sign as SumS } from "../../Math/KeySigning";
 import { BigIntToByteArray, ConcatUint8Arrays, StringToUint8Array, base64ToBytes, bytesToBase64, serializeBitArray } from "../../Cryptide/Serialization";
 import VoucherFlow from "../VoucherFlows/VoucherFlow";
 import { TestSignatureFormat } from "../../Cryptide/Signing/TideSignature";
+import { TideError } from "../../Errors/TideError";
+import { TideJsErrorCodes } from "../../Errors/codes";
 
 export default class dTestVVKSigningFlow{
     vvkid: string;
@@ -75,12 +77,26 @@ export default class dTestVVKSigningFlow{
         const SignResponses = await Promise.all(pre_SignResponses);
         const Sj = SumS(SignResponses.map(s => s.Sij));
 
-        if(GRj.length != Sj.length) throw Error("Weird amount of GRjs and Sjs");
+        if(GRj.length != Sj.length) throw new TideError({
+            code: TideJsErrorCodes.CRYPTO_GRJ_SJ_LENGTH_MISMATCH,
+            displayMessage: `GRj/Sj length mismatch: GRjs=${GRj.length}, Sjs=${Sj.length}, vvkid=${String(this.vvkid).slice(0, 12)}`,
+            source: "Flow/SigningFlows/dTestVVkSigningFlow.ts:78",
+        });
         const testSig = bytesToBase64(ConcatUint8Arrays([GRj[0].toRawBytes(), BigIntToByteArray(Sj[0])]));
 
         const toVerify = "This msg was previously authorized <-mix-> New log in";
         const valid = await Signing.EdDSA.verify(testSig, this.vvkPublic, new TestSignatureFormat(toVerify).format());
-        if(!valid) throw Error("Test VVK Signing failed");
+        if(!valid) throw new TideError({
+            code: TideJsErrorCodes.SIG_BLIND_VERIFY_FAILED,
+            displayMessage: "Test VVK signing self-check could not be verified. Please try again. If the problem persists, contact support.",
+            source: "Flow/SigningFlows/dTestVVkSigningFlow.ts:89",
+            details: [
+                {
+                    displayMessage: "EdDSA.verify returned false for the assembled test signature",
+                    code: `vvkid=${String(this.vvkid).slice(0, 12)} testSig=${testSig.slice(0, 16)}... toVerify="${toVerify}"`,
+                },
+            ],
+        });
 
         const endTime = performance.now();
         console.log(`Test VVK Signing took ${endTime - startTime} milliseconds.`);

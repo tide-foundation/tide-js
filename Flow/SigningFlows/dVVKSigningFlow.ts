@@ -24,6 +24,8 @@ import { BigIntToByteArray, ConcatUint8Arrays, serializeBitArray } from "../../C
 import VoucherFlow from "../VoucherFlows/VoucherFlow";
 import { Doken } from "../../Models/Doken";
 import TideKey from "../../Cryptide/TideKey";
+import { TideError } from "../../Errors/TideError";
+import { TideJsErrorCodes } from "../../Errors/codes";
 
 export default class dVVKSigningFlow {
     vvkid: string;
@@ -41,7 +43,15 @@ export default class dVVKSigningFlow {
         this.orks = sortORKs(this.orks); // sort for bitwise!
 
         if(doken){
-            if(!doken.payload.sessionKey.Equals(sessKey.get_public_component())) throw Error("Mismatch between session key private and Doken session key public");
+            if(!doken.payload.sessionKey.Equals(sessKey.get_public_component())) {
+                const dokenFp = String(doken.payload.sessionKey.Serialize().ToString()).slice(0, 8);
+                const suppliedFp = String(sessKey.get_public_component().Serialize().ToString()).slice(0, 8);
+                throw new TideError({
+                    code: TideJsErrorCodes.CRYPTO_SESSION_KEY_MISMATCH,
+                    displayMessage: `Doken session key (${dokenFp}) does not match supplied session key (${suppliedFp})`,
+                    source: "Flow/SigningFlows/dVVKSigningFlow.ts:44",
+                });
+            }
             this.doken = doken.serialize();
         }
         this.sessKey = sessKey;
@@ -73,7 +83,11 @@ export default class dVVKSigningFlow {
         const SignResponses = await Promise.all(pre_SignResponses);
         const Sj = SumS(SignResponses.map(s => s.Sij));
 
-        if (GRj.length != Sj.length) throw Error("Weird amount of GRjs and Sjs");
+        if (GRj.length != Sj.length) throw new TideError({
+            code: TideJsErrorCodes.CRYPTO_GRJ_SJ_LENGTH_MISMATCH,
+            displayMessage: `GRj/Sj length mismatch: GRjs=${GRj.length}, Sjs=${Sj.length}, vvkid=${String(this.vvkid).slice(0, 12)}`,
+            source: "Flow/SigningFlows/dVVKSigningFlow.ts:76",
+        });
         let sigs = [];
         for (let i = 0; i < GRj.length; i++) {
             sigs.push(ConcatUint8Arrays([GRj[i].toRawBytes(), BigIntToByteArray(Sj[i])]));

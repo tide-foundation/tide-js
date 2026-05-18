@@ -24,6 +24,8 @@ import { BigIntToByteArray, ConcatUint8Arrays, GetValue, bytesToBase64, serializ
 import VoucherFlow from "../VoucherFlows/VoucherFlow";
 import { Doken } from "../../Models/Doken";
 import TideKey from "../../Cryptide/TideKey";
+import { TideError } from "../../Errors/TideError";
+import { TideJsErrorCodes } from "../../Errors/codes";
 
 export default class dVVKSigningFlow2Step {
     vvkid: string;
@@ -45,7 +47,15 @@ export default class dVVKSigningFlow2Step {
         this.orks = sortORKs(this.orks); // sort for bitwise!
 
         if(doken){
-            if(!doken.payload.sessionKey.Equals(sessKey.get_public_component())) throw Error("Mismatch between session key private and Doken session key public");
+            if(!doken.payload.sessionKey.Equals(sessKey.get_public_component())) {
+                const dokenFp = String(doken.payload.sessionKey.Serialize().ToString()).slice(0, 8);
+                const suppliedFp = String(sessKey.get_public_component().Serialize().ToString()).slice(0, 8);
+                throw new TideError({
+                    code: TideJsErrorCodes.CRYPTO_SESSION_KEY_MISMATCH,
+                    displayMessage: `Doken session key (${dokenFp}) does not match supplied session key (${suppliedFp})`,
+                    source: "Flow/SigningFlows/dVVKSigningFlow2Step.ts:48",
+                });
+            }
             this.doken = doken.serialize();
         }
         this.sessKey = sessKey;
@@ -61,8 +71,16 @@ export default class dVVKSigningFlow2Step {
     }
 
     async setRequest(request){
-        if(!(request instanceof BaseTideRequest)) throw 'Request is not a BaseTideRequest';
-        if(request.dyanmicData.length != 0) throw 'Dyanamic data must be null for signing flow 2 step';
+        if(!(request instanceof BaseTideRequest)) throw new TideError({
+            code: TideJsErrorCodes.VAL_INPUT_SHAPE,
+            displayMessage: `Request is not a BaseTideRequest — got ${typeof request}`,
+            source: "Flow/SigningFlows/dVVKSigningFlow2Step.ts:64",
+        });
+        if(request.dyanmicData.length != 0) throw new TideError({
+            code: TideJsErrorCodes.VAL_INPUT_SHAPE,
+            displayMessage: `Dyanamic data must be null for signing flow 2 step (got length ${request.dyanmicData.length})`,
+            source: "Flow/SigningFlows/dVVKSigningFlow2Step.ts:65",
+        });
         this.request = request;
     }
 
@@ -71,13 +89,21 @@ export default class dVVKSigningFlow2Step {
     }
 
     getVouchers(){
-        if(!this.vouchers) throw 'Call preSign first';
+        if(!this.vouchers) throw new TideError({
+            code: TideJsErrorCodes.VAL_INPUT_SHAPE,
+            displayMessage: "Call preSign first",
+            source: "Flow/SigningFlows/dVVKSigningFlow2Step.ts:74",
+        });
         return this.vouchers;
     }
     async preSign(dynamicData: Uint8Array | Uint8Array[]): Promise<Uint8Array[]> {
         let dynDataisArray = false;
         if(dynamicData){
-            if(!(dynamicData instanceof Uint8Array) && !(Array.isArray(dynamicData))) throw 'Dynamic data must be Uint8Array or Uint8Array[]';
+            if(!(dynamicData instanceof Uint8Array) && !(Array.isArray(dynamicData))) throw new TideError({
+                code: TideJsErrorCodes.VAL_INPUT_SHAPE,
+                displayMessage: `Dynamic data must be Uint8Array or Uint8Array[] — got ${typeof dynamicData} of ${Array.isArray(dynamicData) ? "Array length " + (dynamicData as any).length : "<unknown>"}`,
+                source: "Flow/SigningFlows/dVVKSigningFlow2Step.ts:80",
+            });
             if(dynamicData instanceof Uint8Array){
                 this.request.setNewDynamicData(dynamicData);
             }else dynDataisArray = true;
@@ -110,21 +136,37 @@ export default class dVVKSigningFlow2Step {
     async sign(dynamicData: Uint8Array | Uint8Array[]){
         let dynDataisArray = false;
         if(dynamicData){
-            if(!(dynamicData instanceof Uint8Array) && !(Array.isArray(dynamicData))) throw 'Dynamic data must be Uint8Array or Uint8Array[]';
+            if(!(dynamicData instanceof Uint8Array) && !(Array.isArray(dynamicData))) throw new TideError({
+                code: TideJsErrorCodes.VAL_INPUT_SHAPE,
+                displayMessage: `Dynamic data must be Uint8Array or Uint8Array[] — got ${typeof dynamicData} of ${Array.isArray(dynamicData) ? "Array length " + (dynamicData as any).length : "<unknown>"}`,
+                source: "Flow/SigningFlows/dVVKSigningFlow2Step.ts:113",
+            });
             if(dynamicData instanceof Uint8Array){
                 this.request.setNewDynamicData(dynamicData);
             }else {
-                if(dynamicData.length != this.preSignState.clients.length) throw Error("Supplied datas array must equal client amount");
+                if(dynamicData.length != this.preSignState.clients.length) throw new TideError({
+                    code: TideJsErrorCodes.VAL_INPUT_SHAPE,
+                    displayMessage: `Supplied dynamic-data array length (${dynamicData.length}) does not match the number of ORK clients (${this.preSignState.clients.length}).`,
+                    source: "Flow/SigningFlows/dVVKSigningFlow2Step.ts:147",
+                });
                 dynDataisArray = true;
             }
         }
-        if(!this.preSignState) throw 'Execute preSign first';
+        if(!this.preSignState) throw new TideError({
+            code: TideJsErrorCodes.VAL_INPUT_SHAPE,
+            displayMessage: "Execute preSign first",
+            source: "Flow/SigningFlows/dVVKSigningFlow2Step.ts:121",
+        });
 
         const pre_SignResponses = this.preSignState.clients.map((client, i) => client.Sign(this.vvkid, dynDataisArray ? this.request.replicate().setNewDynamicData((dynamicData as Uint8Array[])[i]) : this.request, this.preSignState.GRj, serializeBitArray(this.preSignState.bitwise)));
         const SignResponses = await Promise.all(pre_SignResponses);
         const Sj = SumS(SignResponses.map(s => s.Sij));
 
-        if (this.preSignState.GRj.length != Sj.length) throw Error("Weird amount of GRjs and Sjs");
+        if (this.preSignState.GRj.length != Sj.length) throw new TideError({
+            code: TideJsErrorCodes.CRYPTO_GRJ_SJ_LENGTH_MISMATCH,
+            displayMessage: `GRj/Sj length mismatch: GRjs=${this.preSignState.GRj.length}, Sjs=${Sj.length}, vvkid=${String(this.vvkid).slice(0, 12)}`,
+            source: "Flow/SigningFlows/dVVKSigningFlow2Step.ts:127",
+        });
         let sigs = [];
         for (let i = 0; i < this.preSignState.GRj.length; i++) {
             sigs.push(ConcatUint8Arrays([this.preSignState.GRj[i].toRawBytes(), BigIntToByteArray(Sj[i])]));
