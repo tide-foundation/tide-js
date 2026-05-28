@@ -17,6 +17,67 @@
 
 import { TideError } from "../Errors/TideError";
 import { TideJsErrorCodes } from "../Errors/codes";
+import { RecentRequestsBuffer, RecentRequestEntry } from "./RecentRequestsBuffer";
+
+/**
+ * Derive a path-only endpoint from a full URL, falling back to the raw URL
+ * if URL parsing fails (e.g. relative URL with no base, or malformed input).
+ * Centralised here so every {@link RecentRequestsBuffer} entry is shaped the
+ * same way.
+ */
+function _endpointFromUrl(url: string): string {
+    try {
+        return new URL(url).pathname;
+    } catch {
+        return url;
+    }
+}
+
+/**
+ * Push a {@link RecentRequestEntry} for a request that has just resolved or
+ * rejected. Centralised so the per-method instrumentation in `_get`/`_post`/
+ * `_postJSON`/`_put` is small and consistent.
+ *
+ * `err` is examined defensively (we don't `instanceof TideError` because
+ * downstream bundlers can create cross-module instances): we check for the
+ * structural shape of TideError just like {@link TideError.isTideError}.
+ */
+function _pushRecent(
+    url: string,
+    method: string,
+    perfStart: number,
+    success: boolean,
+    response: Response | null,
+    err: unknown,
+): void {
+    const durationMs = performance.now() - perfStart;
+    let httpStatus: number | null = null;
+    let code: string | null = null;
+    if (success && response) {
+        httpStatus = response.status;
+        code = null;
+    } else if (TideError.isTideError(err)) {
+        httpStatus = (err as TideError).httpStatus ?? null;
+        code = (err as TideError).code;
+    } else {
+        httpStatus = null;
+        code = TideJsErrorCodes.NET_UNKNOWN;
+    }
+    const entry: RecentRequestEntry = {
+        timestamp: new Date().toISOString(),
+        url,
+        endpoint: _endpointFromUrl(url),
+        method,
+        httpStatus,
+        durationMs,
+        code,
+    };
+    try {
+        RecentRequestsBuffer.push(entry);
+    } catch {
+        /* never let buffer bookkeeping affect the actual request outcome */
+    }
+}
 
 /**
  * RFC 7807 Problem Details envelope, with Tide-specific extensions.
@@ -122,29 +183,36 @@ export default class ClientBase {
     async _get(endpoint: string, timeout: number = 20000, signal: AbortSignal = null): Promise<Response> {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeout);
+        const fullUrl = this.url + endpoint;
+        const perfStart = performance.now();
 
         let response;
         try {
-            response = await fetch(this.url + endpoint, {
+            response = await fetch(fullUrl, {
                 method: 'GET',
                 signal: signal ?? controller.signal
             });
             clearTimeout(id);
         } catch (e) {
             clearTimeout(id);
-            throw this._classifyFetchError(e, signal, "Clients/ClientBase.ts:_get", endpoint, "GET");
+            const tideErr = this._classifyFetchError(e, signal, "Clients/ClientBase.ts:_get", endpoint, "GET");
+            _pushRecent(fullUrl, "GET", perfStart, false, null, tideErr);
+            throw tideErr;
         }
         if (!response.ok) {
-            throw new TideError({
+            const tideErr = new TideError({
                 code: TideJsErrorCodes.NET_NON_OK_STATUS,
                 displayMessage: `Request to ${endpoint} returned HTTP ${response.status}`,
                 httpStatus: response.status,
                 source: "Clients/ClientBase.ts:_get",
-                url: this.url + endpoint,
+                url: fullUrl,
                 endpoint,
                 method: "GET",
             });
+            _pushRecent(fullUrl, "GET", perfStart, false, response, tideErr);
+            throw tideErr;
         }
+        _pushRecent(fullUrl, "GET", perfStart, true, response, null);
         return response;
     }
 
@@ -183,12 +251,14 @@ export default class ClientBase {
     async _post(endpoint: string, data: FormData, timeout: number = 20000): Promise<Response> {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeout);
+        const fullUrl = this.url + endpoint;
+        const perfStart = performance.now();
 
         if (this.token) data.append("token", this.token);
 
         let response;
         try {
-            response = await fetch(this.url + endpoint, {
+            response = await fetch(fullUrl, {
                 method: 'POST',
                 body: data,
                 signal: controller.signal
@@ -198,35 +268,84 @@ export default class ClientBase {
             clearTimeout(id);
             // `_post` does not accept a caller signal — abort can only come
             // from our own timeout controller.
-            throw this._classifyFetchError(e, null, "Clients/ClientBase.ts:_post", endpoint, "POST");
+            const tideErr = this._classifyFetchError(e, null, "Clients/ClientBase.ts:_post", endpoint, "POST");
+            _pushRecent(fullUrl, "POST", perfStart, false, null, tideErr);
+            throw tideErr;
         }
-        if (!response.ok) {
-            // Do NOT throw NET_NON_OK_STATUS here — for the voucher slice,
-            // ORK now returns 4xx/5xx with `application/problem+json`, and
-            // callers always pipe the response through `_handleError`, which
-            // parses Problem Details and constructs a richer TideError. Throw
-            // generically here would lose that information.
-            // Keep the response object; let the caller decide.
-        }
+        // Do NOT throw NET_NON_OK_STATUS here — for the voucher slice,
+        // ORK now returns 4xx/5xx with `application/problem+json`, and
+        // callers always pipe the response through `_handleError`, which
+        // parses Problem Details and constructs a richer TideError. Throw
+        // generically here would lose that information.
+        // From `_post`'s POV the request "succeeded" the moment the server
+        // produced any response (including 4xx/5xx) — we record the actual
+        // status; the downstream `_handleError` will not push another entry
+        // (it does not perform fetch, only parses the body), so this entry
+        // is the authoritative record of the request.
+        _pushRecent(fullUrl, "POST", perfStart, true, response, null);
         return response;
     }
 
     async _put(endpoint: string, data: FormData): Promise<Response> {
-        return fetch(this.url + endpoint, {
-            method: 'PUT',
-            body: data
-        });
+        const fullUrl = this.url + endpoint;
+        const perfStart = performance.now();
+        let response: Response;
+        try {
+            response = await fetch(fullUrl, {
+                method: 'PUT',
+                body: data
+            });
+        } catch (e) {
+            // No timeout/abort plumbing on `_put` historically; tag unknown
+            // failures as NET_FETCH_FAILED for the buffer.
+            const tideErr = TideError.isTideError(e)
+                ? (e as TideError)
+                : new TideError({
+                    code: TideJsErrorCodes.NET_FETCH_FAILED,
+                    displayMessage: "Network request failed",
+                    source: "Clients/ClientBase.ts:_put",
+                    url: fullUrl,
+                    endpoint,
+                    method: "PUT",
+                    cause: e,
+                });
+            _pushRecent(fullUrl, "PUT", perfStart, false, null, tideErr);
+            throw tideErr;
+        }
+        _pushRecent(fullUrl, "PUT", perfStart, true, response, null);
+        return response;
     }
 
     async _postJSON(endpoint: string, data: Object): Promise<Response> {
-        return fetch(this.url + endpoint, {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
-        });
+        const fullUrl = this.url + endpoint;
+        const perfStart = performance.now();
+        let response: Response;
+        try {
+            response = await fetch(fullUrl, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+        } catch (e) {
+            const tideErr = TideError.isTideError(e)
+                ? (e as TideError)
+                : new TideError({
+                    code: TideJsErrorCodes.NET_FETCH_FAILED,
+                    displayMessage: "Network request failed",
+                    source: "Clients/ClientBase.ts:_postJSON",
+                    url: fullUrl,
+                    endpoint,
+                    method: "POST",
+                    cause: e,
+                });
+            _pushRecent(fullUrl, "POST", perfStart, false, null, tideErr);
+            throw tideErr;
+        }
+        _pushRecent(fullUrl, "POST", perfStart, true, response, null);
+        return response;
     }
 
     /**
