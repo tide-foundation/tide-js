@@ -99,7 +99,7 @@ export class PolicyAuthorizedEncryptionFlow {
                 const tags_b = d.tags.map(t => StringToUint8Array(t));
 
                 // if data is more than 32B
-                const largeDataKey = window.crypto.getRandomValues(new Uint8Array(32));
+                const largeDataKey = globalThis.crypto.getRandomValues(new Uint8Array(32));
                 const encryptedData = await encryptDataRawOutput(d_b, largeDataKey);
                 const encryptedKey = await Encryption.ElGamal.encryptDataRaw_withAuthentication(largeDataKey, this.vvkInfo.UserPublic, Serialization.ConcatUint8Arrays(tags_b));
 

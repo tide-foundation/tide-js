@@ -45,7 +45,14 @@ function _toDetail(err: unknown): TideErrorDetail {
 }
 
 export function CurrentTime(){
-    const timeSkew = window.localStorage?.getItem("timeSkew");
+    let timeSkew: string | null = null;
+    try {
+        if (typeof globalThis.localStorage !== "undefined") {
+            timeSkew = globalThis.localStorage.getItem("timeSkew");
+        }
+    } catch {
+        timeSkew = null;
+    }
     const now = Math.floor(Date.now() / 1000);
     return timeSkew ? now + Number(timeSkew) : now;
 }

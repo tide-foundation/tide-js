@@ -23,7 +23,7 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 export function createAESKey(rawKey: Uint8Array, keyUsage: KeyUsage[]) {
-    return window.crypto.subtle.importKey(
+    return globalThis.crypto.subtle.importKey(
         "raw",
         rawKey as unknown as BufferSource,
         "AES-GCM",
@@ -50,8 +50,8 @@ export async function encryptData(secretData: string | Uint8Array, key: Uint8Arr
 export async function encryptDataRawOutput(encodedData: Uint8Array, aesKey: Uint8Array){
     const cryptoKey = await createAESKey(aesKey, ["encrypt"]);
     // iv will be needed for decryption
-    const iv = window.crypto.getRandomValues(new Uint8Array(12));
-    const encryptedBuffer = await window.crypto.subtle.encrypt(
+    const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+    const encryptedBuffer = await globalThis.crypto.subtle.encrypt(
         { name: "AES-GCM", iv: iv },
         cryptoKey,
         encodedData as unknown as BufferSource
@@ -82,7 +82,7 @@ export async function decryptDataRawOutput(encryptedData: Uint8Array, key: Uint8
     const aesKey = await createAESKey(key, ["decrypt"]);
     const iv = encryptedData.slice(0, 12);
     const data = encryptedData.slice(12);
-    const decryptedContent = await window.crypto.subtle.decrypt(
+    const decryptedContent = await globalThis.crypto.subtle.decrypt(
         {
             name: "AES-GCM",
             iv: iv,

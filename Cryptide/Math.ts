@@ -43,7 +43,7 @@ export function median(numbers: bigint[]) {
 
 export function RandomBigInt(): bigint {
 	const buf = new Uint8Array(32);
-	window.crypto.getRandomValues(buf);
+	globalThis.crypto.getRandomValues(buf);
 	return mod(BigIntFromByteArray(buf), CURVE.n);
 }
 

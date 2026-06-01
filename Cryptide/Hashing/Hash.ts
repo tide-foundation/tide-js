@@ -47,6 +47,6 @@ export async function HMAC_forHashing(message: string, pub: Point){
     false, // whether the key is extractable
     ['sign'] // allowed key usages
   );
-  const hash = await window.crypto.subtle.sign("HMAC", cryptoKey, pub.toRawBytes());
+  const hash = await crypto.subtle.sign("HMAC", cryptoKey, pub.toRawBytes());
   return new Uint8Array(hash);
 }
