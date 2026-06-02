@@ -40,12 +40,22 @@ export interface OidcBeginResponse {
 }
 
 // Shape of the harness GET /warmup/oidc/await/:state response.
+//
+// `sessKeySerialized` and `tideDoken` are the Option B carve-out fields — see
+// the comment block at the top of oidc.ts (ALLOWLIST_CARVE_OUT_REALMS).
+// `sessKeySerialized` is the serialized PRIVATE component of the SWE session
+// keypair; `tideDoken` is the SWE-issued Tide doken JWT (alg=EdDSA, typ=doken;
+// distinct from the OIDC access_token returned on `doken`). Both are captured
+// in-page during login and forwarded through this response so the warm-up can
+// bake them into fixtures.json. SENSITIVE; never log either field server-side.
 export interface OidcAwaitResponse {
   ok:                boolean;
   userId?:           string;
-  doken?:            string;
+  doken?:            string;            // OIDC access_token (alg=RS256, typ=JWT) — TideCloak /token endpoint
   refreshToken?:     string | null;
   expiresInSeconds?: number | null;
+  sessKeySerialized?: string | null;    // base64 private TideKey component (Option B carve-out)
+  tideDoken?:        string | null;     // Tide doken JWT (alg=EdDSA, typ=doken) — what AuthorizedSigningFlow consumes
   code?:             string;
   message?:          string;
 }

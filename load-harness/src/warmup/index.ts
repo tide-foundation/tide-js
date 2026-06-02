@@ -292,6 +292,11 @@ async function main(): Promise<number> {
         callbackOrigin,
         user,
         context,
+        // realm gates the Option B sessKey carve-out (see oidc.ts
+        // ALLOWLIST_CARVE_OUT_REALMS). Sourced from /health so the
+        // capture decision tracks whatever the harness server is
+        // configured for — no env override.
+        realm:          health.tcRealm,
         onSweUrl,
       });
       captured.push(fixture);

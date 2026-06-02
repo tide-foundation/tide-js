@@ -43,24 +43,49 @@ const REAPER_INTERVAL_MS = 30 * 1000;
 const MAX_PENDING_FLOWS = 1000;
 
 // Token-endpoint result. We capture refresh_token + expires_in alongside
-// the access_token (the Doken) so the warm-up can emit them into the
-// fixture and runSign() can optionally refresh on demand in v1.1.
+// the access_token so the warm-up can emit them into the fixture and
+// runSign() can optionally refresh on demand in v1.1.
+//
+// R15: `tideDoken` is the SWE-issued Tide doken (alg=EdDSA, typ=doken).
+// TideCloak attaches it as a sibling field of `access_token` on the
+// /token response via `AccessTokenResponse.otherClaims` + @JsonAnyGetter
+// (TokenManager.java:1406-1408 — `setOtherClaims("doken", encodedTokens[2])`).
+// Capturing it here makes the token-exchange the single source for
+// tideDoken; the in-page enclave-pump no longer extracts it. The field
+// is typed `string | null` so a TideCloak that didn't issue one (e.g.
+// non-Tide IdP login somehow reaching this client) is handled cleanly.
 //
 // SECURITY: refresh_token is more sensitive than access_token — it has a
 // longer (often indefinite) lifetime and can mint new access tokens.
-// Treat it as a secret: it must NEVER appear in console.log /
-// console.warn / console.error / response bodies other than the explicit
-// /warmup/oidc/await/:state JSON. See exchangeCodeForToken() and the
-// /warmup/oidc/await/:state handler below.
+// tideDoken is private-equivalent material (bound to the SessionKey).
+// Both must NEVER appear in console.log / console.warn / console.error
+// / response bodies other than the explicit /warmup/oidc/await/:state
+// JSON. See exchangeCodeForToken() and the /warmup/oidc/await/:state
+// handler below.
 interface TokenResult {
   accessToken: string;
   refreshToken: string | null;
   expiresIn: number | null; // seconds, from token endpoint
+  tideDoken: string | null;
 }
 
 // Pending OIDC flows keyed by `state`. The /callback handler resolves
 // (or rejects) once the token-exchange completes; /warmup/oidc/await
 // awaits the same promise.
+//
+// `sessKeySerialized` is the Option B carve-out side-channel: the
+// warm-up driver POSTs it via /warmup/oidc/sesskey/:state when it lifts
+// it out of the browser. It's stored on the PendingFlow so
+// /warmup/oidc/await/:state can return doken + sessKey + tideDoken
+// together. SENSITIVE — private-equivalent material. NEVER log.
+//
+// `tideDoken` (R15) is no longer captured via the in-page pump. It is
+// populated directly from the token-exchange response (TokenResult)
+// because TideCloak attaches the SWE-issued Tide doken as a sibling
+// `doken` field on /token. We keep the slot on PendingFlow so the
+// /warmup/oidc/await/:state response shape is unchanged for callers,
+// but the source is the OIDC code-exchange path, not the carve-out POST.
+// SENSITIVE — never log.
 interface PendingFlow {
   userId: string;
   codeVerifier: string;
@@ -69,6 +94,8 @@ interface PendingFlow {
   resolve: (token: TokenResult) => void;
   reject: (err: Error) => void;
   settled: boolean;
+  sessKeySerialized: string | null;
+  tideDoken: string | null;
 }
 const pending = new Map<string, PendingFlow>();
 
@@ -167,11 +194,21 @@ async function exchangeCodeForToken(
     const text = await res.text();
     throw new Error(`token endpoint ${res.status}: ${text.slice(0, 500)}`);
   }
+  // R15: `doken` is a sibling top-level field on TideCloak's /token JSON
+  // response — serialized via AccessTokenResponse.otherClaims +
+  // @JsonAnyGetter (TokenManager.java:1406-1408,
+  // DefaultTokenManager.java:489-555). It carries the SWE-issued Tide
+  // doken (alg=EdDSA, typ=doken) that AuthorizedSigningFlow consumes.
+  // Defensive typing: if TideCloak didn't issue one we fall through
+  // cleanly with `null` rather than throwing — runSign will refuse
+  // downstream with a clear error.
   const json = (await res.json()) as {
     access_token?: string;
     refresh_token?: string;
     expires_in?: number;
+    doken?: string;
   };
+  console.log(`[exchange] /token JSON keys: ${Object.keys(json as object).join(",")}`);
   if (!json.access_token) {
     throw new Error("token endpoint returned no access_token");
   }
@@ -179,6 +216,8 @@ async function exchangeCodeForToken(
     accessToken: json.access_token,
     refreshToken: typeof json.refresh_token === "string" ? json.refresh_token : null,
     expiresIn: typeof json.expires_in === "number" ? json.expires_in : null,
+    tideDoken:
+      typeof json.doken === "string" && json.doken.length > 0 ? json.doken : null,
   };
 }
 
@@ -301,6 +340,8 @@ app.post("/warmup/oidc/begin", (req: Request, res: Response) => {
       rejectFn(e);
     },
     settled: false,
+    sessKeySerialized: null,
+    tideDoken: null,
   };
   // Swallow unhandled-rejection if /warmup/oidc/await/:state is never
   // called for an expired/failed flow — the reaper or /callback may
@@ -383,9 +424,17 @@ app.get("/callback", async (req: Request, res: Response) => {
 
   try {
     const tokenResult = await exchangeCodeForToken(code, flow.codeVerifier);
-    // SECURITY: do NOT log tokenResult — refresh_token in particular
-    // must stay in-memory and only egress via the explicit
+    // SECURITY: do NOT log tokenResult — refresh_token AND tideDoken in
+    // particular must stay in-memory and only egress via the explicit
     // /warmup/oidc/await/:state response below.
+    //
+    // R15: source-of-truth shift for tideDoken. Previously the in-page
+    // pump POSTed it via /warmup/oidc/sesskey/:state; we now take it
+    // from the token-exchange response and stash it on the PendingFlow
+    // here so the /warmup/oidc/await/:state handler can serve it. The
+    // carve-out POST may still overwrite `sessKeySerialized`, but it no
+    // longer carries tideDoken.
+    flow.tideDoken = tokenResult.tideDoken;
     flow.resolve(tokenResult);
     res
       .status(200)
@@ -405,6 +454,65 @@ app.get("/callback", async (req: Request, res: Response) => {
         )}. You can close this tab.</body></html>`,
       );
   }
+});
+
+// Option B carve-out endpoint: deliver the in-browser-captured SWE session
+// key (private-equivalent) to the matching pending flow so /warmup/oidc/
+// await/:state can return it alongside the OIDC access_token + tideDoken.
+//
+// R15: the request body is now narrowed to `{ sessKeySerialized }`. The
+// `tideDoken` field is no longer part of the contract — the Tide doken
+// comes from the token-exchange response (R14 finding: TideCloak attaches
+// it as a sibling `doken` field on /token via @JsonAnyGetter). If a stale
+// warm-up still sends `tideDoken` in the body, we deliberately ignore it
+// — the token-exchange value is authoritative and the in-page enclave
+// does not expose a `doken` field in the cmkOnly login flow anyway.
+//
+// SECURITY:
+//   * Realm gate is enforced on the WARM-UP side (oidc.ts) before this is
+//     ever called. This endpoint is realm-agnostic — it has no awareness
+//     of the configured TIDECLOAK_REALM beyond what the warm-up already
+//     refused/permitted. The endpoint is intended for localhost-only use
+//     by the warm-up driver in the same process group.
+//   * The body field `sessKeySerialized` is private-equivalent material.
+//     NEVER log it. Server-side handling is store-and-forward only — we
+//     hand it through to the /await response and never to anywhere else.
+//   * Single-shot: if a sessKey is already attached to the flow, refuse
+//     overwrite (prevents a stray re-POST from clobbering the original).
+app.post("/warmup/oidc/sesskey/:state", (req: Request, res: Response) => {
+  const state = req.params.state;
+  const flow = pending.get(state);
+  if (!flow) {
+    res
+      .status(404)
+      .json({ ok: false, code: "UNKNOWN_STATE", message: "unknown state" });
+    return;
+  }
+  const sessKey =
+    typeof req.body?.sessKeySerialized === "string"
+      ? req.body.sessKeySerialized
+      : "";
+  if (!sessKey) {
+    res
+      .status(400)
+      .json({ ok: false, code: "BAD_REQUEST", message: "missing sessKeySerialized" });
+    return;
+  }
+  if (flow.sessKeySerialized) {
+    res
+      .status(409)
+      .json({ ok: false, code: "ALREADY_SET", message: "sessKey already captured for this state" });
+    return;
+  }
+  flow.sessKeySerialized = sessKey;
+  // R15: deliberately do NOT touch flow.tideDoken here. It's populated
+  // from the token-exchange in /callback; a stray `tideDoken` field in
+  // this body (from an older warm-up) is ignored.
+  // No body echo — defence-in-depth against accidental round-trip logging
+  // by the caller's HTTP middleware.
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Pragma", "no-cache");
+  res.status(200).json({ ok: true });
 });
 
 // Long-poll until the matching /callback resolves the flow.  Returns
@@ -428,12 +536,27 @@ app.get("/warmup/oidc/await/:state", async (req: Request, res: Response) => {
     // logging of tokenResult.refreshToken anywhere downstream.
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Pragma", "no-cache");
+    // `sessKeySerialized` is the Option B carve-out field — only present
+    // if the warm-up driver posted it to /warmup/oidc/sesskey/:state.
+    // Sensitive; egress here is the single sanctioned channel (same
+    // handling as refreshToken). `doken` is the OIDC access_token from
+    // TideCloak's /token endpoint (alg=RS256, typ=JWT); `tideDoken` is
+    // the SWE-issued Tide doken (alg=EdDSA, typ=doken) that
+    // AuthorizedSigningFlow's constructor consumes. They are NOT
+    // interchangeable — see runSign.ts and R11/R14's findings.
+    //
+    // R15: `tideDoken` is now sourced from the token-exchange response
+    // (sibling `doken` field on TideCloak's /token JSON, attached via
+    // @JsonAnyGetter) rather than the in-page enclave pump. Still
+    // sensitive; never log.
     res.json({
       ok: true,
       userId: flow.userId,
       doken: tokenResult.accessToken,
       refreshToken: tokenResult.refreshToken,
       expiresInSeconds: tokenResult.expiresIn,
+      sessKeySerialized: flow.sessKeySerialized,
+      tideDoken: flow.tideDoken,
     });
   } catch (e: unknown) {
     res.status(500).json({

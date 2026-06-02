@@ -93,6 +93,16 @@ export class BaseComponent{
     static DeserializeComponent(serialized: Uint8Array | string): BaseComponent {
         let b: any = [];
         if(!(serialized instanceof Uint8Array)){
+            // Distinguish "null/undefined was passed" from "string did not parse
+            // as hex or base64". Both arrive here as falsy or as garbage; the
+            // displayMessage names which so consumers see something diffable.
+            // (We expose input length + a 6-char prefix only — see below.)
+            if(serialized === null || serialized === undefined){
+                throw new TideError({ code: TideJsErrorCodes.CRYPTO_DESERIALIZE_FAILED, displayMessage: `Unable to deserialize component: input was ${serialized === null ? "null" : "undefined"}`, source: "tide-js/Cryptide/Components/BaseComponent.ts:97" });
+            }
+            if(typeof serialized !== "string"){
+                throw new TideError({ code: TideJsErrorCodes.CRYPTO_DESERIALIZE_FAILED, displayMessage: `Unable to deserialize component: input must be Uint8Array or string (got ${typeof serialized})`, source: "tide-js/Cryptide/Components/BaseComponent.ts:100" });
+            }
             try{
                 try{
                     b = Hex2Bytes(serialized);
@@ -100,7 +110,13 @@ export class BaseComponent{
                     b = base64ToBytes(serialized);
                 }
             }catch{
-                throw new TideError({ code: TideJsErrorCodes.CRYPTO_DESERIALIZE_FAILED, displayMessage: "Unable to deserialize component", source: "tide-js/Cryptide/Components/BaseComponent.ts:101" });
+                // Expose only input length + a 6-char prefix. We deliberately do
+                // NOT include the full string because the deserialize path is
+                // also used for private components, and a thrown error can be
+                // surfaced by callers that log it.
+                const len = serialized.length;
+                const prefix = serialized.slice(0, 6);
+                throw new TideError({ code: TideJsErrorCodes.CRYPTO_DESERIALIZE_FAILED, displayMessage: `Unable to deserialize component: string is neither hex nor base64 (length=${len}, prefix="${prefix}")`, source: "tide-js/Cryptide/Components/BaseComponent.ts:113" });
             }
         }else b = serialized;
         let scheme = SchemeType[toInt16(b.slice(1, 3), 0)];

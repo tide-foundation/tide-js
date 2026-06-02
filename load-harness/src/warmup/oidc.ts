@@ -63,6 +63,40 @@ import type {
 
 declare const fetch: typeof globalThis.fetch;
 
+// ---------------------------------------------------------------------------
+// Option B carve-out (R10): session-key (private-equivalent) capture.
+//
+// The harness's runSign() drives AuthorizedSigningFlow.signv2() server-side,
+// outside any browser. The flow's constructor checks that the supplied
+// sessionKey's public component equals the Doken payload's sessionKey, so we
+// cannot mint a fresh TideKey.NewKey() and expect the captured Doken to
+// validate. The ONLY way to make Sign work is to lift the SAME session-key
+// material that the SWE wrote during CMK auth out of the browser.
+//
+// This material is private-equivalent (it's the session keypair the Doken
+// is bound to — anyone with it can mint Sign requests for the user until
+// the Doken expires). The carve-out is therefore tightly scoped:
+//
+//  1. ONLY for the load-testing realm. The list below is checked at capture
+//     time; the warm-up refuses to even attempt extraction in any other realm.
+//  2. ONLY the session keypair — no Tide_Device_Key, no Tide_Entry, no
+//     _clientDPoPKey, no decrypted models, no inputs/cookies/headers.
+//  3. Egress path is /warmup/oidc/await/:state JSON → fixtures.json on disk.
+//     NEVER through the SWE error-reporting buildReportPayload path; that
+//     allowlist + its tests in ork/ must remain unchanged.
+//  4. fixtures.json is gitignored and handled as a realm-export-grade secret.
+//
+// Future maintainers: do NOT widen this list without orchestrator + user
+// sign-off. The realm gate is the only thing keeping this from becoming a
+// general-purpose key exfiltration tool.
+// ---------------------------------------------------------------------------
+export const ALLOWLIST_CARVE_OUT_REALMS = ["tide-metrics-load"] as const;
+type CarveOutRealm = typeof ALLOWLIST_CARVE_OUT_REALMS[number];
+
+function isCarveOutRealm(realm: string): realm is CarveOutRealm {
+  return (ALLOWLIST_CARVE_OUT_REALMS as readonly string[]).includes(realm);
+}
+
 // Selector blocks for the live SWE form (Round 6).
 //
 // The form is a single screen. Both username and password are visible
@@ -93,6 +127,12 @@ interface CaptureOptions {
   callbackOrigin:  string;     // e.g. http://localhost:3000 (the redirect_uri origin)
   user:            LoadTestUser;
   context:         BrowserContext;
+  // Realm name from /health (e.g. "tide-metrics-load"). REQUIRED so the
+  // Option B carve-out (in-page session-key extraction) can hard-refuse
+  // any realm not on ALLOWLIST_CARVE_OUT_REALMS. Failure to supply it ==
+  // capture disabled for this user — Sign won't work but the rest of the
+  // warm-up still produces a Doken fixture.
+  realm:           string;
   awaitTimeoutMs?: number;
   navTimeoutMs?:   number;
   // Optional sniffer for Path α — invoked with the first SWE URL the
@@ -227,7 +267,7 @@ async function resolveSignInTrigger(
   }
 }
 
-async function beginFlow(harnessUrl: string, userId: string): Promise<OidcBeginResponse> {
+export async function beginFlow(harnessUrl: string, userId: string): Promise<OidcBeginResponse> {
   const res = await fetch(`${harnessUrl}/warmup/oidc/begin`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
@@ -243,7 +283,269 @@ async function beginFlow(harnessUrl: string, userId: string): Promise<OidcBeginR
   return json;
 }
 
-async function awaitFlow(
+// POST the captured session-key blob to the harness, which attaches it to
+// the matching pending flow so the await response can deliver it. We route
+// via the harness (rather than baking into the fixture in this module
+// directly) so the egress audit point stays in server.ts — one JSON shape,
+// one place to grep when reviewing handling.
+//
+// R15: the Tide doken is no longer carried on this payload. R14 confirmed
+// TideCloak attaches the SWE-issued Tide doken as a top-level `doken`
+// sibling field on the /token response (`AccessTokenResponse.otherClaims`
+// + @JsonAnyGetter; TokenManager.java:1406-1408), so the harness captures
+// it from the token-exchange path and the in-page pump's job is now
+// narrowed to just the SessionKey.
+async function postCarveOutCapture(
+  harnessUrl: string,
+  state: string,
+  payload: { sessKeySerialized: string },
+): Promise<void> {
+  const res = await fetch(
+    `${harnessUrl}/warmup/oidc/sesskey/${encodeURIComponent(state)}`,
+    {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(payload),
+    },
+  );
+  if (!res.ok) {
+    // Body may include code/message but NEVER includes the sessKey we sent.
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `/warmup/oidc/sesskey/${state.slice(0, 8)}… returned ${res.status}: ${text.slice(0, 200)}`,
+    );
+  }
+}
+
+// In-page extraction of the SWE session key (private-equivalent).
+//
+// R13: the previous implementation used `page.waitForFunction()` + a
+// trailing `page.evaluate()` to observe `window.__tideEnclave` after Sign
+// In had been clicked. QA Round 7 showed this races the SWE→TideCloak→
+// `/callback` redirect chain: by the time the Node-side `evaluate` runs,
+// the page has navigated to the `localhost:3000` callback origin where
+// `__tideEnclave` doesn't exist. Even when the `waitForFunction`
+// predicate matched (because at the moment of the check we WERE still on
+// the SWE origin), the subsequent `evaluate` raced the same redirect.
+//
+// R13's fix is to run the polling loop IN the page's own JS context
+// (installed via `page.addInitScript()` BEFORE the first navigation, so
+// it runs on every document including the SWE origin) and ship the
+// captured material to Node via `page.exposeFunction()`. The exposed
+// function call is synchronous from the page's perspective — the page
+// enqueues a message to Node and returns — so even if the SWE redirects
+// nanoseconds later, the capture data has already crossed the boundary.
+//
+// R15: the Tide doken half of the in-page pump has been retired. R14
+// confirmed TideCloak attaches the SWE-issued Tide doken as a top-level
+// sibling `doken` field on the /token JSON response
+// (`AccessTokenResponse.otherClaims` + @JsonAnyGetter;
+// TokenManager.java:1406-1408, DefaultTokenManager.java:489-555), and
+// observation of `window.__tideEnclave` in the cmkOnly login flow shows
+// no `doken` field is exposed on the enclave — the in-page approach was
+// chasing a phantom. The pump now resolves as soon as `enc.SessionKey`
+// appears, which fires well before the SWE → TideCloak → /callback
+// redirect chain begins, removing the redirect-race window that bit R13.
+//
+// SessionKey: extracted from the live `window.__tideEnclave.SessionKey`
+// TideKey instance. The SWE writes this during CMK auth (RequestEnclave.
+// _init around line 145).
+//
+// What we capture: the private component serialization. That's all
+// `TideKey.FromSerializedComponent()` consumes on the runSign side; the
+// public component is derived from the private via `(component as any)
+// .GetPublic()` in TideKey.get_public_component().
+//
+// What we DO NOT capture:
+//   * Tide_Device_Key, Tide_Entry, _clientDPoPKey, _gPass
+//   * decrypted models, voucher blur scalars, password inputs,
+//     cookies, Authorization headers
+// The init script body below references ONLY `__tideEnclave.SessionKey`.
+// Nothing else.
+interface CarveOutCapture {
+  sessKeySerialized: string;
+}
+
+// Sentinel error reason emitted via `__captureCarveOutError` when the
+// in-page poll budget expires without ever seeing the enclave fields.
+const CARVE_OUT_TIMEOUT_REASON = "enclave never observed before timeout";
+
+// Set up the in-page carve-out pump. Installs:
+//   * an `addInitScript` that polls `__tideEnclave` and calls the exposed
+//     functions when the SessionKey appears, and
+//   * `__captureCarveOut(cap)` / `__captureCarveOutError({reason})`
+//     exposed functions that resolve / reject the returned promise.
+//
+// Returns:
+//   * `capturedPromise`: resolves with the capture, or rejects with an
+//     Error tagged with a `.reason` string from the in-page side.
+//   * `dispose()`: idempotent; clears the per-page state so a late
+//     in-page call is a no-op (defence-in-depth against the page
+//     trying to call the exposed function after we've finished).
+//
+// Must be invoked BEFORE the first `page.goto()` so the init script
+// runs on every document the page loads — crucially the SWE origin,
+// where `__tideEnclave` lives.
+export async function installCarveOutPump(
+  page: import("playwright").Page,
+  realm: string,
+): Promise<{
+  capturedPromise: Promise<CarveOutCapture>;
+  dispose: () => void;
+}> {
+  // Per-page Node-side closure state. Defence-in-depth: even if the
+  // exposed function were called for a realm not on the allowlist (it
+  // shouldn't be — the init script gates on realm too), we refuse here.
+  let settled = false;
+  let resolve!: (cap: CarveOutCapture) => void;
+  let reject!: (e: Error & { reason?: string }) => void;
+  const capturedPromise = new Promise<CarveOutCapture>((res, rej) => {
+    resolve = res;
+    reject  = rej;
+  });
+
+  const realmAllowed = isCarveOutRealm(realm);
+
+  await page.exposeFunction(
+    "__captureCarveOut",
+    (cap: { sessKeySerialized?: unknown }) => {
+      if (settled) return;
+      // Defence-in-depth realm gate on the Node side.
+      if (!realmAllowed) return;
+      const sessKeySerialized =
+        typeof cap?.sessKeySerialized === "string" && cap.sessKeySerialized.length > 0
+          ? cap.sessKeySerialized
+          : null;
+      if (!sessKeySerialized) return;
+      settled = true;
+      resolve({ sessKeySerialized });
+    },
+  );
+
+  await page.exposeFunction(
+    "__captureCarveOutError",
+    (err: { reason?: unknown }) => {
+      if (settled) return;
+      if (!realmAllowed) return;
+      const reason =
+        typeof err?.reason === "string" && err.reason.length > 0
+          ? err.reason
+          : "unknown error";
+      settled = true;
+      const e = new Error(reason) as Error & { reason: string };
+      e.reason = reason;
+      reject(e);
+    },
+  );
+
+  // The init script. Kept compact — runs on every document the page
+  // navigates to, but early-returns on realm mismatch and on documents
+  // where it's already running. The 50ms poll is comfortably faster
+  // than the SWE → TideCloak → /callback redirect chain. R15: success
+  // predicate is `enc.SessionKey` only — the SessionKey is populated
+  // during CMK auth, well before the redirect chain begins, so the
+  // capture lands long before the JS context can be torn down.
+  await page.addInitScript(
+    ({ realm: r, allowedRealms }: { realm: string; allowedRealms: readonly string[] }) => {
+      // Per-document realm gate. Defence-in-depth: the Node side also
+      // refuses non-allowlisted realms.
+      if (!allowedRealms.includes(r)) return;
+      // Idempotency guard — if this script ran on a previous document,
+      // the exposed functions are now bound to that document's context
+      // and we don't need to start another poll loop here.
+      const w = window as unknown as {
+        __tideCarveOutPolling?: boolean;
+        __captureCarveOut?: (cap: { sessKeySerialized: string }) => void;
+        __captureCarveOutError?: (err: { reason: string }) => void;
+        __tideEnclave?: {
+          SessionKey?: {
+            get_private_component?: () => {
+              Serialize?: () => { ToString?: () => string };
+            };
+          };
+        };
+      };
+      if (w.__tideCarveOutPolling) return;
+      w.__tideCarveOutPolling = true;
+
+      const START = Date.now();
+      const BUDGET_MS = 60_000;
+      let observedOnce = false;
+
+      const interval = setInterval(() => {
+        try {
+          const enc = w.__tideEnclave;
+          if (enc && enc.SessionKey) {
+            observedOnce = true;
+            let sessKeySerialized = "";
+            try {
+              const priv = enc.SessionKey.get_private_component?.();
+              const ser  = priv?.Serialize?.();
+              const s    = ser?.ToString?.();
+              if (typeof s === "string") sessKeySerialized = s;
+            } catch (e) {
+              clearInterval(interval);
+              w.__captureCarveOutError?.({
+                reason: `SessionKey extract: ${(e as Error).message}`,
+              });
+              return;
+            }
+            if (sessKeySerialized) {
+              clearInterval(interval);
+              w.__captureCarveOut?.({ sessKeySerialized });
+              return;
+            }
+            // SessionKey present on the enclave but the accessor returned
+            // a non-string — surface as an error so Node distinguishes
+            // this from "never observed".
+            clearInterval(interval);
+            w.__captureCarveOutError?.({
+              reason: "enclave SessionKey present but extract returned non-string",
+            });
+            return;
+          }
+        } catch (e) {
+          clearInterval(interval);
+          try {
+            w.__captureCarveOutError?.({
+              reason: `poll: ${(e as Error).message}`,
+            });
+          } catch {
+            // exposed fn not yet bound; nothing we can do
+          }
+          return;
+        }
+        if (Date.now() - START > BUDGET_MS) {
+          clearInterval(interval);
+          if (!observedOnce) {
+            try {
+              w.__captureCarveOutError?.({
+                reason: "enclave never observed before timeout",
+              });
+            } catch {
+              // exposed fn not yet bound; nothing we can do
+            }
+          }
+        }
+      }, 50);
+    },
+    { realm, allowedRealms: Array.from(ALLOWLIST_CARVE_OUT_REALMS) },
+  );
+
+  const dispose = () => {
+    if (settled) return;
+    settled = true;
+    // Reject with a sentinel so any awaiter sees it as a controlled
+    // shutdown, not a leaked unhandled rejection.
+    const e = new Error("carve-out pump disposed") as Error & { reason: string };
+    e.reason = "disposed";
+    reject(e);
+  };
+
+  return { capturedPromise, dispose };
+}
+
+export async function awaitFlow(
   harnessUrl: string,
   state: string,
   timeoutMs: number,
@@ -334,11 +636,17 @@ class SweLoginError extends Error {
 // Drive the SWE login form. Errors from this function are SweLoginErrors
 // tagged with the phase the failure happened in. captureUserFixture()
 // uses the phase to decide whether a debug-dump is safe.
-async function driveSweLogin(
+// Fill the SWE login form (username + password). Returns the password
+// host Locator so a caller that wants to drive Enter-as-submit fallback
+// (sweClickSignIn) doesn't have to re-resolve it. R22: split out of the
+// monolithic driveSweLogin so the load-test driver can time form-fill
+// and sign-in click as separate phases without reimplementing the
+// shadow-DOM-aware drive primitives.
+export async function sweFormFill(
   page: import("playwright").Page,
   user: LoadTestUser,
   navTimeoutMs: number,
-): Promise<void> {
+): Promise<import("playwright").Locator> {
   // Step 1: locate username host (shadow-DOM-aware).
   const userHost = await waitForCustomInputHost(
     page,
@@ -378,6 +686,17 @@ async function driveSweLogin(
   // page DOM contains the typed password — a debug-dump is unsafe.
   await fillCustomInput(pwHost, user.password);
 
+  return pwHost;
+}
+
+// Click Sign In with the same fallback policy as the original
+// driveSweLogin. R22: extracted so the load-test driver can record the
+// click latency as its own phase.
+export async function sweClickSignIn(
+  page: import("playwright").Page,
+  pwHost: import("playwright").Locator,
+  navTimeoutMs: number,
+): Promise<void> {
   // Step 5: click Sign In. The trigger is a clickable <div> — see
   // resolveSignInTrigger() for the selector rationale.
   const signIn = await resolveSignInTrigger(page, Math.min(5_000, navTimeoutMs));
@@ -398,6 +717,15 @@ async function driveSweLogin(
       `SWE login: failed to trigger sign-in: ${(e as Error).message}`,
     );
   }
+}
+
+export async function driveSweLogin(
+  page: import("playwright").Page,
+  user: LoadTestUser,
+  navTimeoutMs: number,
+): Promise<void> {
+  const pwHost = await sweFormFill(page, user, navTimeoutMs);
+  await sweClickSignIn(page, pwHost, navTimeoutMs);
 }
 
 // Sanitize a string for use in a filename. Allows [a-zA-Z0-9._-], maps
@@ -476,6 +804,29 @@ export async function captureUserFixture(opts: CaptureOptions): Promise<UserFixt
   page.setDefaultTimeout(navTimeoutMs);
   page.setDefaultNavigationTimeout(navTimeoutMs);
 
+  // 2-pre. Install the carve-out pump BEFORE the first navigation. The
+  //        init script must be registered before `page.goto(authUrl)` so
+  //        it runs in the JS context of every document the page loads,
+  //        including the SWE origin where `__tideEnclave` is populated.
+  //        The pump itself is realm-gated in two places (init script
+  //        early-return + Node-side exposed-function early-return) so
+  //        documents loaded for non-allowlisted realms are a no-op.
+  //
+  //        R13: this replaces the post-Sign-In `extractCarveOutInPage()`
+  //        approach, which used `waitForFunction` + a Node-side
+  //        `page.evaluate()` that raced the SWE→TideCloak→/callback
+  //        redirect chain. The pump observes the enclave in-page and
+  //        ships the capture material across the Playwright boundary
+  //        via `exposeFunction` — the page-side call returns immediately
+  //        so a redirect firing nanoseconds later doesn't lose the
+  //        capture.
+  const pump = await installCarveOutPump(page, opts.realm);
+  // Surface unhandled rejections silently; we await the promise below
+  // when we want it, but the `dispose()` path may also reject and we
+  // don't want Node to warn about an unhandled rejection in the
+  // failure / non-allowlisted-realm case.
+  pump.capturedPromise.catch(() => undefined);
+
   // 2a. Nav tracing (Round 7). Operators need visibility into where
   //     the flow stalls between Sign In and /callback — Round 4 QA's
   //     `waitForURL: Timeout 120000ms exceeded` told them nothing
@@ -533,6 +884,96 @@ export async function captureUserFixture(opts: CaptureOptions): Promise<UserFixt
     // 4. Drive the SWE login.
     await driveSweLogin(page, opts.user, navTimeoutMs);
 
+    // 4b. Option B carve-out — realm-gated, in-page pump (R13).
+    //
+    //     The pump was installed BEFORE page.goto() up at step 2-pre.
+    //     It polls `__tideEnclave` in-page and ships the SessionKey to
+    //     Node via `exposeFunction` as soon as it appears. We just await
+    //     the capture here (with the same `awaitTimeoutMs` ceiling we
+    //     use for /callback) and POST. R15: tideDoken is no longer part
+    //     of this capture — it now ships on TideCloak's /token response
+    //     as a sibling `doken` field and the harness extracts it server-
+    //     side in exchangeCodeForToken().
+    //
+    //     If the realm is NOT in ALLOWLIST_CARVE_OUT_REALMS, the pump
+    //     is a no-op (both the init script and the Node-side exposed
+    //     functions short-circuit). We don't need to await anything.
+    //     No log of the realm value beyond the allowlist-match decision.
+    if (isCarveOutRealm(opts.realm)) {
+      // Race the capture against the awaitTimeoutMs budget. If the
+      // pump completes first (it should — the enclave is populated
+      // seconds before /callback fires), we POST. If the budget
+      // expires first, we drop through with a diagnostic and let
+      // runSign refuse downstream.
+      let capTimer: ReturnType<typeof setTimeout> | undefined;
+      const timeoutMarker = Symbol("carve-out-timeout");
+      const timeoutPromise = new Promise<typeof timeoutMarker>((resolve) => {
+        capTimer = setTimeout(() => resolve(timeoutMarker), Math.min(60_000, awaitTimeoutMs));
+      });
+      let capResult: CarveOutCapture | typeof timeoutMarker | { error: Error & { reason?: string } };
+      try {
+        const winner = await Promise.race<CarveOutCapture | typeof timeoutMarker>([
+          pump.capturedPromise,
+          timeoutPromise,
+        ]);
+        capResult = winner;
+      } catch (e) {
+        capResult = { error: e as Error & { reason?: string } };
+      } finally {
+        if (capTimer) clearTimeout(capTimer);
+      }
+
+      if (capResult === timeoutMarker) {
+        // We won the race against the pump — no resolve, no in-page
+        // error fired within budget. Emit the explicit diagnostic QA
+        // asked for and let runSign refuse downstream.
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[warmup] carve-out: enclave never observed before timeout",
+        );
+      } else if (typeof capResult === "object" && capResult !== null && "error" in capResult) {
+        // The in-page side called __captureCarveOutError. Surface the
+        // reason so QA can distinguish "never observed" from "observed
+        // but extract failed". The reason string is constructed in the
+        // init script — no key material is included.
+        const reason = capResult.error.reason ?? capResult.error.message;
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[warmup] carve-out: in-page extract failed: ${reason}`,
+        );
+      } else {
+        // Happy path — SessionKey captured. Log presence (Y) only;
+        // never log length or value. R15: tideDoken is no longer part
+        // of the in-page capture, so the log message reflects the
+        // now-narrower scope.
+        const cap = capResult;
+        try {
+          await postCarveOutCapture(opts.harnessUrl, begin.state, {
+            sessKeySerialized: cap.sessKeySerialized,
+          });
+          // eslint-disable-next-line no-console
+          console.log("[warmup] carve-out: sessKey captured (Y)");
+        } catch (e) {
+          // We do NOT abort the warm-up on carve-out POST failure —
+          // the OIDC access_token + tideDoken capture is independent
+          // (both ship on the /token response). The user will simply
+          // lack sessKeySerialized in their fixture; their runSign call
+          // will refuse loudly. Log a brief diagnostic (no key material).
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[warmup] carve-out POST failed for ${opts.user.userId}: ${(e as Error).message}`,
+          );
+        }
+      }
+    } else {
+      // Realm refusal — deliberate. Make it visible in logs (without
+      // disclosing what the operator would have to do to enable it).
+      // eslint-disable-next-line no-console
+      console.log(
+        `[warmup] sessKey capture REFUSED — realm not in ALLOWLIST_CARVE_OUT_REALMS`,
+      );
+    }
+
     // 5. Wait for redirect to <callbackOrigin>/callback?code=...&state=...
     //    The harness server is in the same process group as us; once it
     //    receives the callback it resolves the pending /await promise.
@@ -543,12 +984,19 @@ export async function captureUserFixture(opts: CaptureOptions): Promise<UserFixt
     //    the failure self-diagnostic without a debug-dump (post-fill,
     //    so dump is unsafe).
     try {
+      // R11: waitUntil="domcontentloaded" — softer than the default
+      // "load", which the Round-10 QA flake (120s timeout) hit waiting
+      // for some slow sub-resource of the /callback page. We only need
+      // the URL predicate to match and the DOM to be parsed; the
+      // /callback handler in server.ts itself does no heavy work, and
+      // waitForURL doesn't need 'load' for our subsequent `awaitFlow`
+      // long-poll.
       await page.waitForURL(
         (url) =>
           url.origin === opts.callbackOrigin &&
           url.pathname === "/callback" &&
           (url.searchParams.has("code") || url.searchParams.has("error")),
-        { timeout: awaitTimeoutMs },
+        { timeout: awaitTimeoutMs, waitUntil: "domcontentloaded" },
       );
     } catch (e) {
       // Prefer the live page URL at the moment of failure; fall back
@@ -595,6 +1043,22 @@ export async function captureUserFixture(opts: CaptureOptions): Promise<UserFixt
     if (dokenExpiresAt) {
       fixture.dokenExpiresAt = dokenExpiresAt;
     }
+    // Option B carve-out: `sessKeySerialized` is present only when the
+    // realm gate let us capture; null when no POST landed (e.g. capture
+    // failed or realm refused) — we omit it rather than write `null`.
+    //
+    // R15: `tideDoken` is now sourced from the token-exchange response
+    // (TideCloak attaches it as a sibling `doken` field on /token), so
+    // it ships on /warmup/oidc/await/:state regardless of whether the
+    // in-page SessionKey pump succeeded. We still gate the fixture
+    // assignment on a non-empty string so a TideCloak that didn't issue
+    // one results in an omitted field — runSign will refuse downstream.
+    if (typeof result.sessKeySerialized === "string" && result.sessKeySerialized.length > 0) {
+      fixture.sessKeySerialized = result.sessKeySerialized;
+    }
+    if (typeof result.tideDoken === "string" && result.tideDoken.length > 0) {
+      fixture.tideDoken = result.tideDoken;
+    }
     return fixture;
   } catch (e: unknown) {
     // SECURITY: scrub the password from any error message before
@@ -623,6 +1087,9 @@ export async function captureUserFixture(opts: CaptureOptions): Promise<UserFixt
 
     throw new Error(redact(withDump, opts.user.password));
   } finally {
+    // Resolve/reject the pump promise if it's still pending so any
+    // late in-page callback is a no-op and we don't leak handlers.
+    pump.dispose();
     await page.close().catch(() => {});
   }
 }

@@ -203,3 +203,28 @@ interface RealmFixture {
 ```
 
 The warm-up writes `{ realm: RealmFixture, users: UserFixture[] }` to `fixtures.json`.
+
+---
+
+## Round-15 correction (2026-06-02)
+
+Live source-tree inspection of the TideCloak token-issuance path overturns substantial parts of the R7 and R12 capture designs. The Tide doken does NOT have to be lifted out of the browser — TideCloak attaches it directly to the OIDC `/token` JSON response as a top-level sibling field of `access_token`, named `doken` (lowercase).
+
+The path:
+- `TokenManager.responseBuilder().build()` (Keycloak's `TokenManager.java:1406-1408`) calls `setOtherClaims("doken", encodedTokens[2])` on the `AccessTokenResponse` when the Tide IdP has placed an encoded Tide doken into the token-exchange context. `encodedTokens[2]` is the 3-part JWT serialization of the doken (header `alg=EdDSA, typ=doken`).
+- `AccessTokenResponse.otherClaims` is a `Map<String, Object>` annotated with `@JsonAnyGetter`, so Jackson flattens it onto the top level of the response JSON during serialization (see `DefaultTokenManager.java:489-555` for the surrounding builder logic). The wire shape is therefore:
+  ```json
+  {
+    "access_token": "eyJ…",
+    "refresh_token": "eyJ…",
+    "expires_in": 300,
+    "doken": "eyJhbGciOiJFZERTQSIsInR5cCI6ImRva2VuIn0…"
+  }
+  ```
+- The harness's `exchangeCodeForToken()` (R15) parses that `doken` field directly. No in-page extraction required, no race against the SWE → TideCloak → `/callback` redirect chain.
+
+The R10-R12 "capture Doken from `__tideEnclave`" path is wrong: the cmkOnly login enclave does not expose a `doken` field. The previous in-page pump's success predicate (`enc.SessionKey && enc.doken`) was waiting on a property that is never set on this enclave instance. The R13 pump was lucky to fire at all — what it was actually waiting for were timing artefacts.
+
+The carve-out POST endpoint (`POST /warmup/oidc/sesskey/:state`) is consequently narrowed in R15 to `{ sessKeySerialized }` only. The body's `tideDoken` field is dropped from the contract; the server deliberately ignores it if a stale warm-up still sends it.
+
+The SessionKey carve-out remains scoped to the `tide-metrics-load` realm via `ALLOWLIST_CARVE_OUT_REALMS`. The reason is **not** the Doken — it is that `AuthorizedSigningFlow.signv2()` requires the SessionKey **private** half to sign the per-ORK request bodies, and that private material is the only thing in the SWE enclave that can't be regenerated server-side. The realm gate keeps the in-page private-key extractor from becoming a general-purpose exfiltration tool; widening it must require orchestrator + user sign-off.
