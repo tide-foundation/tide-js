@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "1",
+  "realm": "tide-metrics-load",
+  "capturedAt": "2026-06-02T02:55:00Z",
+  "_NOTE": "Partial capture. Public state captured via Playwright browser_evaluate against the live SWE on staging during a real login flow. Doken capture deferred to the runtime warm-up (must be obtained mid-SWE-login; OIDC access_token is in-memory only on the Account Console after redirect; private localStorage bytes are intentionally not captured per the SWE error-reporting allowlist).",
+
+  "user": {
+    "userId":      "metrics-load-001",
+    "vuid":        "6a31789dc0e75ad5a69ed96486ce0e81b0d125eb18b023e5263c63b42bbb8d45",
+    "_vuid_NOTE":  "The Tide-derived hash that TideCloak's first-broker-login screen populated as the auto-username. It's the SHA-256 of the user's CMK-derived identity (per the tide-IdP-extensions setup).",
+    "doken":       "TODO_CAPTURE_DURING_SWE_LOGIN",
+    "_doken_NOTE": "Capture during Playwright warm-up by intercepting the SWE-side return path. The Doken is the per-session credential the SWE produces on successful CMK auth; it is consumed by AuthorizedSigningFlow as `token` (string, opaque blob).",
+    "sessKey":     "TODO_CAPTURE_DURING_SWE_LOGIN",
+    "_sessKey_NOTE": "TideKey serialized form. tide-js TideKey methods (confirmed by introspection): get_private_component, get_public_component, sign, verify, asymmetricDecrypt, asymmetricEncrypt, prepVouchersReq. Only the PUBLIC component goes into the fixture; the private is per-session and ephemeral.",
+    "vvkid":       "e683904fedb0c52e5a04c41e005df373f9fce407b6d436f750d489672c0cbc6b",
+    "_vvkid_NOTE": "Extracted from the SWE URL query string `gVVK=...`. This IS the vvkid for tide-metrics-load realm — stable across all users in the realm.",
+    "vvkPublic":   "TODO_DERIVE_FROM_GVVK_OR_FETCH",
+    "_vvkPublic_NOTE": "Same as vvkid in this realm — gVVK on the URL is the vendor's public vault key. tide-js Point class (minified `E`) accepts it via fromHex / fromBase64; confirm during runSign wiring.",
+    "voucherURL":  "https://staging.dauth.me/realms/tide-metrics-load/tidevouchers/fromAuthSession?sessionId=<PER_SESSION>&tabId=<PER_TAB>&clientId=f74eb08a-56fe-4abe-99df-cc049543e48f",
+    "_voucherURL_NOTE": "The host part + path + clientId are stable; sessionId + tabId are per-login. Captured value during the test login: sessionId=utpldoi2GOTSu-lnyfbFpa7g, tabId=-cYh3E6JYNs.",
+    "homeOrkUrl":  "https://sork1.tideprotocol.com",
+    "_orks_NOTE":  "activeOrks is populated by the SWE during the login flow (NodeClient.GetSomeORKs against the home ORK at /Network/Authentication/Node/Some). The SWE's tide-js cohort is whatever this endpoint returns — at staging time of capture, length=10 matching TOTAL_ORKS=10. Capture the full OrkInfo[] during the warm-up.",
+    "orks":        "TODO_FETCH_FROM_/Network/Authentication/Node/Some"
+  },
+
+  "signedSettings": {
+    "RegOn":    true,
+    "BackupOn": true,
+    "LogoURL":  "https://staging.dauth.me/realms/tide-metrics-load/tide-idp-resources/images/LOGO",
+    "ImageURL": "https://staging.dauth.me/realms/tide-metrics-load/tide-idp-resources/images/BACKGROUND_IMAGE"
+  },
+  "_signedSettings_NOTE": "Captured from the SWE URL `signedSettings=...&settingsSignature=...`. Stable across all logins for the realm. The harness doesn't validate the signature — that's TideCloak's job — but it does need to know RegOn=true means registration is signed-on.",
+
+  "swe_url_params_observed": {
+    "sid":              "PER_SESSION",
+    "gVVK":             "e683904fedb0c52e5a04c41e005df373f9fce407b6d436f750d489672c0cbc6b",
+    "authorizerPack":   "010000000500000056524B3A313700000001000000230000002000000016948F57C85F9F601A36B2CAB37767DF968248D07670F7EDEB9D5A6E3790E90800000093DF3F6A000000000B000000526F7461746556524B3A311900000054696465636C6F616B55706461746553657474696E67733A310B00000055736572546F6B656E3A3110000000456E61626C654F6666626F6172643A311B0000005469646552657175657374496E697469616C697A6174696F6E3A31",
+    "gVRKSignature":    "k7xI+c3E8pk5xc8eJ+4p/48BBJXCWqOA0tjM7Xp8JRP6cXu+9v6WnhQ2TOoIXHxFHMqL/gIS03d7OArDeH1+Ag==",
+    "vRedirectUri":     "https://staging.dauth.me/realms/tide-metrics-load/broker/tide/endpoint",
+    "rURISignature":    "3EjHihb1Gcs89ifvjC4A4r7fQGW1ca7MilPQru1wEZKahhh+RXj0zO3+23qzfFsBk7pixB/rOPNC7VmiemtxAw==",
+    "settingsSignature":"IaP6/oHKFz1HqplKXe2rNbGIos3frJzQfCgWaDPgIkd60Hz82ytDvjvvHa0P5h8/oTjWlazrzWNqTs2bG1JmCw==",
+    "type":             "cmkOnly"
+  },
+  "_swe_url_NOTE": "These are the params TideCloak's TideIdentityProvider.performLogin redirect URL carries. All present per Phase-1 idp-extensions PM audit. authorizerPack is hex-encoded; the others are base64. The harness's warm-up should fetch these from the realm's IdP config (Realm Settings → Keys → tide-vendor-key Settings page) ONCE and stash them; for each enrolled user the cohort + per-session sid + voucherURL vary, but these REALM-level values are stable."
+}
