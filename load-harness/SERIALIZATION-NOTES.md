@@ -134,3 +134,72 @@ interface UserFixture {
 ```
 
 The serialization format (base64 vs hex) needs one more confirmation during the warm-up. Pick a single user, call `.Serialize()` on a captured Point and TideKey public component, log to console, observe.
+
+---
+
+## Probe result (2026-06-02) — design correction
+
+Live runtime introspection of `window.__tideEnclave.constructor.prototype` (class `I`, extending `G`) on a fresh `?type=cmkOnly` SWE load. Method signatures confirmed by `Function.prototype.toString()`:
+
+**`I.prototype._finalize(e)`** (49 chars):
+```js
+async _finalize(e) { this._redirectBackToVendor(e); }
+```
+
+**`I.prototype._redirectBackToVendor(e)`** (262 chars):
+```js
+async _redirectBackToVendor(e) {
+  const t = new URL(this.vReturnURL),
+        s = new URLSearchParams(window.location.search);
+  // ... appends e (vendorEncryptedData) + state to the query string
+  // ... then location.href = t.toString();
+}
+```
+
+`G.prototype._finalize()` is the abstract stub (`throw Error("Not implemented")`).
+
+### The Doken-capture design correction
+
+`_finalize(e)` receives `vendorEncryptedData`, NOT a Doken. The Doken is the **OIDC access_token** TideCloak issues AFTER `Endpoint.authResponse` consumes `vendorEncryptedData` and mints a Keycloak session. So monkey-patching `_finalize` does NOT give us a Doken directly.
+
+The **correct** warm-up design — standard OIDC, no prototype hacking:
+
+1. **One-time admin setup**: register a public OIDC client `tide-loadtest-harness` in TideCloak (`redirect_uri=http://localhost:3000/callback`, PKCE enabled).
+2. **Per user**:
+   - `page.goto('<TideCloak>/realms/tide-metrics-load/protocol/openid-connect/auth?client_id=tide-loadtest-harness&kc_idp_hint=tide&redirect_uri=http://localhost:3000/callback&response_type=code&...')`
+   - Playwright drives the SWE sign-in form (already verified works against `metrics-load-001` / `Load-QA-2026!`).
+   - On SWE success, browser redirects to `http://localhost:3000/callback?code=…`.
+   - Harness's Express server has a `/callback` route that captures the `code`.
+   - Harness exchanges the code at `<TideCloak>/realms/tide-metrics-load/protocol/openid-connect/token` (`grant_type=authorization_code`, `code_verifier=...`).
+   - The returned `access_token` IS the Doken.
+
+No monkey-patching. No private state extraction. Pure OIDC.
+
+### Also: `sessKey` is ephemeral, not captured
+
+From the tide-js PM Phase 1 audit:
+- `AuthorizedSigningFlow` takes `sessKey: TideKey` as an **ephemeral session key**, generated fresh per Sign via `TideKey.NewKey(...)`.
+- It is NOT the user's persistent CMK-derived key.
+- The harness's `runSign.ts` generates a fresh `TideKey.NewKey()` each iteration; no fixture serialization needed for it.
+
+### Updated fixture shape (corrected)
+
+```typescript
+interface UserFixture {
+  userId:      string;     // Keycloak username (e.g. "metrics-load-001")
+  vuid:        string;     // Tide-derived hash (from first-broker-login auto-username)
+  doken:       string;     // OIDC access_token from TideCloak (the BIG capture)
+  // No sessKey — generated fresh per Sign via TideKey.NewKey()
+}
+
+interface RealmFixture {
+  realm:       string;     // "tide-metrics-load"
+  vvkid:       string;     // gVVK from SWE URL (hex), or Realm Settings → Keys → tide-vendor-key
+  vvkPublic:   string;     // Point (Serialize() format TBD on first warm-up — base64 likely)
+  voucherURL:  string;     // Pattern; per-session sessionId+tabId baked at iteration time
+  homeOrkUrl:  string;     // "https://sork1.tideprotocol.com"
+  orks:        OrkInfo[];  // Fetched ONCE per warm-up from <homeOrkUrl>/Network/Authentication/Node/Some
+}
+```
+
+The warm-up writes `{ realm: RealmFixture, users: UserFixture[] }` to `fixtures.json`.
