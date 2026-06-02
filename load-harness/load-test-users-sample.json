@@ -1,0 +1,9 @@
+{
+  "_NOTE": "Copy this file to load-test-users.json (or set LOAD_TEST_USERS_PATH) before running `npm run warmup`. Add one entry per pre-enrolled test user in the tide-metrics-load realm on staging. Passwords stay in this file — never bake them into source. Replace the placeholder below with the real credential out-of-band; do NOT commit the populated file (the *-users.json gitignore glob already excludes load-test-users.json).",
+  "users": [
+    {
+      "userId":   "metrics-load-001",
+      "password": "REPLACE_WITH_REAL_PASSWORD"
+    }
+  ]
+}

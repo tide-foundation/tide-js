@@ -1,5 +1,11 @@
 node_modules/
 dist/
 fixtures.json
+# Never commit real per-user secrets — the *-users.json glob covers
+# load-test-users.json and any future per-environment variants.
+# (The committed sample lives at load-test-users-sample.json which
+# does NOT match this glob.)
+*-users.json
+!*-users-sample.json
 *.log
 .env

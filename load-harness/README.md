@@ -24,10 +24,20 @@ From `tide-js/load-harness/`:
 ```bash
 npm install
 npm run build
-npm run warmup        # writes ./fixtures.json (currently a TODO stub)
-npm start             # starts http://localhost:3000
 
-# in another shell:
+# 1. Start the harness server (also hosts the OIDC /callback route the
+#    warm-up needs). Default realm = tide-metrics-load on staging.
+npm start                              # http://localhost:3000
+
+# 2. Prepare the list of pre-enrolled test users.
+cp load-test-users-sample.json load-test-users.json
+$EDITOR load-test-users.json           # add / adjust { userId, password }
+
+# 3. Run the warm-up. Spawns a Chromium per user, drives the SWE login,
+#    and writes ./fixtures.json. Use WARMUP_HEADLESS=false to watch.
+npm run warmup
+
+# 4. Point Locust at the now-warmed harness.
 cd locust
 pip install -r requirements.txt
 locust -f locustfile.py -H http://localhost:3000
@@ -37,8 +47,27 @@ Sanity-check the server before pointing Locust at it:
 
 ```bash
 curl http://localhost:3000/health
-# → {"ok":true,"fixturesLoaded":5}
+# → {"ok":true,"fixturesLoaded":5,"realmLoaded":"tide-metrics-load",...}
 ```
+
+### Warm-up env
+
+| Var | Default | Meaning |
+|---|---|---|
+| `HARNESS_URL` | `http://localhost:3000` | Harness server origin to talk to |
+| `LOAD_TEST_USERS_PATH` | `./load-test-users.json` | JSON `{users:[{userId,password}]}` |
+| `FIXTURES_OUT_PATH` | `./fixtures.json` | Atomic write target |
+| `WARMUP_HEADLESS` | `true` | `false` to launch visible Chromium |
+| `WARMUP_HOME_ORK` | `https://sork1.tideprotocol.com` | Home ORK for `/Network/Authentication/Node/Some` |
+
+If a single user's OIDC capture fails (bad creds, captcha, timeout) the
+warm-up logs and skips it but keeps going. The driver exits 1 only if
+zero users were captured or realm config was missing; otherwise 0.
+
+The SWE login form selectors are at the top of
+`src/warmup/oidc.ts` (`SWE_SELECTORS`). They are marked
+`VERIFY ON FIRST RUN` and may need adjustment after the first successful
+flow against the live SWE.
 
 ## Fixture schema
 
