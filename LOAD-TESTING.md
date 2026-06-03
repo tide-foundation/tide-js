@@ -497,9 +497,103 @@ Subtract the directly-measured ORK cohort time from the load-driver `wait_for_ca
 | Initial broker hop (`nav_to_swe_ms`)                               | 2.0 s   | Load driver — ramp-sensitive, recovers post-ramp |
 | **TideCloak broker callback chain (residual)**                     | **~3.9 s mean / ~10 s p95** | **Load driver `wait_for_callback_ms` minus ORK time = the unmeasured TideCloak portion** |
 
+*[2026-06-03 revision]: the inference here that the ~3.9 s lived in TideCloak's broker chain was wrong — see v1.1 results below.*
+
 **Conclusion.** The ORK cohort is **NOT** the bottleneck at this concurrency. ORKs comfortably handled the 1.82 ops/s peak with smooth ramp behaviour and no saturation signals on any of the 7 canonical indicators. The dominant cost — ~3.9 s mean of the ~10.6 s p95 `wait_for_callback_ms` — lives in **TideCloak's broker callback chain**: Keycloak session minting, IdP-extension processing, and the post-SWE redirect work that follows. Per-hop attribution within that chain requires the TideCloak :9000 scrape to ship (parking-lot item in `metrics-initiative.md`).
 
 See also: [[metrics-initiative]] — the load-test surface that's missing is the TideCloak :9000 scrape. Until it lands, every `wait_for_callback_ms` p95 we measure is a black box with ~3.9 s of unattributable TideCloak time inside it.
+
+---
+
+## v1.1 results (2026-06-03)
+
+### Headline correction
+
+The v1 conclusion that "the unaccounted ~3.9 s of `wait_for_callback_ms` lives in the TideCloak broker callback chain" was **wrong**. With the TideCloak `:9000` scrape now shipping (metrics v2 deployed to staging earlier today) and a fresh load run executed under identical config, we can now measure the broker chain directly:
+
+- **TideCloak broker chain total: ~50 ms per login** (not ~3.9 s).
+- ORK cohort total: ~500 ms per login (unchanged from v1, tracking within ~10%).
+- That leaves **~4.2 s mean / ~10.5 s p95 of `wait_for_callback_ms` unaccounted on the wire** — and the only thing left on the critical path is the SWE-side browser itself.
+
+New finding: **the bottleneck is the SWE-side browser JavaScript**, not any Tide server component. Scaling ORK or TideCloak will not move p95 latency. Real-user login latency is client-device-bound.
+
+### Metrics v2 deploy summary
+
+- Built `tideorg/otel-collector-tc-stg:1` (no CI builds the TideCloak-side OTel sidecar; pushed manually). Sidecar image digest: `sha256:2c262cf68b01ecb2e536005c8730006372ad8cc7f4b400cdffe2349c3b98df75`.
+- Attached as a sidecar to the `tidecloak-staging` Container App via revision swap.
+- Scrapes `localhost:9000` (TideCloak's Micrometer Prometheus endpoint) every 15 s and exports every 10 s to Azure Managed Prometheus.
+- Result: the previously dark TideCloak panels in `tide-metrics-dashboard.json` now light up.
+
+### Re-run config + outcome
+
+Identical to the v1 run config so the per-phase numbers are directly comparable.
+
+- Concurrency: `CONCURRENCY=10`
+- Ramp: `RAMP_S=30`
+- Duration: `DURATION_S=300`
+- Target: `staging.dauth.me`, realm `tide-metrics-load`, client `tide-loadtest-harness`, user `metrics-load-001`
+- Run window (UTC): `2026-06-03 01:17:51 → 01:25:40`
+- Results file: `load-harness/loadtest-results-v2.jsonl`
+- 108 iterations total; 0 succeeded end-to-end (R19 `/token` 403 gate still parked, as expected); 85 reached `oidc_await`; 23 timed out at `wait_for_callback_ms`.
+- Per-phase numbers track within ~10% of the v1 run — see table below.
+
+### TideCloak `:9000` server-side per-login (Grafana — User-workflows row, today's window)
+
+| Panel | Mean | Max | Notes |
+|---|---:|---:|---|
+| Login phase `callback`                    | 41.5 ms | 51.4 ms | Broker callback handler |
+| Login phase `performlogin`                | 1.18 ms | 1.53 ms | Form-post → session mint |
+| Token-issue `tide` path                   | ~7 ms   | ~8.5 ms | Fast even though it 403s on the parked R19 gate |
+| Voucher `signin` action                   | ~40 ms  | 46 ms   | Voucher mint inside the broker login |
+| Callback-hop `decrypt`                    | 3.06 ms | 3.27 ms | Per-hop crypto |
+| Callback-hop `verify`                     | 4.80 ms | 5.75 ms | Per-hop crypto |
+| Login rate `success` (IdP-side, pre-/token) | 0.313 ops/s | 0.596 ops/s peak | Broker login completes; the 403 happens at `/token` |
+| VRK-task panel                            | No data | — | Expected — VRK rotates on a slow cadence, not per login |
+
+**Sum of TideCloak per-login broker work: ~50 ms.** Even at 99th-percentile each panel adds only a few ms; there is no plausible per-hop story that turns this into 3.9 s.
+
+### Client-side per-login (re-run, `loadtest-results-v2.jsonl`, 108 iters)
+
+| Phase | Mean | p95 | p99 |
+|---|---:|---:|---:|
+| `oidc_begin_ms`        | 2    | 3     | 8     |
+| `nav_to_swe_ms`        | 1936 | 5779  | 6673  |
+| `swe_form_fill_ms`     | 772  | 990   | 1380  |
+| `swe_sign_in_click_ms` | 344  | 474   | 528   |
+| `wait_for_callback_ms` | **4808** | **11093** | **12905** |
+
+### Revised bottleneck attribution
+
+| Component | Per-login mean | Source |
+|---|---:|---|
+| ORK cohort total (`check_payment` + `voucher` + crypto) | ~500 ms | Grafana (v1 + v1.1) |
+| TideCloak broker chain total | ~50 ms | Grafana `:9000` (v1.1) |
+| Local browser (form fill + click) | ~1.1 s | Load driver |
+| Initial broker hop (`nav_to_swe`) | ~1.9 s | Load driver — concurrency-sensitive ramp |
+| **SWE-side browser JS (residual)** | **~4.2 s mean / ~10.5 s p95** | **Load driver - all of the above = unaccounted; lives in SWE browser** |
+
+### What the residual ~4.2 s is doing
+
+The SWE-side browser is the only remaining slot on the critical path between `swe_sign_in_click_ms` and the `/callback` redirect arriving at the client. Likely contributors:
+
+- SWE-side JavaScript doing CMK key derivation (Ed25519, scrypt, hash work in pure JS / WebCrypto).
+- Multiple sequential SWE → ORK HTTP roundtrips for the threshold protocol (each adds its own RTT to the wall clock).
+- Browser-side rendering and event-loop scheduling between the Sign-In click and the final redirect.
+
+### Implications
+
+- **Scaling ORK or TideCloak does not move p95.** Both run with substantial headroom at the v1 load level (1.82 ops/s on ORK; ~0.3 ops/s broker-login on TideCloak; sub-millisecond to low-tens-of-ms per hop on both).
+- **Real-user latency is client-device-bound.** A slow phone pays the same ~4 s regardless of how fast Tide's backends run. Performance work that moves the dial for end users is **SWE-side**, not server-side.
+- **v2 should change focus.** A higher-concurrency or higher-ramp run will not surface a server bottleneck before it surfaces a client one; v2 work should pivot to SWE profiling (see parking lot below) rather than pushing the load driver harder.
+
+### SWE optimization opportunities (out of load-test scope)
+
+Candidate areas for a future SWE perf initiative. None of these are in scope for the load-test repo; they're flagged here because they're what the data points at.
+
+- **Parallelize SWE→ORK roundtrips.** Confirm whether the threshold protocol calls are currently sequential and, if so, whether any of them can be fanned out concurrently.
+- **WebCrypto vs pure-JS for Ed25519 ops.** Measure whether the browser's native subtle-crypto Ed25519 (where available) beats the pure-JS implementation currently in use, and switch where possible.
+- **Profile the CMK auth path in browser DevTools.** Get a real flame graph from a SWE login session against staging. The ~4.2 s is currently a single bucket; DevTools would split it into specific functions.
+- **Cohort size sensitivity.** Does dropping the cohort from N=5 to N=3 reduce client-side work proportionally? If most of the ~4.2 s is N-linear (e.g. N decrypts, N verifies, N HTTP calls in series), a smaller cohort buys real wall-clock savings on slow devices.
 
 ---
 
