@@ -597,6 +597,73 @@ Candidate areas for a future SWE perf initiative. None of these are in scope for
 
 ---
 
+## SWE perf v1 (2026-06-03)
+
+### Headline
+
+The v1.1 conclusion — "real-user login latency is client-device-bound; the residual ~4.2 s lives in the SWE-side browser" — pointed the next round at the SWE browser. **SWE perf v1** (this section) dissects that residual. Across three QA rounds (R1 source walk, R2 CPU profile, R3 network + tracing capture), the original R1 hypothesis was refuted and the budget is now decomposed on the wire.
+
+The SWE-side latency budget is **NOT** pure-JS arbitrary-point Ed25519 ladder muls (the R1 hypothesis). It splits into three roughly equal pieces:
+
+1. **ORK server compute on `/Auth/Convert`** — the single largest critical-path item (~487 ms p50 TTFB, max of 5 parallel).
+2. **Native WebCrypto on the SWE side** — the post-`/Auth/Authenticate` JS/native phase (~865 ms), almost entirely native (V8 `(program)` + `(idle)`), not pure-JS user code.
+3. **Pre-Convert client prep + callback hop + TLS** — the remaining critical-path slots that are individually small but add up.
+
+Pure-JS user code self-time across the entire 2.1 s single-flow window is **~41 ms**. Top minified frames are each ≤ 2.3 ms self-time. **There is no JS hot loop to attack.**
+
+### R1 → R2 → R3 progression
+
+**R1 (source walkthrough).** PM walked `ork/Ork/Ork/Enclave/js/Flows/AuthenticationFlows/dCMKPasswordFlow.js` and tide-js `Cryptide` and hypothesized that pure-JS arbitrary-point Ed25519 ladder multiplications (~80-120 per login) dominate the SWE-side budget. The reasoning was that ladder muls on a base-point-unknown curve point are expensive in pure JS, and at ~80-120 per login they should be the visible hot loop.
+
+**R2 (CPU profile via CDP `Profiler`).** QA captured a Chrome DevTools Profiler trace of a single SWE login against staging. **This partially refuted R1**: pure-JS curve ops totalled only ~30 ms of self-time across the entire login, and AES `importKey` was ~1 ms. The trace was dominated by ~820 ms `(idle)` and ~931 ms `(program)` over a 1.8 s window — i.e. native code and event-loop waits, not user JS. The profile cut off at the cross-origin nav back to the client, leaving the post-Authenticate phase unmeasured.
+
+**R3 (network + tracing capture via CDP `Network.*` + `Tracing` with `disabled-by-default-v8.cpu_profiler`).** QA captured a network timeline + V8 trace that **survives cross-origin nav**, covering the full ~2.1 s click → `/callback` window. The 2107 ms wall clock now decomposes cleanly on the wire, and the post-Authenticate phase is now visible. R3 refined R2: the dominant cost was not the curve operations the R1 hypothesis named, but rather ORK `/Auth/Convert` server compute, native WebCrypto on the post-Authenticate phase, and a callback hop back to the harness.
+
+### R3 critical-path table
+
+Single-flow click → `/callback` wall clock: **2107 ms.**
+
+| Bucket | Approx ms on critical path | How measured |
+|---|---:|---|
+| Pre-Convert client prep (UserInfo + voucher + ~380 ms JS) | ~495 ms | Network timing + nav gap |
+| **ORK `/Auth/Convert` TTFB (max of 5 parallel)**         | **~487 ms** | Network timing — slowest of 5 (sork4) |
+| ORK `/Auth/Authenticate` TTFB (max of 3 parallel)        | ~33 ms  | Network timing |
+| **Post-Authenticate JS/native phase**                    | **~865 ms** | V8 `(program)` + `(idle)`; pure-JS user code only 41 ms total. Almost certainly native `crypto.subtle.*` calls (AES decrypt, SHA digest, EdDSA verify) |
+| Callback hop to harness                                  | ~175 ms | Network timing |
+| TLS handshakes                                           | ~18 ms  | Network timing (connection reuse working — 43/170 reused on sork1 after bundle load) |
+
+### Variance — single-flow 2.1 s vs load-test mean 4.8 s
+
+Single-flow R3 measurement: ~2.1 s click → `/callback`. v1.1 load-test mean (10-VU, 30 s ramp, 300 s duration): ~4.8 s `wait_for_callback_ms` (R2 was 5.4 s on the same code). **The 2-3× gap under load is contention, not a different code path:**
+
+- **ORK CPU contention** on parallel `/Auth/Convert` requests (already the largest critical-path item at single flow; gets worse under fan-out).
+- **Browser CPU contention** across the per-VU `BrowserContext`s.
+- **Possibly TLS connection-pool exhaustion** under sustained fan-out (R3 saw 43/170 reused on sork1; under load the working set may exceed the pool).
+
+The implication for v1.1's "client-device-bound" conclusion: it is correct at single-user load on a fast machine, but at 10-VU load the wall-clock gap is split between client-side and server-side contention. Both lines of work are real.
+
+### Top-4 ranked actionable items for component teams
+
+1. **`ork`** — `/Auth/Convert` server compute ~487 ms p50 TTFB is the **biggest single critical-path item** at single flow and the most contention-sensitive piece under load. Investigate what `/Auth/Convert` is doing server-side and whether any portion can be pre-computed, cached, or parallelized internally.
+2. **SWE bundle owner (repo TBC — possibly `ork-iga`, possibly a separate `tide-swe` repo)** — instrument the post-`/Auth/Authenticate` phase with `performance.mark()` around each `crypto.subtle.*` call to pin which native subtle op consumes the ~865 ms. Currently a single bucket; needs to be split into AES decrypt / SHA digest / EdDSA verify slices.
+3. **SWE bundle owner** — 127 redundant `/i18n/en.json` fetches during page load (each ~33 ms TTFB; ~200 ms wall clock total). The web-components used by the SWE don't cache the i18n module across instances. Adding a module-level cache would remove this entirely.
+4. **`tidecloak`** — `tide-idp-resources/images/{LOGO,BACKGROUND_IMAGE}` taking 681 ms and 715 ms each is anomalous for static-asset serving. Investigate static-resource caching / CDN headers on the IdP resources path.
+
+### Tooling notes for future SWE perf rounds
+
+- **CDP `Profiler.start/stop` is per-isolate and dies on cross-origin nav.** Do not use it for flows that cross origin (e.g. client → TideCloak → SWE → TideCloak → client). The profile silently truncates at the nav boundary and you lose the most interesting phase.
+- **CDP `Tracing` with `disabled-by-default-v8.cpu_profiler` categories survives cross-origin nav.** Use this for any SWE-flow profiling — it gives a full timeline across all redirects + nav.
+- **`--js-flags=--cpu-prof` is silently dropped by Playwright's bundled Chromium.** Do not rely on it to write a `.cpuprofile` to disk; you'll get no file and no error. Use the CDP `Tracing` approach instead.
+
+---
+
+## Parking lot — SWE perf / observability follow-ups
+
+- **Load-harness `/callback` 500 propagation of R19 403** — when the upstream `/token` exchange fails with the R19 `NO_USER_CONTEXT` 403, the harness `/callback` handler propagates it as a 500 instead of surfacing the underlying status. Small fix; tide-js owns it. Does not affect any timing measurement, but pollutes the outcome bucket in `loadtest-results-*.jsonl` and makes per-iteration triage noisier than it should be.
+- **Instrument the ~865 ms post-Authenticate phase with `performance.mark()`** on the SWE side around each `crypto.subtle.*` call. Out of scope for v1 (would require a SWE-bundle code change); candidate for a v1.1 SWE perf round. Without this, the largest hidden cost on the critical path remains a single bucket attributed by elimination rather than direct measurement.
+
+---
+
 ## Parking lot — signv2 path
 
 Five gates were discovered during the R14-R22 exploration of the signv2 sign-driver path against the `tide-metrics-load` realm and `tide-loadtest-harness` client. Four are solved; one is a hard blocker requiring upstream changes. Full session detail in `~/.claude/.../memory/loadtest-signv2-sessionkey-blocker.md`.
