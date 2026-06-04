@@ -657,6 +657,64 @@ The implication for v1.1's "client-device-bound" conclusion: it is correct at si
 
 ---
 
+## v2 results (2026-06-04)
+
+### Headline
+
+v2 ported the cmkOnly login flow from browser-Playwright to pure-Node to break past the browser-per-VU ceiling (~30-50 VUs/machine). The port works end-to-end (~3.3 s baseline per VU at 1 concurrency). Stress testing surfaced 4 distinct system walls; the immediate bottleneck on staging is **TC pod scaling, not client-side or per-user constraints**.
+
+### Architecture
+
+Two-fetch chain: Fetch 1 (TideCloak `/auth` → broker → SWE URL with cookie capture) + crypto in Node (Cryptide primitives from `@tideorg/js` + ported ork files) + Fetch 2 (broker callback with `KC_AUTH_SESSION_HASH` cookie). ~1500 LoC port total: ~680 LoC scaffolding (undici Pool, tough-cookie jar) + ~920 LoC ported ork files (NodeClient, dCMKPasswordFlow, KeyAuthentication, 6 model files) + ~120 LoC NodeCmkClient orchestration + 649 LoC concurrent VU driver. All under `load-harness/src/protocol/`. Zero functional browser dependencies on the protocol path. Only shim needed: `timeSkew` localStorage (4 sites, no-op'd). Patched threshold clamp `min(Threshold, OrkInfo.length)` in `dCMKPasswordFlow` because tide-js source has stale `Threshold=14, Max=20` constants while the deployed enclave bundle ships `Threshold=3, Max=5` — separate cleanup ticket.
+
+Committed at `0f81ec6` on `agent/load-test-v1` (already pushed).
+
+### R6 disambiguation
+
+R5 50 VU single-user run failed 75% with `MISSING_KC_AUTH_HASH` dominating. Hypothesis (R6 PM): not UID-keyed throttling because that cookie is set BEFORE UID resolution. Confirmed via admin REST probe: `userIdThrottlingConfig: null`, `bruteForceProtected: false`, no custom throttle attributes on the realm. Per-VU failure count was uniform across VUs with monotonic fetch1_ms latency (72.9 s → 110.7 s) — classic queuing behavior. TC was running 1 replica with autoscaler at 50 concurrent req/replica; the burst saturated faster than scale-out latency.
+
+### Operator action + measurements
+
+User authorized bump to `min=3, max=20` + added Docker Hub authenticated pull creds (needed because shared CA egress hit anonymous pull rate limit on the new revision).
+
+**R5.3 re-run at 50 VU with 3 prewarmed pods:**
+
+- 90 iters, 61% success (vs 25% pre-scaling)
+- p50: 48 s, p95: 92 s
+- `MISSING_KC_AUTH_HASH`: 0 (eliminated)
+- New dominant failure: `CRYPTO_FAILED` (BlindSig verifyRaw → false), 35 occurrences
+
+**R5.4 at 200 VU:**
+
+- 1916 iters, 2% success
+- p50: 81 s, p95: 135 s
+- Setup phase failures (HTTP 503 on `/auth` or `/broker/tide/login`): 1573 (82% of all failures)
+- `MISSING_KC_AUTH_HASH` reappears: 153
+- `CRYPTO_FAILED`: 148
+- Peak replicas: 6 (autoscaler stalled — did NOT ramp to `maxReplicas=20`)
+
+### The 4 walls
+
+| # | Wall | Symptom | Diagnosis | Status |
+|---|---|---|---|---|
+| 1 | TC cold-start | `MISSING_KC_AUTH_HASH` at 50 VU on 1-pod TC | Single-pod queue saturated before pod #2 cold-started | SOLVED by prewarm |
+| 2 | KEDA scaler under-trigger | 200 VU only ramped 3 → 6 of 20 replicas | Scaler likely triggers on successful concurrent requests; 503-on-first-hop pattern starves the signal | NEW; needs tidecloak PM tuning |
+| 3 | TC frontend 503 cascade | 1573 of 1916 iterations failed at the very first request at 200 VU | ACA ingress queue overflow OR sticky-session affinity fighting scale-up OR insufficient Quarkus worker threads | NEW; needs tidecloak PM investigation |
+| 4 | `BLIND_VERIFY_FAILED` | Even at 50 VU when TC isn't overloaded, BlindSig verifyRaw returns false | Likely session-key collision from single-user pool (`metrics-load-001` reused across 50 concurrent VUs — ORK responses bind to wrong VU's sessionKey) | NEW; needs multi-user pool to verify |
+
+### Recommendations for v2.1
+
+1. **Multi-user pool provisioning** (R6 Path B): use SWE Sign-Up via Playwright to create ~30 enrolled users. Per-user voucher draw is the only product-side cost. Required for both wall #4 disambiguation and any future >50 VU testing.
+2. **KEDA scaler tuning**: investigate whether HTTP-concurrency-based scaler is right metric; consider CPU-based or workload-queue-depth alternatives. Adjust threshold from 50 → 20-30 concurrent per replica for more aggressive scale-up.
+3. **TC undertow worker thread pool sizing**: probe and tune per-replica thread pool. Sticky-session affinity may also need disabling for true horizontal scale.
+4. **Tide-js cleanup ticket**: re-align `Tools/Utils.ts` constants `Threshold=14, Max=20` → `Threshold=3, Max=5` to match deployed enclave bundle. Drop the runtime clamp in `dCMKPasswordFlow` once aligned.
+
+### Operational state
+
+TC scaling reverted to `min=1, max=3` (baseline). Docker Hub auth creds preserved (no cost, prevents future ImagePullBackOff). Per-VU Node port + load-test driver remain available via `npm run protocol:test` / `npm run protocol:load` from `load-harness/`.
+
+---
+
 ## Parking lot — SWE perf / observability follow-ups
 
 - **Load-harness `/callback` 500 propagation of R19 403** — when the upstream `/token` exchange fails with the R19 `NO_USER_CONTEXT` 403, the harness `/callback` handler propagates it as a 500 instead of surfacing the underlying status. Small fix; tide-js owns it. Does not affect any timing measurement, but pollutes the outcome bucket in `loadtest-results-*.jsonl` and makes per-iteration triage noisier than it should be.
