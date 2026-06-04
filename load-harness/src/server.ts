@@ -445,6 +445,38 @@ app.get("/callback", async (req: Request, res: Response) => {
       );
   } catch (e: unknown) {
     const err = e instanceof Error ? e : new Error(String(e));
+    // R19 / parking-lot Phase A: TideCloak's token endpoint will return
+    // HTTP 403 with `TIDE-TIDECLOAK-TOKEN-NO_USER_CONTEXT` when the
+    // authenticated user has no IGA access proof (default users in
+    // realms missing the SignModel signing material — see
+    // [[loadtest-signv2-sessionkey-blocker]] memory and the signv2 gate
+    // tickets at /home/alphega/project/parking-lot/2026-06-04-signv2-gates/).
+    // For the cmkOnly raw-protocol load-test path we do NOT need the
+    // access_token; the SWE-side CMK auth already succeeded by the time
+    // TideCloak refuses to mint a token. Surface this as HTTP 200 with a
+    // structured JSON warning so load-test logs stop conflating the
+    // expected R19 gate with a real server error. Any other failure
+    // (network, 5xx, malformed body) still propagates as 500.
+    const isR19NoUserContext = err.message.includes(
+      "TIDE-TIDECLOAK-TOKEN-NO_USER_CONTEXT",
+    );
+    if (isR19NoUserContext) {
+      flow.reject(err);
+      res
+        .status(200)
+        .setHeader("Content-Type", "application/json")
+        .send(
+          JSON.stringify({
+            ok: true,
+            warning: "TIDE-TIDECLOAK-TOKEN-NO_USER_CONTEXT",
+            note:
+              "User has no IGA access proof (R19 gate). Load test doesn't " +
+              "need the access token; this is expected for the cmkOnly " +
+              "raw-protocol path.",
+          }),
+        );
+      return;
+    }
     flow.reject(err);
     res
       .status(500)
