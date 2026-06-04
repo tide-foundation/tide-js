@@ -5,19 +5,23 @@
 //   2. ConvertPassword path uses `RandomBigInt` (from Cryptide.Math) and
 //      our stubbed `ConvertPass` (off-path) — left as-is; calling it
 //      raises a NodeClient stub error rather than running the flow.
-//   3. Effective Threshold clamped to `Math.min(Threshold, OrkInfo.length)`
-//      for both Convert and ConvertPassword WaitForNumberofORKs calls.
-//      Rationale: tide-js HEAD has stale `Threshold = 14, Max = 20`
-//      constants. The deployed sork enclave bundle (inspected at
-//      https://sork1.tideprotocol.com/bundle.f83c16e9c09d893485fe.js,
-//      symbol O4 = 3, VA = 5) ships with Threshold = 3, Max = 5 — the
-//      values are patched per-deployment. Each user's cohort is the
-//      `OrkInfo` it was bootstrapped with (e.g. metrics-load-001 on
-//      staging has 5 ORKs at indices 1,5,7,8,10). Without this clamp the
-//      load-harness raises NET_THRESHOLD_FAILURE (5 < 14) even though
-//      production succeeds. The clamp is safe: it never asks for MORE
-//      than the global Threshold and never asks for MORE than the
-//      cohort actually has — matching the deployed semantics.
+//   3. Effective Threshold computed via `effectiveThreshold(OrkInfo)`
+//      (i.e. `Math.min(Threshold, OrkInfo.length)`) for both Convert and
+//      ConvertPassword WaitForNumberofORKs calls. This is the canonical
+//      cohort-aware behaviour for any downstream consumer driving a flow
+//      outside the per-deployment SWE bundling pipeline — `Threshold` /
+//      `Max` in tide-js `Tools/Utils.ts` are upper-bound defaults
+//      (14 / 20) and are patched per-deployment when the enclave bundle
+//      is built (the production sork bundle ships `Threshold = 3,
+//      Max = 5`, confirmed via minified symbols `const i=3,o=5` in
+//      https://sork1.tideprotocol.com/bundle.f83c16e9c09d893485fe.js).
+//      Each user's cohort is the `OrkInfo` it was bootstrapped with
+//      (e.g. metrics-load-001 on staging has 5 ORKs at indices
+//      1,5,7,8,10). The clamp is safe: it never asks for MORE than the
+//      global default and never asks for MORE than the cohort actually
+//      has — matching the deployed enclave semantics. See the comment
+//      block above `Threshold` in tide-js `Tools/Utils.ts` for the full
+//      rationale and the canonical `effectiveThreshold(orkInfo)` helper.
 //
 // Tide Protocol - Infrastructure for a TRUE Zero-Trust paradigm
 // Copyright (C) 2022 Tide Foundation Ltd
@@ -39,7 +43,7 @@ import { Cryptide, Tools, Models, Flow } from "@tideorg/js";
 
 const DH = Cryptide.Encryption.DH;
 const MathNS = Cryptide.Math;
-const { Threshold, WaitForNumberofORKs, sortORKs } = Tools;
+const { effectiveThreshold, WaitForNumberofORKs, sortORKs } = Tools;
 const { RandomBigInt } = Cryptide.Math;
 const { BigIntFromByteArray, Hex2Bytes, base64ToBytes, serializeBitArray, bytesToBase64 } = Cryptide.Serialization;
 const { Point } = Cryptide.Ed25519;
@@ -95,8 +99,8 @@ export default class dCMKPasswordFlow{
         // To save time
         const prkECDHi = await DH.generateECDHi(this.keyInfo.OrkInfo.map(o => o.orkPublic), sessKey.get_private_component().rawBytes);
 
-        const effectiveThreshold = Math.min(Threshold, this.keyInfo.OrkInfo.length);
-        const {fulfilledResponses, bitwise} = await WaitForNumberofORKs(this.keyInfo.OrkInfo, pre_ConvertResponses, "CMK", effectiveThreshold, null, prkECDHi);
+        const cohortThreshold = effectiveThreshold(this.keyInfo.OrkInfo);
+        const {fulfilledResponses, bitwise} = await WaitForNumberofORKs(this.keyInfo.OrkInfo, pre_ConvertResponses, "CMK", cohortThreshold, null, prkECDHi);
 
         const ids = this.keyInfo.OrkInfo.map(c => BigInt(c.orkID));
         const {prismAuthis, timestampi, selfRequesti, expired} = await PrismConvertReply(
@@ -155,8 +159,8 @@ export default class dCMKPasswordFlow{
         // To save time
         const prkECDHi = await DH.generateECDHi(this.keyInfo.OrkInfo.map(o => o.orkPublic), sessKey.get_private_component().rawBytes);
 
-        const effectiveThreshold = Math.min(Threshold, this.keyInfo.OrkInfo.length);
-        const { fulfilledResponses, bitwise } = await WaitForNumberofORKs(this.keyInfo.OrkInfo, pre_convertPassResponses, "CMK", effectiveThreshold, null, prkECDHi);
+        const cohortThreshold = effectiveThreshold(this.keyInfo.OrkInfo);
+        const { fulfilledResponses, bitwise } = await WaitForNumberofORKs(this.keyInfo.OrkInfo, pre_convertPassResponses, "CMK", cohortThreshold, null, prkECDHi);
 
         const {prismAuthis, timestampi, selfRequesti, expired} = await PrismConvertReply(
             fulfilledResponses,

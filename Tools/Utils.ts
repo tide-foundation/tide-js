@@ -19,8 +19,45 @@ import OrkInfo from "../Models/Infos/OrkInfo";
 import { TideError, TideErrorDetail } from "../Errors/TideError";
 import { TideJsErrorCodes } from "../Errors/codes";
 
+/**
+ * `Threshold` and `Max` are **upper-bound defaults** for the legacy 14-of-20
+ * cohort sizing. They are NOT the values shipped in every deployed enclave
+ * bundle. In particular, the production SWE enclave bundle published to
+ * `https://sork1.tideprotocol.com/bundle.f83c16e9c09d893485fe.js` is built
+ * with these constants patched to `Threshold = 3, Max = 5` (confirmed via
+ * minified symbols `const i=3,o=5`). Per-deployment patching is intentional:
+ * a deployment with N ORKs in a user's cohort cannot legally ask for more
+ * than N responses, so the effective threshold for any cohort is
+ *
+ *     min(Threshold, OrkInfo.length)
+ *
+ * Consumers driving a flow against a known cohort (e.g. the load-harness
+ * `dCMKPasswordFlow` in `tide-js/load-harness/src/protocol/ork`) MUST clamp
+ * via the helper `effectiveThreshold(orkInfo)` below — using the raw
+ * `Threshold` constant against a cohort smaller than 14 will raise
+ * `NET_THRESHOLD_FAILURE` even when the deployed bundle would succeed.
+ *
+ * The in-tree ork enclave files import `Threshold` / `Max` directly because
+ * they are bundled and patched per-deployment before being served. Outside
+ * that bundling pipeline (e.g. the Node load-harness driving production
+ * orks), use `effectiveThreshold` instead.
+ */
 export const Threshold = 14;
 export const Max = 20;
+
+/**
+ * Compute the cohort-aware threshold to pass to {@link WaitForNumberofORKs}.
+ *
+ * Returns `min(Threshold, orks.length)` — i.e. the number of ORK responses we
+ * can legally wait for, capped by the global default upper bound. Use this in
+ * any downstream consumer that runs outside the per-deployment SWE bundling
+ * pipeline (where `Threshold` is rewritten to the deployment-specific cohort
+ * size). See the comment block above for the rationale.
+ */
+export function effectiveThreshold(orks: { length: number } | number): number {
+    const cohortSize = typeof orks === "number" ? orks : orks.length;
+    return Math.min(Threshold, cohortSize);
+}
 
 /**
  * Reduce an arbitrary thrown value to a {@link TideErrorDetail} entry so the
