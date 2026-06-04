@@ -7,16 +7,20 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && npm run bundle",
-    "bundle": "esbuild src/server.ts src/warmup/index.ts src/loadtest/index.ts --bundle --platform=node --format=esm --target=node20 --outdir=dist --external:playwright --external:express --external:@types/* --banner:js=\"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);\"",
+    "bundle": "esbuild src/server.ts src/warmup/index.ts src/loadtest/index.ts src/protocol/cli.ts src/protocol/loadtest.ts --bundle --platform=node --format=esm --target=node20 --outdir=dist --external:playwright --external:express --external:undici --external:tough-cookie --external:@types/* --banner:js=\"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);\"",
     "start": "node dist/server.js",
     "warmup": "node dist/warmup/index.js",
     "loadtest": "node dist/loadtest/index.js",
+    "protocol:test": "node dist/protocol/cli.js",
+    "protocol:load": "node dist/protocol/loadtest.js",
     "dev": "tsc --watch"
   },
   "dependencies": {
     "@tideorg/js": "file:..",
     "express": "^4.21.0",
-    "playwright": "^1.48.0"
+    "playwright": "^1.48.0",
+    "tough-cookie": "^5.0.0",
+    "undici": "^6.21.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
