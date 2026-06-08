@@ -221,8 +221,14 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
             if (!(value instanceof Uint8Array)) summary[`Parameter:${key}`] = value;
         }
 
+        // draft[1] is OPTIONAL. For a contract-upload policy it holds the
+        // contractTransport structure; for an admin-threshold policy re-sign it is
+        // an EMPTY (0-byte) placeholder whose only purpose is to position draft[2]
+        // (the ORK's revoke-authorizing-policy flag). Only parse it as a contract
+        // when it actually carries a length-prefixed structure (>= 4 bytes for a
+        // TideMemory header) — an empty segment must be skipped, not read.
         let res: any = {};
-        if (TryGetValue(draftBytes, 1, res)) {
+        if (TryGetValue(draftBytes, 1, res) && res.result && res.result.length >= 4) {
             const contractBytes = res.result;
             const contractType = StringFromUint8Array(GetValue(contractBytes, 0));
             summary["Contract To Upload Type"] = contractType;
@@ -242,7 +248,7 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
         // forsetiData = [placeholder, innerPayload]
         // innerPayload = [sourceCode, entryType?]
         let res: any = {};
-        if (TryGetValue(draftBytes, 1, res)) {
+        if (TryGetValue(draftBytes, 1, res) && res.result && res.result.length >= 4) {
             const contractBytes = res.result;
 
             // contractBytes[1] = forsetiData
