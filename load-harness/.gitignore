@@ -12,5 +12,5 @@ fixtures.json
 # Load-test output (R22). Contains per-iteration latency JSONL and the
 # trailing summary block — operator-owned, may carry test-environment
 # userIds, never commit.
-loadtest-results.json
-loadtest-results.jsonl
+loadtest-results*.json
+loadtest-results*.jsonl
