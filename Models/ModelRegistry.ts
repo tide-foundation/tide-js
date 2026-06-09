@@ -575,10 +575,89 @@ const ATTESTATION_UNIT_TYPE_NAMES: { [k: number]: string } = {
 class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
     _name = "AttestationUnit";
     _version = "1";
-    _humanReadableName = "Approve Attestation — Role Assignment";
+    // GENERIC, always-human-readable fallback. The enclave renderer uses
+    // `_humanReadableName ?? _name` for the card TITLE, so this MUST never be a
+    // raw/opaque code (the old "AE" short code came from a stale bundle that
+    // lacked this builder and fell through to the carrier short-name). The
+    // constructor refines this to a specific, context-aware title below, but
+    // even if decoding fails the admin still sees an intelligible role-assignment
+    // summary — never "AE", never the bare model id.
+    _humanReadableName = "Grant role(s) — Role Assignment";
     get _id() { return this._name + ":" + this._version; }
     constructor(data, reqId, context?: HumanReadableContext) {
         super(data, reqId, context);
+        // Refine the card title from the actual carried unit. Display-only and
+        // fully guarded — a decode failure must never throw out of the
+        // constructor nor change the signed bytes; it just keeps the generic
+        // (still human-readable) title above.
+        try {
+            this._humanReadableName = this._buildTitle() ?? this._humanReadableName;
+        } catch { /* keep the generic role-assignment title */ }
+    }
+
+    // Compute a specific, human-readable card title for the carried unit, using
+    // the display-only HumanReadableContext (role/user names) when present.
+    // Returns undefined when no unit can be decoded, so the caller keeps the
+    // generic fallback. NEVER returns the raw "AE"/model code.
+    private _buildTitle(): string | undefined {
+        const units = this._decodeUnits();
+        const first = units[0];
+        if (!first || typeof first !== "object") return undefined;
+
+        const ut = first["unit_type"];
+        const utName = (typeof ut === "number" && ATTESTATION_UNIT_TYPE_NAMES[ut] !== undefined)
+            ? ATTESTATION_UNIT_TYPE_NAMES[ut]
+            : (ut !== undefined ? String(ut) : undefined);
+
+        if (utName === "user_role_mapping_set") {
+            // user_role_mapping_set is a DECLARATIVE set (the user's full desired
+            // role_ids), so the same unit type carries both grants and revokes.
+            // We frame it as a role assignment and, when names are supplied via
+            // the context, surface "Grant role <names> to <user>". When names
+            // aren't wired through yet (admin-ui -> heimdall -> ork follow-up),
+            // we fall back to the role-assignment phrasing rather than dumping
+            // raw UUIDs into the title.
+            const payload = first["payload"];
+            const roleNames = this._titleRoleNames(payload);
+            const userName = this._titleUserName(payload);
+            if (roleNames && userName) return `Grant role ${roleNames} to ${userName}`;
+            if (roleNames) return `Grant role ${roleNames}`;
+            if (userName) return `Update roles for ${userName}`;
+            return "Grant role(s) — Role Assignment";
+        }
+
+        // Any other attestation unit: still give a readable, type-specific title
+        // instead of the opaque carrier code.
+        if (utName) return `Approve change — ${utName.replace(/_/g, " ")}`;
+        return undefined;
+    }
+
+    // Role names for the title ONLY when the context supplied at least one
+    // friendly name — we don't want a title full of UUIDs, so if no name
+    // resolved we return undefined and let the caller use generic phrasing.
+    private _titleRoleNames(payload: any): string | undefined {
+        try {
+            const roleIds = payload?.["role_ids"];
+            if (!Array.isArray(roleIds) || roleIds.length === 0) return undefined;
+            const named: string[] = [];
+            let anyNamed = false;
+            for (const r of roleIds) {
+                const id = String(r);
+                const name = this._context?.roles?.[id];
+                if (typeof name === "string" && name.length > 0) { named.push(name); anyNamed = true; }
+            }
+            return anyNamed ? named.join(", ") : undefined;
+        } catch { return undefined; }
+    }
+
+    // User name for the title ONLY when the context resolved it to a username.
+    private _titleUserName(payload: any): string | undefined {
+        try {
+            const userId = payload?.["user_id"];
+            if (userId === undefined) return undefined;
+            const name = this._context?.users?.[String(userId)];
+            return (typeof name === "string" && name.length > 0) ? name : undefined;
+        } catch { return undefined; }
     }
 
     // Resolve a role-id UUID to its friendly name via the display-only context,
