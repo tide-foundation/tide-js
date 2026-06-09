@@ -20,17 +20,34 @@ import BaseTideRequest from "./BaseTideRequest";
 import { Policy, ApprovalType, ExecutionType } from "./Policy";
 import { Serialization } from "../Cryptide/index";
 
+/**
+ * Optional, DISPLAY-ONLY lookup tables the caller (the admin-ui, which already
+ * holds friendly names — see keycloak-IGA formatters.humanReadableSummary) may
+ * hand to the enclave so UUID-only carriers can be rendered as readable names.
+ *
+ * SECURITY: this NEVER participates in the signed bytes. The signed
+ * AttestationUnit carries only UUIDs; these names are advisory chrome. A missing
+ * entry simply falls back to the raw UUID — never blanks, never throws, and the
+ * enclave must never trust these for any authorization decision.
+ */
+export interface HumanReadableContext {
+    /** role-id (UUID) -> role name, e.g. "tide-realm-admin". */
+    roles?: { [roleId: string]: string };
+    /** user-id (UUID) -> username, e.g. "alice". */
+    users?: { [userId: string]: string };
+}
+
 export class ModelRegistry {
-    static getHumanReadableModelBuilder(reqId: string, data: Uint8Array): HumanReadableModelBuilder {
+    static getHumanReadableModelBuilder(reqId: string, data: Uint8Array, context?: HumanReadableContext): HumanReadableModelBuilder {
         const r = BaseTideRequest.decode(data);
         const nameMatch = r.name.match(/^Custom<(.*)>$/)?.[1];
         const versionMatch = r.version.match(/^Custom<(.*)>$/)?.[1];
         if (nameMatch && versionMatch) {
-            return new CustomSignRequestBuilder(data, reqId);
+            return new CustomSignRequestBuilder(data, reqId, context);
         }
         const c = modelBuildersMap[r.id()];
         if (!c) throw Error("Could not find model: " + r.id());
-        return c.create(data, reqId);
+        return c.create(data, reqId, context);
     }
 }
 
@@ -40,16 +57,20 @@ export class HumanReadableModelBuilder {
     _draft: any;
     request: BaseTideRequest | undefined;
     reqId: any;
-    constructor(data, reqId) {
+    // DISPLAY-ONLY names map (roleId->name, userId->username). Never signed; see
+    // HumanReadableContext. Optional — undefined when the caller supplies none.
+    _context: HumanReadableContext | undefined;
+    constructor(data, reqId, context?: HumanReadableContext) {
         if (data) {
             this._data = data;
             this._draft = GetValue(this._data, 3);
             this.request = BaseTideRequest.decode(data);
         }
         this.reqId = reqId;
+        this._context = context;
     }
-    static create(data, reqId) {
-        return new this(data, reqId);
+    static create(data, reqId, context?: HumanReadableContext) {
+        return new this(data, reqId, context);
     }
     getDetailsMap() {
         // the summary
@@ -75,8 +96,8 @@ class CustomSignRequestBuilder extends HumanReadableModelBuilder {
     _version: any;
     humanReadableJson: any;
     get _id() { return this._name + ":" + this._version; }
-    constructor(data, reqId) {
-        super(data, reqId);
+    constructor(data, reqId, context?: HumanReadableContext) {
+        super(data, reqId, context);
         this._name = this.request.name.match(/^Custom<(.*)>$/)?.[1];
         this._version = this.request.version.match(/^Custom<(.*)>$/)?.[1];
         this.humanReadableJson = JSON.parse(StringFromUint8Array(GetValue(this.request.draft, 0)));
@@ -111,11 +132,11 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder {
     _version = "1";
     get _id() { return this._name + ":" + this._version; }
 
-    constructor(data, reqId) {
-        super(data, reqId);
+    constructor(data, reqId, context?: HumanReadableContext) {
+        super(data, reqId, context);
     }
-    static create(data, reqId) {
-        return super.create(data, reqId);
+    static create(data, reqId, context?: HumanReadableContext) {
+        return super.create(data, reqId, context);
     }
     getRequestDataJson() {
         // deserialize draft here and return a pretty object for user
@@ -200,6 +221,45 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
     get _id() { return this._name + ":" + this._version; }
     constructor(data, expiry) {
         super(data, expiry);
+        // Make the card title context-aware. The admin-threshold re-sign
+        // (REGEN_ADMIN_POLICY) carries a Policy whose contractId is
+        // "GenericResourceAccessThresholdRole:1" and whose params scope the
+        // tide-realm-admin role on the realm-management resource (see iga-core
+        // TideAttestor.buildAdminPolicy* — POLICY_TYPE / TIDE_REALM_ADMIN_ROLE /
+        // POLICY_RESOURCE). When we can detect that exact shape from the carrier,
+        // show a specific title; otherwise keep the generic one. Display-only and
+        // fully guarded — a decode failure must never change the signed bytes nor
+        // throw out of the constructor.
+        try {
+            const policy = this._tryGetPolicy();
+            if (policy && this._isAdminThresholdPolicy(policy)) {
+                this._humanReadableName = "Update admin approval threshold (re-sign tide-realm-admin policy)";
+            }
+        } catch { /* keep the generic title */ }
+    }
+
+    // Decode the Policy carried in draft[0], or null if absent/undecodable.
+    private _tryGetPolicy(): Policy | null {
+        try {
+            if (!this._draft) return null;
+            const policyBytes = GetValue(this._draft, 0);
+            if (!policyBytes || policyBytes.length === 0) return null;
+            return Policy.from(policyBytes);
+        } catch { return null; }
+    }
+
+    // True when the Policy is the multiAdmin tide-realm-admin approval-threshold
+    // policy. Keyed on the producer-stamped contractId
+    // ("GenericResourceAccessThresholdRole:1") PLUS the role/resource params, so
+    // an ordinary GenericResourceAccessThresholdRole policy for some OTHER
+    // role/resource still falls through to the generic title.
+    private _isAdminThresholdPolicy(policy: Policy): boolean {
+        try {
+            if (policy.contractId !== "GenericResourceAccessThresholdRole:1") return false;
+            const role = policy.params?.entries?.get("role");
+            const resource = policy.params?.entries?.get("resource");
+            return role === "tide-realm-admin" && resource === "realm-management";
+        } catch { return false; }
     }
 
     getDetailsMap(): any {
@@ -210,6 +270,18 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
 
         const policyBytes = GetValue(draftBytes, 0);
         const policy = Policy.from(policyBytes);
+
+        // For the admin-threshold re-sign, surface the new threshold up front
+        // (the only human-meaningful change in the policy). The Policy carries
+        // the NEW threshold in its params; the OLD value is NOT in the signed
+        // carrier (it lives in the CR ROWS_JSON, which the enclave never sees),
+        // so we show only what the carrier actually proves.
+        if (this._isAdminThresholdPolicy(policy)) {
+            const threshold = policy.params?.entries?.get("threshold");
+            if (threshold !== undefined && !(threshold instanceof Uint8Array)) {
+                summary["New admin approvals required"] = threshold;
+            }
+        }
 
         summary['Version'] = policy.version;
         summary['ContractId'] = policy.contractId;
@@ -505,8 +577,30 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
     _version = "1";
     _humanReadableName = "Approve Attestation — Role Assignment";
     get _id() { return this._name + ":" + this._version; }
-    constructor(data, reqId) {
-        super(data, reqId);
+    constructor(data, reqId, context?: HumanReadableContext) {
+        super(data, reqId, context);
+    }
+
+    // Resolve a role-id UUID to its friendly name via the display-only context,
+    // falling back to the raw UUID when no name is available. Never throws.
+    private _roleName(roleId: any): string {
+        const id = String(roleId);
+        try {
+            const name = this._context?.roles?.[id];
+            if (typeof name === "string" && name.length > 0) return name;
+        } catch { /* fall through to id */ }
+        return id;
+    }
+
+    // Resolve a user-id UUID to its username via the display-only context,
+    // falling back to the raw UUID when no name is available. Never throws.
+    private _userName(userId: any): string {
+        const id = String(userId);
+        try {
+            const name = this._context?.users?.[id];
+            if (typeof name === "string" && name.length > 0) return name;
+        } catch { /* fall through to id */ }
+        return id;
     }
 
     // Decode every attestation-unit envelope the draft carries. The draft is
@@ -564,10 +658,14 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
 
                 const payload = first["payload"];
                 if (payload && typeof payload === "object") {
-                    if (payload["user_id"] !== undefined) summary["Target User"] = String(payload["user_id"]);
+                    // Map UUIDs -> friendly names from the display-only context
+                    // when available; fall back to the raw UUID otherwise so the
+                    // admin can read "grant tide-realm-admin to alice" instead of
+                    // two opaque UUIDs. The signed bytes still carry only UUIDs.
+                    if (payload["user_id"] !== undefined) summary["Target User"] = this._userName(payload["user_id"]);
                     const roleIds = payload["role_ids"];
                     if (Array.isArray(roleIds) && roleIds.length > 0) {
-                        summary["Roles"] = roleIds.map((r: any) => String(r)).join(", ");
+                        summary["Roles"] = roleIds.map((r: any) => this._roleName(r)).join(", ");
                     }
                 }
                 if (first["target_id"] !== undefined && summary["Target User"] === undefined) {
