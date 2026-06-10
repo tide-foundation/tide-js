@@ -259,7 +259,7 @@ export function removeRandomElements(array: any[], targetArraySize: number): any
     let newArray = array.slice();
     // Check if the array size is > n
     if (newArray.length < targetArraySize) {
-        throw new Error("Array size must be greater than n.");
+        throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_LENGTH, displayMessage: `Array size must be greater than n (got length=${newArray.length}, target=${targetArraySize}).`, source: "tide-js/Tools/Utils.ts:262" });
     }
     else if(newArray.length == targetArraySize) return newArray;
 
