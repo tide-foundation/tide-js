@@ -22,12 +22,12 @@ import { Serialization } from "../Cryptide/index";
 
 /**
  * Optional, DISPLAY-ONLY lookup tables the caller (the admin-ui, which already
- * holds friendly names — see keycloak-IGA formatters.humanReadableSummary) may
+ * holds friendly names - see keycloak-IGA formatters.humanReadableSummary) may
  * hand to the enclave so UUID-only carriers can be rendered as readable names.
  *
  * SECURITY: this NEVER participates in the signed bytes. The signed
  * AttestationUnit carries only UUIDs; these names are advisory chrome. A missing
- * entry simply falls back to the raw UUID — never blanks, never throws, and the
+ * entry simply falls back to the raw UUID - never blanks, never throws, and the
  * enclave must never trust these for any authorization decision.
  */
 export interface HumanReadableContext {
@@ -58,7 +58,7 @@ export class HumanReadableModelBuilder {
     request: BaseTideRequest | undefined;
     reqId: any;
     // DISPLAY-ONLY names map (roleId->name, userId->username). Never signed; see
-    // HumanReadableContext. Optional — undefined when the caller supplies none.
+    // HumanReadableContext. Optional - undefined when the caller supplies none.
     _context: HumanReadableContext | undefined;
     constructor(data, reqId, context?: HumanReadableContext) {
         if (data) {
@@ -225,10 +225,10 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
         // (REGEN_ADMIN_POLICY) carries a Policy whose contractId is
         // "GenericResourceAccessThresholdRole:1" and whose params scope the
         // tide-realm-admin role on the realm-management resource (see iga-core
-        // TideAttestor.buildAdminPolicy* — POLICY_TYPE / TIDE_REALM_ADMIN_ROLE /
+        // TideAttestor.buildAdminPolicy* - POLICY_TYPE / TIDE_REALM_ADMIN_ROLE /
         // POLICY_RESOURCE). When we can detect that exact shape from the carrier,
         // show a specific title; otherwise keep the generic one. Display-only and
-        // fully guarded — a decode failure must never change the signed bytes nor
+        // fully guarded - a decode failure must never change the signed bytes nor
         // throw out of the constructor.
         try {
             const policy = this._tryGetPolicy();
@@ -298,7 +298,7 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
         // an EMPTY (0-byte) placeholder whose only purpose is to position draft[2]
         // (the ORK's revoke-authorizing-policy flag). Only parse it as a contract
         // when it actually carries a length-prefixed structure (>= 4 bytes for a
-        // TideMemory header) — an empty segment must be skipped, not read.
+        // TideMemory header) - an empty segment must be skipped, not read.
         let res: any = {};
         if (TryGetValue(draftBytes, 1, res) && res.result && res.result.length >= 4) {
             const contractBytes = res.result;
@@ -453,10 +453,10 @@ class ServerCertSignRequestBuilder extends HumanReadableModelBuilder {
 //
 // The AttestationUnit:1 draft carries one or more attestation-unit envelopes as
 // VERBATIM CBOR (produced by Jackson's default CBOR mapper on the iga-core
-// producer side — see RealmAttestationExporter / AttestationUnit.java). tide-js
+// producer side - see RealmAttestationExporter / AttestationUnit.java). tide-js
 // has no CBOR dependency, so we decode the small, well-defined subset Jackson
 // emits here: unsigned/negative integers, byte/text strings, arrays, maps and
-// the simple values false/true/null — definite AND indefinite length. This is
+// the simple values false/true/null - definite AND indefinite length. This is
 // display-only (the enclave renders the result); it never participates in the
 // signed bytes, so a decode failure must degrade gracefully, never throw.
 function decodeCbor(bytes: Uint8Array): any {
@@ -535,7 +535,7 @@ function decodeCbor(bytes: Uint8Array): any {
                 if (ai === 22) return null;      // null
                 if (ai === 23) return undefined; // undefined
                 if (ai === 25 || ai === 26 || ai === 27) {
-                    // half/single/double float — not used by the unit envelopes; skip bytes.
+                    // half/single/double float - not used by the unit envelopes; skip bytes.
                     readUint(ai === 25 ? 2 : ai === 26 ? 4 : 8);
                     return null;
                 }
@@ -581,13 +581,13 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
     // lacked this builder and fell through to the carrier short-name). The
     // constructor refines this to a specific, context-aware title below, but
     // even if decoding fails the admin still sees an intelligible role-assignment
-    // summary — never "AE", never the bare model id.
-    _humanReadableName = "Grant role(s) — Role Assignment";
+    // summary - never "AE", never the bare model id.
+    _humanReadableName = "Grant role(s) - Role Assignment";
     get _id() { return this._name + ":" + this._version; }
     constructor(data, reqId, context?: HumanReadableContext) {
         super(data, reqId, context);
         // Refine the card title from the actual carried unit. Display-only and
-        // fully guarded — a decode failure must never throw out of the
+        // fully guarded - a decode failure must never throw out of the
         // constructor nor change the signed bytes; it just keeps the generic
         // (still human-readable) title above.
         try {
@@ -623,17 +623,17 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
             if (roleNames && userName) return `Grant role ${roleNames} to ${userName}`;
             if (roleNames) return `Grant role ${roleNames}`;
             if (userName) return `Update roles for ${userName}`;
-            return "Grant role(s) — Role Assignment";
+            return "Grant role(s) - Role Assignment";
         }
 
         // Any other attestation unit: still give a readable, type-specific title
         // instead of the opaque carrier code.
-        if (utName) return `Approve change — ${utName.replace(/_/g, " ")}`;
+        if (utName) return `Approve change - ${utName.replace(/_/g, " ")}`;
         return undefined;
     }
 
     // Role names for the title ONLY when the context supplied at least one
-    // friendly name — we don't want a title full of UUIDs, so if no name
+    // friendly name - we don't want a title full of UUIDs, so if no name
     // resolved we return undefined and let the caller use generic phrasing.
     private _titleRoleNames(payload: any): string | undefined {
         try {
@@ -685,7 +685,7 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
     // Decode every attestation-unit envelope the draft carries. The draft is
     // AttestationUnitSignRequest framing: a TideMemory whose segment i is the
     // verbatim CBOR of unit i (req.SetUnits(byte[][]) on the producer). Never
-    // throws — a malformed/absent unit is simply skipped.
+    // throws - a malformed/absent unit is simply skipped.
     private _decodeUnits(): any[] {
         const units: any[] = [];
         if (!this._draft) return units;
@@ -700,7 +700,7 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
 
     // Decode the embedded admin Policy from the request's policy segment
     // (seg-9, req.SetPolicy(adminPolicyBytes)). Returns null when absent or
-    // undecodable — never throws.
+    // undecodable - never throws.
     private _decodePolicy(): Policy | null {
         try {
             const policyBytes = this.request?.policy;
