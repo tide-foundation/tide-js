@@ -104,6 +104,18 @@ export const TideJsErrorCodes = Object.freeze({
     CRYPTO_AES_UNSUPPORTED_KEY_TYPE: "TIDE-TIDEJS-CRYPTO-AES_UNSUPPORTED_KEY_TYPE",
     /** DH `computeSharedKey` called with a private value of an unsupported JS type. */
     CRYPTO_DH_UNSUPPORTED_PRIV_TYPE: "TIDE-TIDEJS-CRYPTO-DH_UNSUPPORTED_PRIV_TYPE",
+    /** An Ed25519 Point failed an on-curve / equality / non-ZERO sanity check. */
+    CRYPTO_ED25519_BAD_POINT: "TIDE-TIDEJS-CRYPTO-ED25519_BAD_POINT",
+    /** Modular inverse does not exist (gcd != 1, or invert of 0 / non-positive modulus). */
+    CRYPTO_INVERSE_NOT_EXIST: "TIDE-TIDEJS-CRYPTO-INVERSE_NOT_EXIST",
+    /** A low-level crypto primitive received a value of an unexpected JS type (e.g. `invert` expected a bigint). */
+    CRYPTO_INVALID_BIGINT_INPUT: "TIDE-TIDEJS-CRYPTO-INVALID_BIGINT_INPUT",
+    /** Hash-to-Point (RFC 9380 expand_message_xmd / i2osp) received an out-of-range input. */
+    CRYPTO_HASH_TO_POINT_INVALID_INPUT: "TIDE-TIDEJS-CRYPTO-HASH_TO_POINT_INVALID_INPUT",
+
+    // --- Signature -------------------------------------------------------
+    /** Non-blind signature verification failed (e.g. Ed25519Scheme `verifyingFunc`). */
+    SIG_VERIFY_FAILED: "TIDE-TIDEJS-SIG-VERIFY_FAILED",
 
     // --- Serialization helpers -----------------------------------------
     /** A numeric value cannot be represented in the requested width (e.g. > Int64 / > 255 byte). */
@@ -136,6 +148,18 @@ export const TideJsErrorCodes = Object.freeze({
     MODEL_INVALID_KEY: "TIDE-TIDEJS-MODEL-INVALID_KEY",
     /** A model field's value was not in the allowed range (e.g. VRK expiry too close to now). */
     MODEL_VALUE_OUT_OF_RANGE: "TIDE-TIDEJS-MODEL-VALUE_OUT_OF_RANGE",
+    /** ModelRegistry could not resolve a sign-request name:version to a builder (unknown model id). */
+    MODEL_UNKNOWN_MODEL: "TIDE-TIDEJS-MODEL-UNKNOWN_MODEL",
+    /** A PolicyParameters entry carries an unrecognised type tag (e.g. not str/num/bnum/bln/byt). */
+    MODEL_UNKNOWN_PARAM_TYPE: "TIDE-TIDEJS-MODEL-UNKNOWN_PARAM_TYPE",
+    /** `Policy.getParameter` was asked for a parameter key that does not exist on the policy. */
+    MODEL_PARAM_NOT_FOUND: "TIDE-TIDEJS-MODEL-PARAM_NOT_FOUND",
+    /** A developer-only invariant was violated inside a Policy version handler (should be unreachable in production). */
+    MODEL_DEV_ERROR: "TIDE-TIDEJS-MODEL-DEV_ERROR",
+    /** A request (e.g. BaseTideRequest) was used before a required field (authorizer / authorization / cert) had been added. */
+    MODEL_REQUEST_NOT_INITIALIZED: "TIDE-TIDEJS-MODEL-REQUEST_NOT_INITIALIZED",
+    /** A serialized model header carried an unsupported version tag (Policy / SerializedField). */
+    MODEL_VERSION_MISMATCH: "TIDE-TIDEJS-MODEL-VERSION_MISMATCH",
 
     // --- TideMemory guards ---------------------------------------------
     /** Caller supplied a negative index to a TideMemory helper. */
