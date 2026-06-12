@@ -97,6 +97,43 @@ interface ProblemDetails {
     messageParams?: Record<string, unknown> | null;
 }
 
+/**
+ * Case-tolerant ProblemDetails field read.
+ *
+ * ORKs emit PascalCase field names on the wire (`Code`, `MessageKey`,
+ * `MessageParams`, ...) — that is the canonical form going forward — while
+ * older producers (and the RFC 7807 base spec) use lowercase. We accept both,
+ * preferring the lowercase spelling when both are present (matches the
+ * historical tide-js behaviour, which only ever read lowercase).
+ *
+ * NOTE: this tolerance applies to the ProblemDetails ENVELOPE field names
+ * only. `messageParams` dictionary KEYS pass through untouched (ork emits
+ * them lowercase, e.g. `minutes`, `expirySeconds`).
+ */
+function _pdField<T>(problem: Record<string, unknown>, lower: string, pascal: string): T | undefined {
+    const v = problem[lower] !== undefined ? problem[lower] : problem[pascal];
+    return v as T | undefined;
+}
+
+/**
+ * Normalise a parsed problem+json body (either casing) into the lowercase
+ * {@link ProblemDetails} shape used internally.
+ */
+function _normalizeProblemDetails(problem: Record<string, unknown>): ProblemDetails {
+    return {
+        type: _pdField<string>(problem, "type", "Type"),
+        title: _pdField<string>(problem, "title", "Title"),
+        status: _pdField<number>(problem, "status", "Status"),
+        detail: _pdField<string>(problem, "detail", "Detail"),
+        instance: _pdField<string>(problem, "instance", "Instance"),
+        code: _pdField<string>(problem, "code", "Code"),
+        traceId: _pdField<string>(problem, "traceId", "TraceId"),
+        source: _pdField<string>(problem, "source", "Source"),
+        messageKey: _pdField<string | null>(problem, "messageKey", "MessageKey"),
+        messageParams: _pdField<Record<string, unknown> | null>(problem, "messageParams", "MessageParams"),
+    };
+}
+
 export default class ClientBase {
     url: string;
     token: string;
@@ -200,6 +237,15 @@ export default class ClientBase {
             throw tideErr;
         }
         if (!response.ok) {
+            // Structured ORK errors (e.g. 409 USERNAME_RESERVED on
+            // GetReservers) arrive as `application/problem+json` — parse and
+            // pass them through instead of collapsing to NET_NON_OK_STATUS.
+            const problemError = await this._problemDetailsToError(
+                response, "Clients/ClientBase.ts:_get", fullUrl, endpoint, "GET");
+            if (problemError) {
+                _pushRecent(fullUrl, "GET", perfStart, false, response, problemError);
+                throw problemError;
+            }
             const tideErr = new TideError({
                 code: TideJsErrorCodes.NET_NON_OK_STATUS,
                 displayMessage: `Request to ${endpoint} returned HTTP ${response.status}`,
@@ -235,6 +281,9 @@ export default class ClientBase {
             throw this._classifyFetchError(e, signal, "Clients/ClientBase.ts:_getSilent", endpoint, "GET");
         }
         if (!response.ok) {
+            const problemError = await this._problemDetailsToError(
+                response, "Clients/ClientBase.ts:_getSilent", this.url + endpoint, endpoint, "GET");
+            if (problemError) throw problemError;
             throw new TideError({
                 code: TideJsErrorCodes.NET_NON_OK_STATUS,
                 displayMessage: `Request to ${endpoint} returned HTTP ${response.status}`,
@@ -371,6 +420,82 @@ export default class ClientBase {
     }
 
     /**
+     * If `response` carries an `application/problem+json` body, read + parse
+     * it (case-tolerantly — see {@link _normalizeProblemDetails}) and return
+     * the structured pass-through {@link TideError} to throw. Returns `null`
+     * when the content-type is not problem+json (body is NOT consumed in
+     * that case, so callers may still read it).
+     *
+     * A malformed body / missing `code` yields a `PARSE_PROBLEM_JSON_INVALID`
+     * TideError rather than `null`, mirroring the historical `_handleError`
+     * behaviour.
+     */
+    private async _problemDetailsToError(
+        response: Response,
+        source: string,
+        url: string | undefined,
+        endpoint: string | undefined,
+        method?: string,
+    ): Promise<TideError | null> {
+        const contentType = response.headers.get("content-type") ?? "";
+        if (!contentType.toLowerCase().includes("application/problem+json")) return null;
+
+        const raw = await response.text();
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (parseErr) {
+            return new TideError({
+                code: TideJsErrorCodes.PARSE_PROBLEM_JSON_INVALID,
+                displayMessage: "Server returned application/problem+json but the body did not parse",
+                httpStatus: response.status,
+                source,
+                url,
+                endpoint,
+                method,
+                cause: parseErr,
+            });
+        }
+
+        const problem = (parsed && typeof parsed === "object")
+            ? _normalizeProblemDetails(parsed as Record<string, unknown>)
+            : null;
+
+        if (!problem || typeof problem.code !== "string") {
+            return new TideError({
+                code: TideJsErrorCodes.PARSE_PROBLEM_JSON_INVALID,
+                displayMessage: "Server returned application/problem+json without a `code` field",
+                httpStatus: response.status,
+                source,
+                url,
+                endpoint,
+                method,
+                problemType: problem?.type,
+                cause: raw,
+            });
+        }
+
+        // Pass-through. The upstream `code` (e.g. `TIDE-ORK-SIG-VERIFY_FAILED`)
+        // is preserved verbatim — keycloak-IGA's `getTideErrorInfo` expects
+        // to see the originating code, not a tide-js wrapper code. Likewise
+        // `messageKey` is copied through UNMODIFIED (no prefix assumptions —
+        // the Enclave performs its own lookup remap).
+        return new TideError({
+            code: problem.code,
+            displayMessage: problem.detail ?? problem.title ?? "Upstream error",
+            messageKey: problem.messageKey ?? null,
+            messageParams: problem.messageParams ?? null,
+            traceId: problem.traceId,
+            source: problem.source,
+            httpStatus: problem.status ?? response.status,
+            problemType: problem.type,
+            url,
+            endpoint,
+            method,
+        });
+    }
+
+    /**
      * Convert a server response into either:
      *  - a success body (`text/plain`, voucher path, 2xx)
      *  - a thrown {@link TideError} (any error path)
@@ -390,7 +515,6 @@ export default class ClientBase {
      * @param _throwError Deprecated, retained for ABI compatibility. Errors are always thrown.
      */
     async _handleError(response: Response, functionName: string = "", _throwError: boolean = false): Promise<string> {
-        const contentType = response.headers.get("content-type") ?? "";
         const source = `Clients/ClientBase.ts:_handleError(${functionName})`;
         // `response.url` is the final URL (post-redirect). We use it as a
         // best-effort source for the debug fields; `_handleError` doesn't
@@ -403,52 +527,8 @@ export default class ClientBase {
         }
 
         // ---- (1) Problem Details (RFC 7807 + Tide extensions) -------------
-        if (contentType.toLowerCase().includes("application/problem+json")) {
-            const raw = await response.text();
-            let problem: ProblemDetails;
-            try {
-                problem = JSON.parse(raw) as ProblemDetails;
-            } catch (parseErr) {
-                throw new TideError({
-                    code: TideJsErrorCodes.PARSE_PROBLEM_JSON_INVALID,
-                    displayMessage: "Server returned application/problem+json but the body did not parse",
-                    httpStatus: response.status,
-                    source,
-                    url,
-                    endpoint,
-                    cause: parseErr,
-                });
-            }
-
-            if (!problem || typeof problem !== "object" || typeof problem.code !== "string") {
-                throw new TideError({
-                    code: TideJsErrorCodes.PARSE_PROBLEM_JSON_INVALID,
-                    displayMessage: "Server returned application/problem+json without a `code` field",
-                    httpStatus: response.status,
-                    source,
-                    url,
-                    endpoint,
-                    problemType: problem?.type,
-                    cause: raw,
-                });
-            }
-
-            // Pass-through. The upstream `code` (e.g. `TIDE-ORK-SIG-VERIFY_FAILED`)
-            // is preserved verbatim — keycloak-IGA's `getTideErrorInfo` expects
-            // to see the originating code, not a tide-js wrapper code.
-            throw new TideError({
-                code: problem.code,
-                displayMessage: problem.detail ?? problem.title ?? "Upstream error",
-                messageKey: problem.messageKey ?? null,
-                messageParams: problem.messageParams ?? null,
-                traceId: problem.traceId,
-                source: problem.source,
-                httpStatus: problem.status ?? response.status,
-                problemType: problem.type,
-                url,
-                endpoint,
-            });
-        }
+        const problemError = await this._problemDetailsToError(response, source, url, endpoint);
+        if (problemError) throw problemError;
 
         const responseData = await response.text();
 
