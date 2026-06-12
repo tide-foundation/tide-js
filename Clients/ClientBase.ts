@@ -134,6 +134,95 @@ function _normalizeProblemDetails(problem: Record<string, unknown>): ProblemDeta
     };
 }
 
+// ---------------------------------------------------------------------------
+// ProblemDetails field validation (defense in depth).
+//
+// A ProblemDetails body is ATTACKER-CONTROLLED input (any ORK in the cohort
+// can emit one), so every field is validated/capped before it is allowed onto
+// a TideError. Rules (locked in the Phase 4 security review):
+//   - envelope fields must be strings or they are DROPPED;
+//   - `code` / `messageKey`: <= 256 chars, charset [A-Za-z0-9._:-] — DROPPED
+//     (not truncated, never thrown on) if either check fails;
+//   - `detail` / `title`: TRUNCATED to 2048 chars;
+//   - `traceId` / `source` / `type` / `instance`: TRUNCATED to 256 chars;
+//   - `status` must be a finite number or it is dropped;
+//   - `messageParams` must be a plain object (else dropped); at most 16 keys
+//     kept; keys must match ^[A-Za-z0-9_]{1,64}$ (and may not be a prototype-
+//     polluting name); values are coerced via String() and truncated to 256.
+// Dropped/truncated input NEVER causes a throw — the existing fallback paths
+// (e.g. PARSE_PROBLEM_JSON_INVALID when `code` is dropped) degrade gracefully.
+// ---------------------------------------------------------------------------
+
+const PD_CODE_LIKE = /^[A-Za-z0-9._:-]{1,256}$/;
+const PD_PARAM_KEY = /^[A-Za-z0-9_]{1,64}$/;
+const PD_TEXT_MAX = 2048;
+const PD_SHORT_MAX = 256;
+const PD_PARAMS_MAX_KEYS = 16;
+const PD_PARAM_VALUE_MAX = 256;
+
+/** String-or-drop, then truncate to `max`. */
+function _pdTruncated(v: unknown, max: number): string | undefined {
+    if (typeof v !== "string") return undefined;
+    return v.length > max ? v.slice(0, max) : v;
+}
+
+/** String-or-drop, then drop entirely unless it matches the code charset/length. */
+function _pdCodeLike(v: unknown): string | undefined {
+    if (typeof v !== "string") return undefined;
+    return PD_CODE_LIKE.test(v) ? v : undefined;
+}
+
+/**
+ * Sanitise `messageParams`: plain object only, capped key count, strict key
+ * charset, String()-coerced + truncated values. Keys that could reach the
+ * Object prototype chain (`__proto__`, `constructor`, `prototype`) are
+ * dropped outright even though `__proto__` matches the key regex — JSON.parse
+ * creates them as own properties, but a plain re-assignment here would hit
+ * the setter and pollute.
+ */
+function _pdSanitizeParams(v: unknown): Record<string, unknown> | null {
+    if (v === null || v === undefined) return null;
+    if (typeof v !== "object" || Array.isArray(v)) return null;
+    const proto = Object.getPrototypeOf(v);
+    if (proto !== Object.prototype && proto !== null) return null;
+
+    const out: Record<string, unknown> = {};
+    let kept = 0;
+    for (const key of Object.keys(v)) {
+        if (kept >= PD_PARAMS_MAX_KEYS) break;
+        if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
+        if (!PD_PARAM_KEY.test(key)) continue;
+        let s: string;
+        try {
+            s = String((v as Record<string, unknown>)[key]);
+        } catch {
+            continue; // e.g. a Symbol value — drop the entry, never throw
+        }
+        out[key] = s.length > PD_PARAM_VALUE_MAX ? s.slice(0, PD_PARAM_VALUE_MAX) : s;
+        kept++;
+    }
+    return out;
+}
+
+/** Apply the validation rules above to a normalised ProblemDetails envelope. */
+function _sanitizeProblemDetails(problem: ProblemDetails): ProblemDetails {
+    const status = (typeof problem.status === "number" && Number.isFinite(problem.status))
+        ? problem.status
+        : undefined;
+    return {
+        type: _pdTruncated(problem.type, PD_SHORT_MAX),
+        title: _pdTruncated(problem.title, PD_TEXT_MAX),
+        status,
+        detail: _pdTruncated(problem.detail, PD_TEXT_MAX),
+        instance: _pdTruncated(problem.instance, PD_SHORT_MAX),
+        code: _pdCodeLike(problem.code),
+        traceId: _pdTruncated(problem.traceId, PD_SHORT_MAX),
+        source: _pdTruncated(problem.source, PD_SHORT_MAX),
+        messageKey: _pdCodeLike(problem.messageKey),
+        messageParams: _pdSanitizeParams(problem.messageParams),
+    };
+}
+
 export default class ClientBase {
     url: string;
     token: string;
@@ -457,8 +546,13 @@ export default class ClientBase {
             });
         }
 
+        // Normalise casing, then validate/cap every field (see the
+        // _sanitizeProblemDetails block above) — the body is attacker-
+        // controlled input. An invalid `code` is dropped by sanitisation,
+        // which routes the response into the PARSE_PROBLEM_JSON_INVALID
+        // fallback below rather than throwing.
         const problem = (parsed && typeof parsed === "object")
-            ? _normalizeProblemDetails(parsed as Record<string, unknown>)
+            ? _sanitizeProblemDetails(_normalizeProblemDetails(parsed as Record<string, unknown>))
             : null;
 
         if (!problem || typeof problem.code !== "string") {

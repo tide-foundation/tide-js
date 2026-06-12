@@ -56,17 +56,50 @@ export function CurrentTime(){
  */
 export interface WaitForORKsOptions {
     /**
-     * Opt-in: when the threshold is NOT met and EVERY per-ORK failure is a
-     * {@link TideError} carrying one identical upstream `code` (and that code
-     * is not a tide-js transport code, i.e. does not start with `TIDE-TIDEJS-`),
-     * throw a "promoted" TideError carrying that code / messageKey /
-     * messageParams instead of the generic `NET_THRESHOLD_FAILURE` aggregate.
+     * Opt-in: when the threshold is NOT met and the failure set covers the
+     * ENTIRE attempted cohort (every attempted ORK rejected — no successes,
+     * no still-pending promises cut off by the timeout) and EVERY per-ORK
+     * failure is a {@link TideError} carrying one identical upstream `code`
+     * (and that code is not a tide-js transport code, i.e. does not start
+     * with `TIDE-TIDEJS-`), throw a "promoted" TideError carrying that code /
+     * messageKey / messageParams instead of the generic
+     * `NET_THRESHOLD_FAILURE` aggregate.
+     *
+     * The full-cohort requirement is a security gate: without it, one fast
+     * malicious ORK plus slow/unreachable honest ORKs could fake "unanimity"
+     * at the timeout and misrepresent an outage as a cohort-attested error.
      *
      * Used by the reservation flow so a unanimous 409
      * `TIDE-ORK-KEYGEN-USERNAME_RESERVED` survives to the UI. Default: off —
      * all other callers keep byte-identical behaviour.
      */
     promoteUnanimousCodes?: boolean;
+}
+
+/**
+ * Representative-selection helper for unanimous-code promotion: among the
+ * failures whose `messageParams[param]` coerces to a FINITE number, return
+ * the failure holding the median value (even count -> lower median), or
+ * `null` if no failure qualifies.
+ *
+ * Median (not max/min) is the honest-majority rule: with one attacker in an
+ * otherwise-honest cohort the median is always a value an honest ORK sent,
+ * so a single member cannot drag the displayed value to an extreme.
+ * Non-finite coercions (NaN, +/-Infinity — e.g. `"9e999"`) are never
+ * candidates, so a poisoned value can never win.
+ */
+function _medianFailureByParam(failures: TideError[], param: string): TideError | null {
+    const candidates: { f: TideError; v: number }[] = [];
+    for (const f of failures) {
+        const raw = (f.messageParams as Record<string, unknown> | null | undefined)?.[param];
+        if (raw === undefined || raw === null) continue;
+        const v = Number(raw);
+        if (!Number.isFinite(v)) continue;
+        candidates.push({ f, v });
+    }
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => a.v - b.v);
+    return candidates[Math.floor((candidates.length - 1) / 2)].f;
 }
 
 async function PromiseRace(promises: Promise<any>[], keyType: string, amountRequired: number, customTimeout: number = null, customPromiseChecker: Function = null, promoteUnanimousCodes: boolean = false) {
@@ -166,32 +199,53 @@ async function PromiseRace(promises: Promise<any>[], keyType: string, amountRequ
         // AFTER the "Too many attempts" special case above (admin-ui
         // string-matches that path) and BEFORE the generic
         // NET_THRESHOLD_FAILURE throw below.
+        // TRUE-unanimity gate: promotion requires the failure set to cover
+        // the FULL attempted cohort. `failed.length === initLength` means
+        // every attempted promise rejected — none succeeded (results would
+        // hold it), none were still pending when the timeout truncated the
+        // loop, and none resolved-but-failed a customPromiseChecker (those
+        // land in results, not failed). `results.length === 0` is asserted
+        // explicitly as belt-and-braces: any success whatsoever disqualifies
+        // promotion. A partial set falls through to NET_THRESHOLD_FAILURE.
         if (
             promoteUnanimousCodes
             && failed.length > 0
+            && failed.length === initLength
+            && results.length === 0
             && failed.every(f => TideError.isTideError(f))
         ) {
             const tideFailed = failed as TideError[];
             const unanimousCode = tideFailed[0].code;
             const unanimous = tideFailed.every(f => f.code === unanimousCode);
             if (unanimous && !unanimousCode.startsWith("TIDE-TIDEJS-")) {
-                // Representative = the failure with the LARGEST numeric
-                // `messageParams.expirySeconds` (values are STRINGS on the
-                // wire). NaN/absent values never win; if none are numeric,
-                // fall back to the first failure.
-                let representative = tideFailed[0];
-                let repExpiry = Number.NaN;
-                for (const f of tideFailed) {
-                    const expiry = Number(f.messageParams?.expirySeconds);
-                    if (!Number.isNaN(expiry) && (Number.isNaN(repExpiry) || expiry > repExpiry)) {
-                        representative = f;
-                        repExpiry = expiry;
-                    }
-                }
+                // Representative = median of numeric `messageParams.minutes`
+                // (values are STRINGS on the wire); fall back to median of
+                // `expirySeconds` for older ORKs that still send it; else the
+                // first failure. See _medianFailureByParam for the
+                // honest-majority rationale.
+                const representative =
+                    _medianFailureByParam(tideFailed, "minutes")
+                    ?? _medianFailureByParam(tideFailed, "expirySeconds")
+                    ?? tideFailed[0];
+
+                // Namespace guard: a PROMOTED messageKey may only select
+                // entries from the Tide error catalog. The Enclave's
+                // getTranslation resolves arbitrary dotted paths in its i18n
+                // bundle, so an unguarded key would let a unanimous cohort
+                // pick arbitrary catalog strings (social-engineering text).
+                // Outside the namespace we omit the key; the Enclave then
+                // falls back to displayMessage / code.
+                const repKey = representative.messageKey;
+                const promotedMessageKey =
+                    typeof repKey === "string"
+                        && (repKey.startsWith("error.tide.") || repKey.startsWith("errors.tide."))
+                        ? repKey
+                        : null;
+
                 throw new TideError({
                     code: representative.code,
                     displayMessage: representative.displayMessage,
-                    messageKey: representative.messageKey,    // verbatim — no prefix assumptions
+                    messageKey: promotedMessageKey,
                     messageParams: representative.messageParams,
                     httpStatus: representative.httpStatus,
                     problemType: representative.problemType,
