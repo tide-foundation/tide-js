@@ -50,7 +50,26 @@ export function CurrentTime(){
     return timeSkew ? now + Number(timeSkew) : now;
 }
 
-async function PromiseRace(promises: Promise<any>[], keyType: string, amountRequired: number, customTimeout: number = null, customPromiseChecker: Function = null) {
+/**
+ * Options bag for {@link WaitForNumberofORKs} / {@link PromiseRace}.
+ * Added as a bag (not a positional) because the positional list is already 8 long.
+ */
+export interface WaitForORKsOptions {
+    /**
+     * Opt-in: when the threshold is NOT met and EVERY per-ORK failure is a
+     * {@link TideError} carrying one identical upstream `code` (and that code
+     * is not a tide-js transport code, i.e. does not start with `TIDE-TIDEJS-`),
+     * throw a "promoted" TideError carrying that code / messageKey /
+     * messageParams instead of the generic `NET_THRESHOLD_FAILURE` aggregate.
+     *
+     * Used by the reservation flow so a unanimous 409
+     * `TIDE-ORK-KEYGEN-USERNAME_RESERVED` survives to the UI. Default: off —
+     * all other callers keep byte-identical behaviour.
+     */
+    promoteUnanimousCodes?: boolean;
+}
+
+async function PromiseRace(promises: Promise<any>[], keyType: string, amountRequired: number, customTimeout: number = null, customPromiseChecker: Function = null, promoteUnanimousCodes: boolean = false) {
     let results = [];
     let failed = [];
     let timeoutReached = false;
@@ -143,6 +162,47 @@ async function PromiseRace(promises: Promise<any>[], keyType: string, amountRequ
         const required = amountRequired;
         const totalAttempted = initLength;
 
+        // Opt-in unanimous-code promotion (see WaitForORKsOptions). Must stay
+        // AFTER the "Too many attempts" special case above (admin-ui
+        // string-matches that path) and BEFORE the generic
+        // NET_THRESHOLD_FAILURE throw below.
+        if (
+            promoteUnanimousCodes
+            && failed.length > 0
+            && failed.every(f => TideError.isTideError(f))
+        ) {
+            const tideFailed = failed as TideError[];
+            const unanimousCode = tideFailed[0].code;
+            const unanimous = tideFailed.every(f => f.code === unanimousCode);
+            if (unanimous && !unanimousCode.startsWith("TIDE-TIDEJS-")) {
+                // Representative = the failure with the LARGEST numeric
+                // `messageParams.expirySeconds` (values are STRINGS on the
+                // wire). NaN/absent values never win; if none are numeric,
+                // fall back to the first failure.
+                let representative = tideFailed[0];
+                let repExpiry = Number.NaN;
+                for (const f of tideFailed) {
+                    const expiry = Number(f.messageParams?.expirySeconds);
+                    if (!Number.isNaN(expiry) && (Number.isNaN(repExpiry) || expiry > repExpiry)) {
+                        representative = f;
+                        repExpiry = expiry;
+                    }
+                }
+                throw new TideError({
+                    code: representative.code,
+                    displayMessage: representative.displayMessage,
+                    messageKey: representative.messageKey,    // verbatim — no prefix assumptions
+                    messageParams: representative.messageParams,
+                    httpStatus: representative.httpStatus,
+                    problemType: representative.problemType,
+                    traceId: representative.traceId,
+                    source: `Tools/Utils.ts:PromiseRace (promoted: ${tideFailed.length} identical per-ORK failures)`,
+                    details,
+                    cause: representative,
+                });
+            }
+        }
+
         if (failed.length > 0) {
             throw new TideError({
                 code: TideJsErrorCodes.NET_THRESHOLD_FAILURE,
@@ -170,11 +230,11 @@ async function PromiseRace(promises: Promise<any>[], keyType: string, amountRequ
 }
 
 
-export async function WaitForNumberofORKs(orkList_Ref: OrkInfo[], pre_responses: Promise<any>[], keyType: string, amountRequired: number = Threshold, bitwise_p: (0 | 1)[] = null, optionalArray: any[] = null, customTimeout: number = null, customPromiseChecker: Function = null){
+export async function WaitForNumberofORKs(orkList_Ref: OrkInfo[], pre_responses: Promise<any>[], keyType: string, amountRequired: number = Threshold, bitwise_p: (0 | 1)[] = null, optionalArray: any[] = null, customTimeout: number = null, customPromiseChecker: Function = null, opts?: WaitForORKsOptions){
     // See Utils.cs on Midgard Core for how this can be improved
     // Basically, you don't need indexes in the responses, just use .indexOf
 
-    const unsortedResponses = await PromiseRace(pre_responses, keyType, amountRequired, customTimeout, customPromiseChecker);
+    const unsortedResponses = await PromiseRace(pre_responses, keyType, amountRequired, customTimeout, customPromiseChecker, opts?.promoteUnanimousCodes === true);
 	const sortedResponses = unsortedResponses.sort((a, b) => a.index - b.index);
 
     let bitwise = [];
