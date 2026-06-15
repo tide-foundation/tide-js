@@ -57,6 +57,14 @@ function buildRequest(unitBytesList: Uint8Array[]): Uint8Array {
     return req.encode();
 }
 
+// Build an AttestationUnit:1 request whose single draft segment is the verbatim
+// UTF-8 plaintext that iga-core's canonicalizeNode / canonicalizeLinkageSet emits
+// (the non-producer carrier path: SetUnits(new byte[][]{ canonicalForRegularCr })).
+function buildPlaintextRequest(text: string): Uint8Array {
+    const seg = new TextEncoder().encode(text);
+    return buildRequest([seg]);
+}
+
 // ---- assertions -------------------------------------------------------------
 let failures = 0;
 function check(name: string, cond: boolean, extra?: any) {
@@ -131,6 +139,82 @@ console.log("AttestationUnit safe-label tests:");
     check("urms no-context title neutral",
         b._humanReadableName === "Role assignment update", b._humanReadableName);
     assertNoGrant(b, "user_role_mapping_set-no-ctx");
+}
+
+// ---- canonicalizeNode plaintext: TRUE action rendered from signed bytes -----
+
+// 4) DELETE_CLIENT node -> "Delete app <clientId>" + rows + destructive WARNING
+{
+    const text = "node=DELETE_CLIENT\nentityType=CLIENT\nentityId=client-uuid\n" +
+        "row=CLIENT_ID=acme;CLIENT_UUID=client-uuid;REALM_ID=r1\n";
+    const b = ModelRegistry.getHumanReadableModelBuilder("r4", buildPlaintextRequest(text));
+    check("DELETE_CLIENT title uses friendly clientId",
+        b._humanReadableName === "Delete app acme", b._humanReadableName);
+    const d = b.getDetailsMap();
+    check("DELETE_CLIENT details Action", d["Action"] === "DELETE_CLIENT", d["Action"]);
+    check("DELETE_CLIENT details has rows", typeof d["Details"] === "string" && d["Details"].includes("CLIENT_ID=acme"), d["Details"]);
+    check("DELETE_CLIENT flagged destructive", typeof d["WARNING"] === "string" && d["WARNING"].length > 0, d["WARNING"]);
+    assertNoGrant(b, "DELETE_CLIENT");
+}
+
+// 4b) DELETE_USER node -> "Delete user <username>"
+{
+    const text = "node=DELETE_USER\nentityType=USER\nentityId=u1\nrow=REALM_ID=r1;USERNAME=bob;USER_ID=u1\n";
+    const b = ModelRegistry.getHumanReadableModelBuilder("r4b", buildPlaintextRequest(text));
+    check("DELETE_USER title uses username",
+        b._humanReadableName === "Delete user bob", b._humanReadableName);
+    assertNoGrant(b, "DELETE_USER");
+}
+
+// 5) DISABLE_IGA node -> fixed realm title
+{
+    const text = "node=DISABLE_IGA\nentityType=REALM\nentityId=r1\n";
+    const b = ModelRegistry.getHumanReadableModelBuilder("r5", buildPlaintextRequest(text));
+    check("DISABLE_IGA title",
+        b._humanReadableName === "Disable IGA governance on realm", b._humanReadableName);
+    const d = b.getDetailsMap();
+    check("DISABLE_IGA flagged destructive", typeof d["WARNING"] === "string" && d["WARNING"].length > 0, d["WARNING"]);
+    assertNoGrant(b, "DISABLE_IGA");
+}
+
+// 5b) unknown node=FOO -> honest "Governance change: FOO", never a grant
+{
+    const text = "node=FOO_BAR\nentityType=THING\nentityId=x1\nrow=K=v\n";
+    const b = ModelRegistry.getHumanReadableModelBuilder("r5b", buildPlaintextRequest(text));
+    check("unknown node honest title",
+        b._humanReadableName === "Governance change: FOO_BAR", b._humanReadableName);
+    const d = b.getDetailsMap();
+    check("unknown node details Action raw", d["Action"] === "FOO_BAR", d["Action"]);
+    assertNoGrant(b, "unknown-node");
+}
+
+// ---- canonicalizeLinkageSet plaintext: NEUTRAL set, no grant/revoke assertion -
+
+// 6) linkage set -> neutral role/membership update + resolved members, NO verb
+{
+    const text = "table=user_role_mapping\nowner=user-uuid-1\nmembers=role-uuid-a,role-uuid-b\n";
+    const ctx = { users: { "user-uuid-1": "alice" }, roles: { "role-uuid-a": "tide-realm-admin", "role-uuid-b": "viewer" } };
+    const b = ModelRegistry.getHumanReadableModelBuilder("r6", buildPlaintextRequest(text), ctx);
+    check("linkage title neutral+named",
+        b._humanReadableName === "Role/membership assignment update for alice", b._humanReadableName);
+    assertNoGrant(b, "linkage-set");
+    const d = b.getDetailsMap();
+    check("linkage details Table", d["Table"] === "user_role_mapping", d["Table"]);
+    check("linkage members resolved",
+        typeof d["Members of alice"] === "string" && d["Members of alice"].includes("tide-realm-admin"), d["Members of alice"]);
+    check("linkage notes resulting-set, no verb",
+        typeof d["Note"] === "string" && !/revok|grant/i.test(d["Note"]), d["Note"]);
+    // must NOT assert revoke either
+    check("linkage title has no 'revoke'", !/revoke/i.test(String(b._humanReadableName)), b._humanReadableName);
+}
+
+// 6b) linkage set, empty resulting members -> "(none)", still neutral
+{
+    const text = "table=user_role_mapping\nowner=user-uuid-1\nmembers=\n";
+    const b = ModelRegistry.getHumanReadableModelBuilder("r6b", buildPlaintextRequest(text));
+    check("linkage empty members neutral title",
+        b._humanReadableName === "Role/membership assignment update", b._humanReadableName);
+    assertNoGrant(b, "linkage-empty");
 }
 
 console.log(failures === 0

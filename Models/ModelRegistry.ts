@@ -572,6 +572,148 @@ const ATTESTATION_UNIT_TYPE_NAMES: { [k: number]: string } = {
     17: "organization_domain_set",
 };
 
+// -----------------------------------------------------------------------------
+// Producer "canonicalizeNode" plaintext (the NODE / non-linkage CR family).
+//
+// For a NON-producer CR (DELETE_*, DISABLE_IGA, ...) the carrier's draft segment
+// is NOT a CBOR AttestationUnit envelope: it is the VERBATIM UTF-8 plaintext that
+// iga-core's TideAttestor.canonicalizeNode emits and signs (the bytes the admin
+// approves), shaped as:
+//
+//   node=<ACTION>\n
+//   entityType=<ENTITY>\n
+//   entityId=<id>\n
+//   row=<k=v;k=v;...>\n        (one or more, keys sorted, rows sorted)
+//
+// This is FULLY self-describing — `node=<ACTION>` is the TRUE CR action, present
+// in the signed bytes, so for this family we render the accurate action+data.
+//
+// `node` ACTION -> faithful human title. The {0} placeholder is filled from the
+// most human-friendly row field for that entity (e.g. CLIENT_ID, USERNAME, NAME)
+// falling back to the entityId. Verified against the producer CR creation sites
+// (IgaRealmProvider / IgaUserProvider recordAndThrow rows). For an action NOT in
+// this map we render the HONEST raw action ("Governance change: <node>") — never
+// a fabricated grant.
+const NODE_ACTION_TITLES: { [action: string]: (label: string) => string } = {
+    DELETE_CLIENT: (l) => `Delete app ${l}`,
+    DELETE_CLIENT_SCOPE: (l) => `Delete client scope ${l}`,
+    DELETE_USER: (l) => `Delete user ${l}`,
+    DELETE_ROLE: (l) => `Delete role ${l}`,
+    DELETE_GROUP: (l) => `Delete group ${l}`,
+    DELETE_ORGANIZATION: (l) => `Delete organization ${l}`,
+    DISABLE_IGA: () => "Disable IGA governance on realm",
+    OFFBOARD_REALM: () => "Offboard realm from the Tide network",
+    CREATE_CLIENT: (l) => `Create app ${l}`,
+    CREATE_CLIENT_SCOPE: (l) => `Create client scope ${l}`,
+    CREATE_USER: (l) => `Create user ${l}`,
+    CREATE_ROLE: (l) => `Create role ${l}`,
+    CREATE_GROUP: (l) => `Create group ${l}`,
+    CREATE_ORGANIZATION: (l) => `Create organization ${l}`,
+    UPDATE_CLIENT_PROPERTY: (l) => `Update app ${l}`,
+    UPDATE_CLIENT_REDIRECT_URIS: (l) => `Update redirect URIs for app ${l}`,
+    UPDATE_CLIENT_WEB_ORIGINS: (l) => `Update web origins for app ${l}`,
+    UPDATE_CLIENT_SCOPE_PROPERTY: (l) => `Update client scope ${l}`,
+    UPDATE_PROTOCOL_MAPPER: (l) => `Update protocol mapper ${l}`,
+    UPDATE_ORGANIZATION: (l) => `Update organization ${l}`,
+};
+
+// node ACTIONs that destroy/cripple governed state — flagged in the details so the
+// admin sees the same WARNING severity convention the Offboard builder uses.
+const NODE_DESTRUCTIVE_ACTIONS = new Set<string>([
+    "DELETE_CLIENT", "DELETE_CLIENT_SCOPE", "DELETE_USER", "DELETE_ROLE",
+    "DELETE_GROUP", "DELETE_ORGANIZATION", "DISABLE_IGA", "OFFBOARD_REALM",
+]);
+
+// Preferred human-friendly row field per entityType, most-specific first. Used to
+// label the title with a name the admin recognises instead of a raw UUID.
+const NODE_LABEL_FIELDS: { [entityType: string]: string[] } = {
+    CLIENT: ["CLIENT_ID"],
+    CLIENT_SCOPE: ["CLIENT_SCOPE_NAME"],
+    USER: ["USERNAME"],
+    ROLE: ["ROLE_NAME"],
+    GROUP: ["GROUP_NAME"],
+    ORGANIZATION: ["ORG_NAME", "NAME", "ALIAS"],
+};
+
+// Parsed shape of a canonicalizeNode plaintext draft segment.
+interface ParsedNodeCanonical {
+    node: string;
+    entityType: string | undefined;
+    entityId: string | undefined;
+    rows: { [k: string]: string }[];
+}
+
+// Parsed shape of a canonicalizeLinkageSet plaintext draft segment.
+interface ParsedLinkageCanonical {
+    table: string;
+    // one entry per owner, in the order emitted; members is the resulting set.
+    owners: { owner: string; members: string[] }[];
+}
+
+// UTF-8 decode the segment bytes, tolerating non-UTF-8 (returns "" on failure so
+// the caller falls through to the CBOR / neutral path; never throws).
+function decodeUtf8Loose(bytes: Uint8Array): string {
+    try { return StringFromUint8Array(bytes); } catch { return ""; }
+}
+
+// Parse a canonicalizeNode plaintext segment. Returns undefined when the bytes are
+// not the `node=...` plaintext shape (so the caller tries CBOR / neutral). Never
+// throws. Mirrors iga-core TideAttestor.canonicalizeNode byte-for-byte: lines are
+// '\n'-delimited; each `row=` line is `k=v;k=v;...` with `;` between pairs and the
+// FIRST `=` separating key from value (values may themselves contain `=`).
+function parseNodeCanonical(text: string): ParsedNodeCanonical | undefined {
+    if (!text.startsWith("node=")) return undefined;
+    const lines = text.split("\n");
+    let node = "", entityType: string | undefined, entityId: string | undefined;
+    const rows: { [k: string]: string }[] = [];
+    for (const line of lines) {
+        if (line.length === 0) continue;
+        if (line.startsWith("node=")) node = line.substring("node=".length);
+        else if (line.startsWith("entityType=")) entityType = line.substring("entityType=".length);
+        else if (line.startsWith("entityId=")) entityId = line.substring("entityId=".length);
+        else if (line.startsWith("row=")) {
+            const body = line.substring("row=".length);
+            const row: { [k: string]: string } = {};
+            if (body.length > 0) {
+                for (const pair of body.split(";")) {
+                    const eq = pair.indexOf("=");
+                    if (eq < 0) continue;
+                    row[pair.substring(0, eq)] = pair.substring(eq + 1);
+                }
+            }
+            rows.push(row);
+        }
+    }
+    if (node.length === 0) return undefined;
+    return { node, entityType, entityId, rows };
+}
+
+// Parse a canonicalizeLinkageSet plaintext segment. Returns undefined when the
+// bytes are not the `table=...` plaintext shape. Never throws. Mirrors iga-core
+// TideAttestor.canonicalizeLinkageSet: `table=<t>\n` then per owner
+// `owner=<id>\nmembers=<m1,m2,...>\n` (members comma-joined, possibly empty).
+function parseLinkageCanonical(text: string): ParsedLinkageCanonical | undefined {
+    if (!text.startsWith("table=")) return undefined;
+    const lines = text.split("\n");
+    let table = "";
+    const owners: { owner: string; members: string[] }[] = [];
+    let currentOwner: string | undefined;
+    for (const line of lines) {
+        if (line.length === 0) continue;
+        if (line.startsWith("table=")) table = line.substring("table=".length);
+        else if (line.startsWith("owner=")) {
+            currentOwner = line.substring("owner=".length);
+            owners.push({ owner: currentOwner, members: [] });
+        } else if (line.startsWith("members=")) {
+            const body = line.substring("members=".length);
+            const members = body.length > 0 ? body.split(",") : [];
+            if (owners.length > 0) owners[owners.length - 1].members = members;
+        }
+    }
+    if (table.length === 0) return undefined;
+    return { table, owners };
+}
+
 class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
     _name = "AttestationUnit";
     _version = "1";
@@ -600,20 +742,85 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
         } catch { /* keep the neutral "Governance change" title */ }
     }
 
+    // Lazily decode draft segment 0 as UTF-8 and try the two producer plaintext
+    // canonical shapes. Cached so repeated title/details calls parse once. Never
+    // throws; returns the parsed form or undefined when the segment is not that
+    // plaintext (CBOR unit, empty, or garbage), in which case callers fall through
+    // to the CBOR / neutral path.
+    private _nodeCanon: ParsedNodeCanonical | undefined | null = null;     // null = not yet computed
+    private _linkageCanon: ParsedLinkageCanonical | undefined | null = null;
+    private _firstSegmentText(): string {
+        try {
+            if (!this._draft) return "";
+            const res: any = {};
+            if (!TryGetValue(this._draft, 0, res)) return "";
+            const bytes = res.result;
+            if (!bytes || bytes.length === 0) return "";
+            return decodeUtf8Loose(bytes);
+        } catch { return ""; }
+    }
+    private _getNodeCanonical(): ParsedNodeCanonical | undefined {
+        if (this._nodeCanon === null) {
+            try { this._nodeCanon = parseNodeCanonical(this._firstSegmentText()); }
+            catch { this._nodeCanon = undefined; }
+        }
+        return this._nodeCanon ?? undefined;
+    }
+    private _getLinkageCanonical(): ParsedLinkageCanonical | undefined {
+        if (this._linkageCanon === null) {
+            try { this._linkageCanon = parseLinkageCanonical(this._firstSegmentText()); }
+            catch { this._linkageCanon = undefined; }
+        }
+        return this._linkageCanon ?? undefined;
+    }
+
+    // Pick the most human-friendly label for a node CR from its parsed rows
+    // (e.g. CLIENT_ID, USERNAME, NAME), falling back to the entityId, then "(?)".
+    private _nodeLabel(node: ParsedNodeCanonical): string {
+        const fields = (node.entityType && NODE_LABEL_FIELDS[node.entityType]) || [];
+        for (const row of node.rows) {
+            for (const f of fields) {
+                const v = row[f];
+                if (typeof v === "string" && v.length > 0) return v;
+            }
+        }
+        if (typeof node.entityId === "string" && node.entityId.length > 0
+            && node.entityId !== "null") return node.entityId;
+        return "(unspecified)";
+    }
+
     // Compute a specific, human-readable card title for the carried unit, using
     // the display-only HumanReadableContext (role/user names) when present.
     //
-    // HONESTY CONTRACT: the signed draft carries only the structural `unit_type`
-    // (realm_config, client_config, ... user_role_mapping_set) + payloads. It does
-    // NOT carry the CR action verb (grant/delete/create/update/revoke), so we
-    // CANNOT prove delete-vs-edit-vs-create from the bytes. This method therefore
-    // NEVER asserts an action verb. It describes the artifact TYPE honestly
-    // ("Approve change - client config") and, for role-assignment, uses neutral
-    // "Role assignment update" wording (the unit is a declarative set carrying
-    // both grants AND revokes - see comment below). Returns undefined only when no
-    // unit can be decoded, so the caller keeps the neutral "Governance change"
-    // fallback. There is NO code path here that yields a "Grant ..." title.
+    // HONESTY CONTRACT, by draft shape:
+    //   - canonicalizeNode plaintext (`node=<ACTION>...`): the TRUE action IS in the
+    //     signed bytes, so render it ACCURATELY ("Delete app my-client", "Disable
+    //     IGA governance on realm"). Unknown action -> honest "Governance change:
+    //     <node>", never a grant.
+    //   - canonicalizeLinkageSet plaintext (`table=...`): the resulting member SET
+    //     is in the bytes but the VERB is NOT (grant vs revoke are byte-identical),
+    //     so render NEUTRAL "Role/membership assignment update" + the members.
+    //   - CBOR AttestationUnit: structural `unit_type` only, no verb -> neutral
+    //     type-specific title (existing behaviour).
+    // Returns undefined only when nothing can be decoded, so the caller keeps the
+    // neutral "Governance change" fallback. There is NO path that fabricates a grant.
     private _buildTitle(): string | undefined {
+        // 1) NODE plaintext — true action present in signed bytes.
+        const node = this._getNodeCanonical();
+        if (node) {
+            const titleFn = NODE_ACTION_TITLES[node.node];
+            if (titleFn) return titleFn(this._nodeLabel(node));
+            return `Governance change: ${node.node}`;
+        }
+        // 2) LINKAGE plaintext — set present, verb NOT present -> neutral.
+        const linkage = this._getLinkageCanonical();
+        if (linkage) {
+            const owner = linkage.owners[0]?.owner;
+            const ownerName = owner ? this._userName(owner) : undefined;
+            if (ownerName && ownerName !== owner) return `Role/membership assignment update for ${ownerName}`;
+            return "Role/membership assignment update";
+        }
+        // 3) CBOR units — structural type only.
         const units = this._decodeUnits();
         const first = units[0];
         if (!first || typeof first !== "object") return undefined;
@@ -711,9 +918,61 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
         } catch { return undefined; }
     }
 
+    // Details for a canonicalizeNode plaintext draft (DELETE_*/DISABLE_IGA/...):
+    // the TRUE action + the parsed rows the admin is approving. Destructive actions
+    // are flagged with the same WARNING convention the Offboard builder uses.
+    private _nodeDetails(node: ParsedNodeCanonical, summary: any): void {
+        if (NODE_DESTRUCTIVE_ACTIONS.has(node.node)) {
+            summary["WARNING"] = "This is a destructive governance action and may be unrecoverable.";
+        }
+        summary["Action"] = node.node;
+        if (node.entityType) summary["Entity Type"] = node.entityType;
+        if (typeof node.entityId === "string" && node.entityId.length > 0 && node.entityId !== "null") {
+            summary["Entity Id"] = node.entityId;
+        }
+        node.rows.forEach((row, i) => {
+            const keys = Object.keys(row);
+            if (keys.length === 0) return;
+            const rendered = keys.map((k) => `${k}=${row[k]}`).join(", ");
+            summary[node.rows.length > 1 ? `Row ${i + 1}` : "Details"] = rendered;
+        });
+    }
+
+    // Details for a canonicalizeLinkageSet plaintext draft (role/group/composite
+    // SET actions): the RESULTING member set per owner, names resolved via the
+    // display-only context. The verb (grant vs revoke) is NOT in the signed bytes,
+    // so we explicitly note that the resulting set is shown, not the operation.
+    private _linkageDetails(linkage: ParsedLinkageCanonical, summary: any): void {
+        summary["Table"] = linkage.table;
+        summary["Note"] = "Showing the resulting set after this change. The signed bytes do not record whether members were added or removed.";
+        linkage.owners.forEach((o) => {
+            const ownerName = this._userName(o.owner);
+            const resolved = o.members.map((m) => {
+                const r = this._roleName(m);
+                return r !== m ? r : this._userName(m);
+            });
+            summary[`Members of ${ownerName}`] = resolved.length > 0 ? resolved.join(", ") : "(none)";
+        });
+    }
+
     getDetailsMap(): any {
         const summary: any = {};
         try {
+            // ---- producer plaintext canonical forms (true-action / neutral-set) -
+            const node = this._getNodeCanonical();
+            if (node) {
+                this._nodeDetails(node, summary);
+                this._appendTimingDetails(summary);
+                return summary;
+            }
+            const linkage = this._getLinkageCanonical();
+            if (linkage) {
+                this._linkageDetails(linkage, summary);
+                this._appendTimingDetails(summary);
+                return summary;
+            }
+
+            // ---- CBOR AttestationUnit path (structural type, no verb) ----------
             const units = this._decodeUnits();
             const policy = this._decodePolicy();
 
@@ -763,23 +1022,42 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
 
             // ---- timing (also surfaced by the enclave chrome; included here for
             //      a self-contained card, guarded so it never throws) ------------
-            try {
-                if (this.request && typeof this.request.expiry === "number") {
-                    summary["Expires"] = new Date(this.request.expiry * 1000).toUTCString();
-                }
-            } catch { /* expiry not readable */ }
-            try {
-                if (this.request && this.request.isInitialized()) {
-                    summary["Requested At"] = new Date(this.request.getInitializedTime() * 1000).toUTCString();
-                }
-            } catch { /* not initialized */ }
+            this._appendTimingDetails(summary);
         } catch { /* never throw from the summary builder */ }
         return summary;
+    }
+
+    // Append the request expiry / requested-at lines, each individually guarded so
+    // a missing/uninitialized field never throws out of the summary builder.
+    private _appendTimingDetails(summary: any): void {
+        try {
+            if (this.request && typeof this.request.expiry === "number") {
+                summary["Expires"] = new Date(this.request.expiry * 1000).toUTCString();
+            }
+        } catch { /* expiry not readable */ }
+        try {
+            if (this.request && this.request.isInitialized()) {
+                summary["Requested At"] = new Date(this.request.getInitializedTime() * 1000).toUTCString();
+            }
+        } catch { /* not initialized */ }
     }
 
     getRequestDataJson(): any {
         const data: any = {};
         try {
+            // Producer plaintext canonical forms render their parsed structure
+            // (the raw JSON view mirrors the accurate-vs-neutral details split).
+            const node = this._getNodeCanonical();
+            if (node) {
+                data["node"] = { action: node.node, entityType: node.entityType, entityId: node.entityId, rows: node.rows };
+                return data;
+            }
+            const linkage = this._getLinkageCanonical();
+            if (linkage) {
+                data["linkageSet"] = { table: linkage.table, owners: linkage.owners };
+                return data;
+            }
+
             const units = this._decodeUnits();
             // Render bytes as hex so the JSON view is clean (decodeCbor only yields
             // Uint8Array for CBOR byte-strings, which the unit payloads don't use,
