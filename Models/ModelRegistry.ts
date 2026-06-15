@@ -189,7 +189,7 @@ class UserContextSignRequestBuilder extends HumanReadableModelBuilder {
 export class OffboardSignRequestBuilder extends HumanReadableModelBuilder {
     _name = "Offboard";
     _version = "1";
-    _humanReadableName = "Cancel Tide Subscription and Protection";
+    _humanReadableName = "Offboard from the Tide network (cancel subscription and protection)";
 
     get _id() { return this._name + ":" + this._version; }
     constructor(data, reqId) {
@@ -197,12 +197,9 @@ export class OffboardSignRequestBuilder extends HumanReadableModelBuilder {
     }
     getDetailsMap(): any {
         let summary: any = {};
-        summary["WARNING WARNING WARNING"] = "";
-        summary["APPROVING THIS REQUEST WILL CRIPPLE YOUR LICENSED TIDE ACCOUNT"] = "";
-        summary["ONLY APPROVE THIS REQUEST IF YOU INTEND TO OFFBOARD FROM THE TIDE NETWORK"] = "";
-        summary["THIS ACTION IS UNRECOVERABLE"] = "";
-
-
+        summary["WARNING"] = "Warning: approving this offboards your account from the Tide network. It cancels your subscription and Tide protection, and cannot be undone.";
+        summary["You are about to"] = "Offboard this account from the Tide network";
+        summary["Note"] = "Only approve this if you intend to permanently offboard from the Tide network.";
         return summary;
     }
     getRequestDataJson() {
@@ -595,26 +592,78 @@ const ATTESTATION_UNIT_TYPE_NAMES: { [k: number]: string } = {
 // this map we render the HONEST raw action ("Governance change: <node>") — never
 // a fabricated grant.
 const NODE_ACTION_TITLES: { [action: string]: (label: string) => string } = {
-    DELETE_CLIENT: (l) => `Delete app ${l}`,
-    DELETE_CLIENT_SCOPE: (l) => `Delete client scope ${l}`,
-    DELETE_USER: (l) => `Delete user ${l}`,
-    DELETE_ROLE: (l) => `Delete role ${l}`,
-    DELETE_GROUP: (l) => `Delete group ${l}`,
-    DELETE_ORGANIZATION: (l) => `Delete organization ${l}`,
-    DISABLE_IGA: () => "Disable IGA governance on realm",
-    OFFBOARD_REALM: () => "Offboard realm from the Tide network",
-    CREATE_CLIENT: (l) => `Create app ${l}`,
-    CREATE_CLIENT_SCOPE: (l) => `Create client scope ${l}`,
-    CREATE_USER: (l) => `Create user ${l}`,
-    CREATE_ROLE: (l) => `Create role ${l}`,
-    CREATE_GROUP: (l) => `Create group ${l}`,
-    CREATE_ORGANIZATION: (l) => `Create organization ${l}`,
-    UPDATE_CLIENT_PROPERTY: (l) => `Update app ${l}`,
-    UPDATE_CLIENT_REDIRECT_URIS: (l) => `Update redirect URIs for app ${l}`,
-    UPDATE_CLIENT_WEB_ORIGINS: (l) => `Update web origins for app ${l}`,
-    UPDATE_CLIENT_SCOPE_PROPERTY: (l) => `Update client scope ${l}`,
-    UPDATE_PROTOCOL_MAPPER: (l) => `Update protocol mapper ${l}`,
-    UPDATE_ORGANIZATION: (l) => `Update organization ${l}`,
+    DELETE_CLIENT: (l) => `Delete the app "${l}"`,
+    DELETE_CLIENT_SCOPE: (l) => `Delete the client scope "${l}"`,
+    DELETE_USER: (l) => `Delete the user "${l}"`,
+    DELETE_ROLE: (l) => `Delete the role "${l}"`,
+    DELETE_GROUP: (l) => `Delete the group "${l}"`,
+    DELETE_ORGANIZATION: (l) => `Delete the organization "${l}"`,
+    DISABLE_IGA: () => "Turn off governance (QEA) for this realm",
+    OFFBOARD_REALM: () => "Offboard (permanently shut down) this realm",
+    CREATE_CLIENT: (l) => `Create the app "${l}"`,
+    CREATE_CLIENT_SCOPE: (l) => `Create the client scope "${l}"`,
+    CREATE_USER: (l) => `Create the user "${l}"`,
+    CREATE_ROLE: (l) => `Create the role "${l}"`,
+    CREATE_GROUP: (l) => `Create the group "${l}"`,
+    CREATE_ORGANIZATION: (l) => `Create the organization "${l}"`,
+    UPDATE_CLIENT_PROPERTY: (l) => `Update the app "${l}"`,
+    UPDATE_CLIENT_REDIRECT_URIS: (l) => `Update the redirect URIs for app "${l}"`,
+    UPDATE_CLIENT_WEB_ORIGINS: (l) => `Update the web origins for app "${l}"`,
+    UPDATE_CLIENT_SCOPE_PROPERTY: (l) => `Update the client scope "${l}"`,
+    UPDATE_PROTOCOL_MAPPER: (l) => `Update the protocol mapper "${l}"`,
+    UPDATE_ORGANIZATION: (l) => `Update the organization "${l}"`,
+};
+
+// Per-action, plain-language consequence line for destructive actions, styled
+// with the WARNING/severity convention the enclave page already understands (see
+// OffboardSignRequestBuilder). Accurate, non-alarmist, no em dashes.
+const NODE_DESTRUCTIVE_WARNINGS: { [action: string]: string } = {
+    DELETE_CLIENT: "Warning: this permanently removes the app and all access through it. Apps and users relying on it will stop working.",
+    DELETE_CLIENT_SCOPE: "Warning: this permanently removes the client scope. Apps that depend on it may lose claims or stop working.",
+    DELETE_USER: "Warning: this permanently removes the user and their access. This cannot be undone.",
+    DELETE_ROLE: "Warning: this permanently removes the role. Users and groups holding it will lose the access it granted.",
+    DELETE_GROUP: "Warning: this permanently removes the group. Members will lose any access the group granted.",
+    DELETE_ORGANIZATION: "Warning: this permanently removes the organization and its associations. This cannot be undone.",
+    DISABLE_IGA: "Warning: this turns off approval governance for the whole realm. Future admin changes will apply without approval.",
+    OFFBOARD_REALM: "Warning: this permanently shuts the realm down. This cannot be undone.",
+};
+
+// Friendly, plain-language noun for the artifact each entity type refers to, used
+// in the "You are about to <verb> a/an <noun>" details line and as the primary
+// labelled field. Falls back to the raw entityType when not mapped.
+const NODE_ENTITY_NOUNS: { [entityType: string]: string } = {
+    CLIENT: "App",
+    CLIENT_SCOPE: "Client scope",
+    USER: "User",
+    ROLE: "Role",
+    GROUP: "Group",
+    ORGANIZATION: "Organization",
+    REALM: "Realm",
+};
+
+// Plain-language verb phrase for the "You are about to ..." details line, keyed on
+// the action prefix. Keeps the consequence summary readable without a raw action.
+const NODE_ACTION_VERBS: { [action: string]: string } = {
+    DELETE_CLIENT: "Delete an app",
+    DELETE_CLIENT_SCOPE: "Delete a client scope",
+    DELETE_USER: "Delete a user",
+    DELETE_ROLE: "Delete a role",
+    DELETE_GROUP: "Delete a group",
+    DELETE_ORGANIZATION: "Delete an organization",
+    DISABLE_IGA: "Turn off governance for this realm",
+    OFFBOARD_REALM: "Permanently shut this realm down",
+    CREATE_CLIENT: "Create an app",
+    CREATE_CLIENT_SCOPE: "Create a client scope",
+    CREATE_USER: "Create a user",
+    CREATE_ROLE: "Create a role",
+    CREATE_GROUP: "Create a group",
+    CREATE_ORGANIZATION: "Create an organization",
+    UPDATE_CLIENT_PROPERTY: "Update an app",
+    UPDATE_CLIENT_REDIRECT_URIS: "Update an app's redirect URIs",
+    UPDATE_CLIENT_WEB_ORIGINS: "Update an app's web origins",
+    UPDATE_CLIENT_SCOPE_PROPERTY: "Update a client scope",
+    UPDATE_PROTOCOL_MAPPER: "Update a protocol mapper",
+    UPDATE_ORGANIZATION: "Update an organization",
 };
 
 // node ACTIONs that destroy/cripple governed state — flagged in the details so the
@@ -633,7 +682,20 @@ const NODE_LABEL_FIELDS: { [entityType: string]: string[] } = {
     ROLE: ["ROLE_NAME"],
     GROUP: ["GROUP_NAME"],
     ORGANIZATION: ["ORG_NAME", "NAME", "ALIAS"],
+    REALM: ["REALM_NAME", "NAME"],
 };
+
+// Row fields that are noisy internal identifiers (raw UUIDs / *_UUID / *_ID
+// surrogate keys). These are never surfaced as primary friendly fields; at most a
+// single one is tucked under a secondary "Technical id" line.
+const NODE_NOISY_FIELDS = new Set<string>([
+    "CLIENT_UUID", "USER_UUID", "ROLE_UUID", "GROUP_UUID", "SCOPE_UUID",
+    "CLIENT_SCOPE_UUID", "ORG_UUID", "ID", "REALM_ID",
+]);
+
+// Row field, per entityType, whose value is the human-friendly NAME of the
+// artifact (shown as the primary labelled field in the details map).
+const NODE_PRIMARY_NAME_FIELD: { [entityType: string]: string[] } = NODE_LABEL_FIELDS;
 
 // Parsed shape of a canonicalizeNode plaintext draft segment.
 interface ParsedNodeCanonical {
@@ -817,8 +879,8 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
         if (linkage) {
             const owner = linkage.owners[0]?.owner;
             const ownerName = owner ? this._userName(owner) : undefined;
-            if (ownerName && ownerName !== owner) return `Role/membership assignment update for ${ownerName}`;
-            return "Role/membership assignment update";
+            if (ownerName && ownerName !== owner) return `Update the roles for user "${ownerName}"`;
+            return "Update the roles for a user";
         }
         // 3) CBOR units — structural type only.
         const units = this._decodeUnits();
@@ -839,13 +901,13 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
             // in the details map, not asserted as a grant in the title.
             const payload = first["payload"];
             const userName = this._titleUserName(payload);
-            if (userName) return `Role assignment update for ${userName}`;
-            return "Role assignment update";
+            if (userName) return `Update the roles for user "${userName}"`;
+            return "Update the roles for a user";
         }
 
         // Any other attestation unit: give a readable, type-specific title that is
         // honest about the artifact type without asserting an action verb.
-        if (utName) return `Approve change - ${utName.replace(/_/g, " ")}`;
+        if (utName) return `Approve change: ${utName.replace(/_/g, " ")}`;
         return undefined;
     }
 
@@ -918,24 +980,78 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
         } catch { return undefined; }
     }
 
+    // Find the human-friendly NAME of the realm this CR applies to, if a row
+    // carries one. The signed rows usually carry only REALM_ID (a UUID/surrogate),
+    // so a friendly realm name is shown only when REALM_NAME (or NAME on a REALM
+    // node) is present. Returns undefined when no friendly name is available.
+    private _realmName(node: ParsedNodeCanonical): string | undefined {
+        for (const row of node.rows) {
+            const v = row["REALM_NAME"];
+            if (typeof v === "string" && v.length > 0) return v;
+        }
+        if (node.entityType === "REALM") {
+            const lbl = this._nodeLabel(node);
+            if (lbl && lbl !== "(unspecified)") return lbl;
+        }
+        return undefined;
+    }
+
+    // A single secondary "Technical id" value, when one is genuinely useful and not
+    // already shown as a friendly name: prefer the entityId, else a noisy *_UUID/ID
+    // row field. Returns undefined when there is nothing meaningful to tuck away.
+    private _technicalId(node: ParsedNodeCanonical, primaryName: string | undefined): string | undefined {
+        if (typeof node.entityId === "string" && node.entityId.length > 0
+            && node.entityId !== "null" && node.entityId !== primaryName) {
+            return node.entityId;
+        }
+        for (const row of node.rows) {
+            for (const k of Object.keys(row)) {
+                if (NODE_NOISY_FIELDS.has(k) && k !== "REALM_ID") {
+                    const v = row[k];
+                    if (typeof v === "string" && v.length > 0 && v !== primaryName) return v;
+                }
+            }
+        }
+        return undefined;
+    }
+
     // Details for a canonicalizeNode plaintext draft (DELETE_*/DISABLE_IGA/...):
-    // the TRUE action + the parsed rows the admin is approving. Destructive actions
-    // are flagged with the same WARNING convention the Offboard builder uses.
+    // a small set of friendly, labelled fields stating exactly what the admin is
+    // approving, plus a prominent plain-language consequence line for destructive
+    // actions (reusing the enclave WARNING/severity convention). No raw row= blob,
+    // no raw UUID surfaced as a primary field.
     private _nodeDetails(node: ParsedNodeCanonical, summary: any): void {
+        // 1) Prominent destructive consequence line, styled by the enclave WARNING
+        //    convention. Per-action wording when known, generic otherwise.
         if (NODE_DESTRUCTIVE_ACTIONS.has(node.node)) {
-            summary["WARNING"] = "This is a destructive governance action and may be unrecoverable.";
+            summary["WARNING"] = NODE_DESTRUCTIVE_WARNINGS[node.node]
+                ?? "Warning: this is a destructive governance action and may be unrecoverable.";
         }
-        summary["Action"] = node.node;
-        if (node.entityType) summary["Entity Type"] = node.entityType;
-        if (typeof node.entityId === "string" && node.entityId.length > 0 && node.entityId !== "null") {
-            summary["Entity Id"] = node.entityId;
+
+        // 2) Plain "You are about to <verb>" line so the admin reads the intent in
+        //    one sentence (falls back to the raw action only for unknown actions).
+        summary["You are about to"] = NODE_ACTION_VERBS[node.node] ?? `Apply governance action: ${node.node}`;
+
+        // 3) The primary friendly NAME of the artifact, under a plain noun label
+        //    ("App"/"User"/"Role"/...). Falls back to the signed entityId only when
+        //    no name is resolvable, so a missing name never blanks the card.
+        const noun = (node.entityType && NODE_ENTITY_NOUNS[node.entityType]) || undefined;
+        const primaryName = this._nodeLabel(node);
+        const hasFriendly = primaryName && primaryName !== "(unspecified)";
+        if (noun && hasFriendly) {
+            summary[noun] = primaryName;
+        } else if (hasFriendly && node.entityType !== "REALM") {
+            summary["Name"] = primaryName;
         }
-        node.rows.forEach((row, i) => {
-            const keys = Object.keys(row);
-            if (keys.length === 0) return;
-            const rendered = keys.map((k) => `${k}=${row[k]}`).join(", ");
-            summary[node.rows.length > 1 ? `Row ${i + 1}` : "Details"] = rendered;
-        });
+
+        // 4) The realm this applies to, by friendly name when present.
+        const realm = this._realmName(node);
+        if (realm) summary["Realm"] = realm;
+
+        // 5) At most one secondary technical id, tucked away (never a primary field,
+        //    never a row= blob). Omitted entirely when nothing useful remains.
+        const tech = this._technicalId(node, hasFriendly ? primaryName : undefined);
+        if (tech) summary["Technical id"] = tech;
     }
 
     // Details for a canonicalizeLinkageSet plaintext draft (role/group/composite
@@ -943,16 +1059,18 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
     // display-only context. The verb (grant vs revoke) is NOT in the signed bytes,
     // so we explicitly note that the resulting set is shown, not the operation.
     private _linkageDetails(linkage: ParsedLinkageCanonical, summary: any): void {
-        summary["Table"] = linkage.table;
-        summary["Note"] = "Showing the resulting set after this change. The signed bytes do not record whether members were added or removed.";
+        const single = linkage.owners.length === 1;
         linkage.owners.forEach((o) => {
             const ownerName = this._userName(o.owner);
             const resolved = o.members.map((m) => {
                 const r = this._roleName(m);
                 return r !== m ? r : this._userName(m);
             });
-            summary[`Members of ${ownerName}`] = resolved.length > 0 ? resolved.join(", ") : "(none)";
+            if (single) summary["For"] = ownerName;
+            const label = single ? "Roles after this change" : `Roles after this change for ${ownerName}`;
+            summary[label] = resolved.length > 0 ? resolved.join(", ") : "(none)";
         });
+        summary["Note"] = "The system records the resulting set of roles. The signed approval does not record whether roles were added or removed.";
     }
 
     getDetailsMap(): any {
@@ -993,19 +1111,20 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
                     // UUIDs. The signed bytes still carry only UUIDs.
                     //
                     // NOTE: we surface the TARGET and the RESULTING role set under
-                    // neutral keys ("Target User", "Roles"). We do NOT assert an
-                    // action ("Grant role(s) to user"): the draft carries no action
-                    // verb, and user_role_mapping_set is a declarative set that may
-                    // be granting OR revoking. Showing the resulting set without a
-                    // verb is the honest, provable rendering.
-                    if (payload["user_id"] !== undefined) summary["Target User"] = this._userName(payload["user_id"]);
+                    // neutral, friendly labels ("User", "Roles after this change").
+                    // We do NOT assert an action ("Grant role(s) to user"): the draft
+                    // carries no action verb, and user_role_mapping_set is a
+                    // declarative set that may be granting OR revoking. Showing the
+                    // resulting set without a verb is the honest, provable rendering.
+                    if (payload["user_id"] !== undefined) summary["User"] = this._userName(payload["user_id"]);
                     const roleIds = payload["role_ids"];
                     if (Array.isArray(roleIds) && roleIds.length > 0) {
-                        summary["Roles"] = roleIds.map((r: any) => this._roleName(r)).join(", ");
+                        summary["Roles after this change"] = roleIds.map((r: any) => this._roleName(r)).join(", ");
+                        summary["Note"] = "The system records the resulting set of roles. The signed approval does not record whether roles were added or removed.";
                     }
                 }
-                if (first["target_id"] !== undefined && summary["Target User"] === undefined) {
-                    summary["Target"] = String(first["target_id"]);
+                if (first["target_id"] !== undefined && summary["User"] === undefined) {
+                    summary["Technical id"] = String(first["target_id"]);
                 }
             }
             if (units.length > 1) summary["Units In Request"] = units.length;
