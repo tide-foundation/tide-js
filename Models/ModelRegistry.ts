@@ -575,14 +575,19 @@ const ATTESTATION_UNIT_TYPE_NAMES: { [k: number]: string } = {
 class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
     _name = "AttestationUnit";
     _version = "1";
-    // GENERIC, always-human-readable fallback. The enclave renderer uses
-    // `_humanReadableName ?? _name` for the card TITLE, so this MUST never be a
-    // raw/opaque code (the old "AE" short code came from a stale bundle that
-    // lacked this builder and fell through to the carrier short-name). The
-    // constructor refines this to a specific, context-aware title below, but
-    // even if decoding fails the admin still sees an intelligible role-assignment
-    // summary - never "AE", never the bare model id.
-    _humanReadableName = "Grant role(s) - Role Assignment";
+    // GENERIC, always-human-readable, ACTION-NEUTRAL fallback. The enclave
+    // renderer uses `_humanReadableName ?? _name` for the card TITLE, so this MUST
+    // never be a raw/opaque code (the old "AE" short code came from a stale bundle
+    // that lacked this builder and fell through to the carrier short-name).
+    //
+    // It must ALSO never assert an action verb (grant/delete/create/update/revoke):
+    // the signed draft carries only the structural `unit_type` + payloads, NOT the
+    // CR action verb, so we cannot prove what is happening to the artifact from the
+    // bytes. A DELETE_CLIENT / OFFBOARD_REALM / etc. must NEVER render as "grant a
+    // role". The constructor refines this to a type-specific (still neutral) title
+    // below; even if decoding fails the admin sees an honest "Governance change"
+    // rather than a fabricated grant.
+    _humanReadableName = "Governance change";
     get _id() { return this._name + ":" + this._version; }
     constructor(data, reqId, context?: HumanReadableContext) {
         super(data, reqId, context);
@@ -592,13 +597,22 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
         // (still human-readable) title above.
         try {
             this._humanReadableName = this._buildTitle() ?? this._humanReadableName;
-        } catch { /* keep the generic role-assignment title */ }
+        } catch { /* keep the neutral "Governance change" title */ }
     }
 
     // Compute a specific, human-readable card title for the carried unit, using
     // the display-only HumanReadableContext (role/user names) when present.
-    // Returns undefined when no unit can be decoded, so the caller keeps the
-    // generic fallback. NEVER returns the raw "AE"/model code.
+    //
+    // HONESTY CONTRACT: the signed draft carries only the structural `unit_type`
+    // (realm_config, client_config, ... user_role_mapping_set) + payloads. It does
+    // NOT carry the CR action verb (grant/delete/create/update/revoke), so we
+    // CANNOT prove delete-vs-edit-vs-create from the bytes. This method therefore
+    // NEVER asserts an action verb. It describes the artifact TYPE honestly
+    // ("Approve change - client config") and, for role-assignment, uses neutral
+    // "Role assignment update" wording (the unit is a declarative set carrying
+    // both grants AND revokes - see comment below). Returns undefined only when no
+    // unit can be decoded, so the caller keeps the neutral "Governance change"
+    // fallback. There is NO code path here that yields a "Grant ..." title.
     private _buildTitle(): string | undefined {
         const units = this._decodeUnits();
         const first = units[0];
@@ -611,43 +625,21 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
 
         if (utName === "user_role_mapping_set") {
             // user_role_mapping_set is a DECLARATIVE set (the user's full desired
-            // role_ids), so the same unit type carries both grants and revokes.
-            // We frame it as a role assignment and, when names are supplied via
-            // the context, surface "Grant role <names> to <user>". When names
-            // aren't wired through yet (admin-ui -> heimdall -> ork follow-up),
-            // we fall back to the role-assignment phrasing rather than dumping
-            // raw UUIDs into the title.
+            // role_ids), so the same unit type carries both grants AND revokes. We
+            // CANNOT tell which from the bytes, so we must NOT say "Grant". Use
+            // neutral "Role assignment update" wording, naming the target user when
+            // the display-only context resolves it; the resulting role set is shown
+            // in the details map, not asserted as a grant in the title.
             const payload = first["payload"];
-            const roleNames = this._titleRoleNames(payload);
             const userName = this._titleUserName(payload);
-            if (roleNames && userName) return `Grant role ${roleNames} to ${userName}`;
-            if (roleNames) return `Grant role ${roleNames}`;
-            if (userName) return `Update roles for ${userName}`;
-            return "Grant role(s) - Role Assignment";
+            if (userName) return `Role assignment update for ${userName}`;
+            return "Role assignment update";
         }
 
-        // Any other attestation unit: still give a readable, type-specific title
-        // instead of the opaque carrier code.
+        // Any other attestation unit: give a readable, type-specific title that is
+        // honest about the artifact type without asserting an action verb.
         if (utName) return `Approve change - ${utName.replace(/_/g, " ")}`;
         return undefined;
-    }
-
-    // Role names for the title ONLY when the context supplied at least one
-    // friendly name - we don't want a title full of UUIDs, so if no name
-    // resolved we return undefined and let the caller use generic phrasing.
-    private _titleRoleNames(payload: any): string | undefined {
-        try {
-            const roleIds = payload?.["role_ids"];
-            if (!Array.isArray(roleIds) || roleIds.length === 0) return undefined;
-            const named: string[] = [];
-            let anyNamed = false;
-            for (const r of roleIds) {
-                const id = String(r);
-                const name = this._context?.roles?.[id];
-                if (typeof name === "string" && name.length > 0) { named.push(name); anyNamed = true; }
-            }
-            return anyNamed ? named.join(", ") : undefined;
-        } catch { return undefined; }
     }
 
     // User name for the title ONLY when the context resolved it to a username.
@@ -733,14 +725,20 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
                     ? ATTESTATION_UNIT_TYPE_NAMES[ut]
                     : (ut !== undefined ? String(ut) : undefined);
                 if (utName !== undefined) summary["Attestation Unit"] = utName;
-                if (utName === "user_role_mapping_set") summary["Action"] = "Grant role(s) to user";
 
                 const payload = first["payload"];
                 if (payload && typeof payload === "object") {
                     // Map UUIDs -> friendly names from the display-only context
                     // when available; fall back to the raw UUID otherwise so the
-                    // admin can read "grant tide-realm-admin to alice" instead of
-                    // two opaque UUIDs. The signed bytes still carry only UUIDs.
+                    // admin reads "tide-realm-admin / alice" instead of two opaque
+                    // UUIDs. The signed bytes still carry only UUIDs.
+                    //
+                    // NOTE: we surface the TARGET and the RESULTING role set under
+                    // neutral keys ("Target User", "Roles"). We do NOT assert an
+                    // action ("Grant role(s) to user"): the draft carries no action
+                    // verb, and user_role_mapping_set is a declarative set that may
+                    // be granting OR revoking. Showing the resulting set without a
+                    // verb is the honest, provable rendering.
                     if (payload["user_id"] !== undefined) summary["Target User"] = this._userName(payload["user_id"]);
                     const roleIds = payload["role_ids"];
                     if (Array.isArray(roleIds) && roleIds.length > 0) {
