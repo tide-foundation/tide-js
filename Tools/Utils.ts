@@ -19,8 +19,8 @@ import OrkInfo from "../Models/Infos/OrkInfo";
 import { TideError, TideErrorDetail } from "../Errors/TideError";
 import { TideJsErrorCodes } from "../Errors/codes";
 
-export const Threshold = 14;
-export const Max = 20;
+export const Threshold = 3;
+export const Max = 5;
 
 /**
  * Reduce an arbitrary thrown value to a {@link TideErrorDetail} entry so the
