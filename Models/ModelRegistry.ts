@@ -126,65 +126,6 @@ class HederaSignRequestBuilder extends HumanReadableModelBuilder {
         return this.additionalInfo;
     }
 }
-class UserContextSignRequestBuilder extends HumanReadableModelBuilder {
-    _name = "UserContext"; // Model ID
-    _humanReadableName = "User Access Change";
-    _version = "1";
-    get _id() { return this._name + ":" + this._version; }
-
-    constructor(data, reqId, context?: HumanReadableContext) {
-        super(data, reqId, context);
-    }
-    static create(data, reqId, context?: HumanReadableContext) {
-        return super.create(data, reqId, context);
-    }
-    getRequestDataJson() {
-        // deserialize draft here and return a pretty object for user
-        let prettyObject: any = {};
-
-        let draftIndex = 0;
-        // make sure user context is JSON
-        let cont = true;
-        prettyObject.UserContexts = [];
-        while (cont) {
-            try { prettyObject.UserContexts.push(JSON.parse(StringFromUint8Array(GetValue(this._draft, draftIndex)))); draftIndex++; }
-            catch { cont = false; }
-        }
-
-        // return a nice object of InitCert? and usercontexts
-        return prettyObject;
-    }
-    getDetailsMap(): any {
-        // deserialize draft here and return a pretty object for user
-        let prettyObject: any = {};
-
-        let draftIndex = 0;
-        // make sure user context is JSON
-        let cont = true;
-        prettyObject.UserContexts = [];
-        while (cont) {
-            try { prettyObject.UserContexts.push(JSON.parse(StringFromUint8Array(GetValue(this._draft, draftIndex)))); draftIndex++; }
-            catch { cont = false; }
-        }
-
-        // Create summary
-        let summary: any = {};
-        // Get the clients involved in this approval
-        // All clients will be either realm-management or under resource_management
-        let clients = [];
-        prettyObject.UserContexts.map(c => {
-            if (c.realm_access) clients.push("realm_access");
-            if (typeof c.resource_access === "object") {
-                clients.push(...Object.keys(c.resource_access));
-            }
-        })
-        clients = [...new Set(clients)];
-        summary["Applications affected"] = clients.join(", ");
-
-        // return a nice object of InitCert? and usercontexts
-        return summary;
-    }
-}
 
 export class OffboardSignRequestBuilder extends HumanReadableModelBuilder {
     _name = "Offboard";
@@ -1219,7 +1160,6 @@ class AttestationUnitSignRequestBuilder extends HumanReadableModelBuilder {
 }
 
 const modelBuildersMap = {
-    [new UserContextSignRequestBuilder(null as any, null as any)._id]: UserContextSignRequestBuilder,
     [new OffboardSignRequestBuilder(null as any, null as any)._id]: OffboardSignRequestBuilder,
     [new LicenseSignRequestBuilder(null as any, null as any)._id]: LicenseSignRequestBuilder,
     [new TestInitSignRequestBuilder(null as any, null as any)._id]: TestInitSignRequestBuilder,
