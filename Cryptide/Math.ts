@@ -20,6 +20,8 @@ import { BigIntFromByteArray, BigIntToByteArray } from "../Cryptide/Serializatio
 import { SHA256_Digest } from "./Hashing/Hash";
 import TideKey from "./TideKey";
 import { computeSharedKey, generateECDHi } from "./Encryption/DH";
+import { TideError } from "../Errors/TideError";
+import { TideJsErrorCodes } from "../Errors/codes";
 
 const _0n = BigInt(0);
 const _1n = BigInt(1);
@@ -72,7 +74,7 @@ export function Min(arr: number[]){
 
 export function mod_inv(number: bigint, modulo: bigint = CURVE.n): bigint {
 	if (number === _0n || modulo <= _0n) {
-		throw new Error(`invert: expected positive integers, got n=${number} mod=${modulo}`);
+		throw new TideError({ code: TideJsErrorCodes.CRYPTO_INVERSE_NOT_EXIST, displayMessage: `mod_inv: expected positive integers (number is ${number === _0n ? "zero" : "non-zero"}, modulo is ${modulo <= _0n ? "non-positive" : "positive"})`, source: "tide-js/Cryptide/Math.ts:77" });
 	}
 	let a = mod(number, modulo);
 	let b = modulo;
@@ -87,7 +89,7 @@ export function mod_inv(number: bigint, modulo: bigint = CURVE.n): bigint {
 		b = a, a = r, x = u, y = v, u = m, v = n;
 	}
 	const gcd = b;
-	if (gcd !== _1n) throw new Error('invert: does not exist');
+	if (gcd !== _1n) throw new TideError({ code: TideJsErrorCodes.CRYPTO_INVERSE_NOT_EXIST, displayMessage: "mod_inv: modular inverse does not exist (gcd != 1)", source: "tide-js/Cryptide/Math.ts:92" });
 	return mod(x, modulo);
 }
 

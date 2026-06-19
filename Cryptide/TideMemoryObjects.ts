@@ -19,11 +19,13 @@ import { CreateTideMemory, writeInt64LittleEndian, WriteValue } from "./Serializ
 import { Utils } from "../index";
 import { Ed25519PublicComponent } from "./Components/Schemes/Ed25519/Ed25519Components";
 import { AuthorizerSignatureFormat } from "./Signing/TideSignature";
+import { TideError } from "../Errors/TideError";
+import { TideJsErrorCodes } from "../Errors/codes";
 
 export function CreateVRKPackage(gvrk: Ed25519PublicComponent, expiry: number | bigint){
     const serializedgvrk = gvrk.Serialize().ToBytes();
     const ex = typeof expiry == "bigint" ? expiry : BigInt(expiry);
-    if(ex < BigInt(Utils.CurrentTime() + 5)) throw Error("Expiry must be at least 5 seconds into future");
+    if(ex < BigInt(Utils.CurrentTime() + 5)) throw new TideError({ code: TideJsErrorCodes.MODEL_VALUE_OUT_OF_RANGE, displayMessage: "Expiry must be at least 5 seconds into future", source: "tide-js/Cryptide/TideMemoryObjects.ts:26" });
     const time_b = writeInt64LittleEndian(ex);
     const vrk_pack = CreateTideMemory(serializedgvrk,
         4 + 4 + serializedgvrk.length + time_b.length

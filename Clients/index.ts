@@ -19,3 +19,5 @@ export { default as ClientBase } from './ClientBase';
 export { default as NetworkClient } from './NetworkClient';
 export { default as NodeClient } from './NodeClient';
 export { default as VoucherClient } from './VoucherClient';
+export { RecentRequestsBuffer } from './RecentRequestsBuffer';
+export type { RecentRequestEntry } from './RecentRequestsBuffer';

@@ -86,6 +86,94 @@ export const TideJsErrorCodes = Object.freeze({
      * upstream `code` verbatim instead.
      */
     PROXY_UPSTREAM_ERROR: "TIDE-TIDEJS-PROXY-UPSTREAM_ERROR",
+
+    // --- Network (additional) -------------------------------------------
+    /** A non-TideError value was thrown from the fetch pipeline — caught and tagged for the recent-requests buffer. */
+    NET_UNKNOWN: "TIDE-TIDEJS-NET-UNKNOWN",
+
+    // --- Cryptide / low-level crypto ------------------------------------
+    /** A `BaseComponent` abstract method (e.g. `Add`/`Multiply`/`Scheme`) was invoked but not implemented on the concrete subclass. */
+    CRYPTO_NOT_IMPLEMENTED: "TIDE-TIDEJS-CRYPTO-NOT_IMPLEMENTED",
+    /** Two components were combined whose schemes / component-types do not match. */
+    CRYPTO_COMPONENT_MISMATCH: "TIDE-TIDEJS-CRYPTO-COMPONENT_MISMATCH",
+    /** Scheme / component-type registry lookup failed (unknown scheme or component type). */
+    CRYPTO_UNKNOWN_COMPONENT_TYPE: "TIDE-TIDEJS-CRYPTO-UNKNOWN_COMPONENT_TYPE",
+    /** A serialized component could not be parsed into bytes (neither hex nor base64). */
+    CRYPTO_DESERIALIZE_FAILED: "TIDE-TIDEJS-CRYPTO-DESERIALIZE_FAILED",
+    /** AES encrypt/decrypt called with a key of an unsupported JS type. */
+    CRYPTO_AES_UNSUPPORTED_KEY_TYPE: "TIDE-TIDEJS-CRYPTO-AES_UNSUPPORTED_KEY_TYPE",
+    /** DH `computeSharedKey` called with a private value of an unsupported JS type. */
+    CRYPTO_DH_UNSUPPORTED_PRIV_TYPE: "TIDE-TIDEJS-CRYPTO-DH_UNSUPPORTED_PRIV_TYPE",
+    /** An Ed25519 Point failed an on-curve / equality / non-ZERO sanity check. */
+    CRYPTO_ED25519_BAD_POINT: "TIDE-TIDEJS-CRYPTO-ED25519_BAD_POINT",
+    /** Modular inverse does not exist (gcd != 1, or invert of 0 / non-positive modulus). */
+    CRYPTO_INVERSE_NOT_EXIST: "TIDE-TIDEJS-CRYPTO-INVERSE_NOT_EXIST",
+    /** A low-level crypto primitive received a value of an unexpected JS type (e.g. `invert` expected a bigint). */
+    CRYPTO_INVALID_BIGINT_INPUT: "TIDE-TIDEJS-CRYPTO-INVALID_BIGINT_INPUT",
+    /** Hash-to-Point (RFC 9380 expand_message_xmd / i2osp) received an out-of-range input. */
+    CRYPTO_HASH_TO_POINT_INVALID_INPUT: "TIDE-TIDEJS-CRYPTO-HASH_TO_POINT_INVALID_INPUT",
+
+    // --- Signature -------------------------------------------------------
+    /** Non-blind signature verification failed (e.g. Ed25519Scheme `verifyingFunc`). */
+    SIG_VERIFY_FAILED: "TIDE-TIDEJS-SIG-VERIFY_FAILED",
+
+    // --- Serialization helpers -----------------------------------------
+    /** A numeric value cannot be represented in the requested width (e.g. > Int64 / > 255 byte). */
+    SERIAL_LENGTH_OUT_OF_RANGE: "TIDE-TIDEJS-SERIAL-LENGTH_OUT_OF_RANGE",
+    /** The supplied argument was not of the expected JS type (e.g. expected Uint8Array, got something else). */
+    SERIAL_INVALID_TYPE: "TIDE-TIDEJS-SERIAL-INVALID_TYPE",
+    /** A serialization helper found data already present where an empty slot was expected. */
+    SERIAL_INDEX_OOB: "TIDE-TIDEJS-SERIAL-INDEX_OOB",
+    /** A serialization write would have exceeded the destination buffer's capacity. */
+    SERIAL_BUFFER_OVERFLOW: "TIDE-TIDEJS-SERIAL-BUFFER_OVERFLOW",
+    /** A length-tagged input did not match the expected length (e.g. TIDE_KEY blob != 32 bytes). */
+    SERIAL_INVALID_LENGTH: "TIDE-TIDEJS-SERIAL-INVALID_LENGTH",
+    /** A header / magic value did not match the expected token (e.g. "tidexxxkey" prefix mismatch). */
+    SERIAL_UNEXPECTED_HEADER: "TIDE-TIDEJS-SERIAL-UNEXPECTED_HEADER",
+    /** A hex string failed regex validation. */
+    SERIAL_INVALID_HEX: "TIDE-TIDEJS-SERIAL-INVALID_HEX",
+    /** A base64 string failed validation or decoding. */
+    SERIAL_INVALID_BASE64: "TIDE-TIDEJS-SERIAL-INVALID_BASE64",
+    /** Two operand arrays had unequal lengths where equal lengths were required (e.g. XOR). */
+    SERIAL_LENGTH_MISMATCH: "TIDE-TIDEJS-SERIAL-LENGTH_MISMATCH",
+
+    // --- Model validation ----------------------------------------------
+    /** A model field (Doken/AuthRequest/TideKey) failed a shape/type guard during construction or parsing. */
+    MODEL_INVALID_FIELD: "TIDE-TIDEJS-MODEL-INVALID_FIELD",
+    /** A model header value (e.g. Doken `alg`/`typ`) did not match the expected value. */
+    MODEL_UNEXPECTED_HEADER: "TIDE-TIDEJS-MODEL-UNEXPECTED_HEADER",
+    /** A model expected a specific shape (e.g. Doken = 3 parts) and the input did not conform. */
+    MODEL_INVALID_SHAPE: "TIDE-TIDEJS-MODEL-INVALID_SHAPE",
+    /** A TideKey was constructed/derived from a component that does not satisfy the required interface. */
+    MODEL_INVALID_KEY: "TIDE-TIDEJS-MODEL-INVALID_KEY",
+    /** A model field's value was not in the allowed range (e.g. VRK expiry too close to now). */
+    MODEL_VALUE_OUT_OF_RANGE: "TIDE-TIDEJS-MODEL-VALUE_OUT_OF_RANGE",
+    /** ModelRegistry could not resolve a sign-request name:version to a builder (unknown model id). */
+    MODEL_UNKNOWN_MODEL: "TIDE-TIDEJS-MODEL-UNKNOWN_MODEL",
+    /** A PolicyParameters entry carries an unrecognised type tag (e.g. not str/num/bnum/bln/byt). */
+    MODEL_UNKNOWN_PARAM_TYPE: "TIDE-TIDEJS-MODEL-UNKNOWN_PARAM_TYPE",
+    /** `Policy.getParameter` was asked for a parameter key that does not exist on the policy. */
+    MODEL_PARAM_NOT_FOUND: "TIDE-TIDEJS-MODEL-PARAM_NOT_FOUND",
+    /** A developer-only invariant was violated inside a Policy version handler (should be unreachable in production). */
+    MODEL_DEV_ERROR: "TIDE-TIDEJS-MODEL-DEV_ERROR",
+    /** A request (e.g. BaseTideRequest) was used before a required field (authorizer / authorization / cert) had been added. */
+    MODEL_REQUEST_NOT_INITIALIZED: "TIDE-TIDEJS-MODEL-REQUEST_NOT_INITIALIZED",
+    /** A serialized model header carried an unsupported version tag (Policy / SerializedField). */
+    MODEL_VERSION_MISMATCH: "TIDE-TIDEJS-MODEL-VERSION_MISMATCH",
+
+    // --- TideMemory guards ---------------------------------------------
+    /** Caller supplied a negative index to a TideMemory helper. */
+    MEM_NEGATIVE_INDEX: "TIDE-TIDEJS-MEM-NEGATIVE_INDEX",
+    /** Caller attempted to overwrite the zero-index slot via WriteValue (must use Create). */
+    MEM_INDEX_ZERO_RESERVED: "TIDE-TIDEJS-MEM-INDEX_ZERO_RESERVED",
+    /** TideMemory write would exceed the destination buffer's capacity. */
+    MEM_BUFFER_OVERFLOW: "TIDE-TIDEJS-MEM-BUFFER_OVERFLOW",
+    /** TideMemory read sought past the encoded segments of the buffer. */
+    MEM_INDEX_OUT_OF_RANGE: "TIDE-TIDEJS-MEM-INDEX_OUT_OF_RANGE",
+    /** TideMemory buffer is too small to hold even the version header. */
+    MEM_INSUFFICIENT_DATA: "TIDE-TIDEJS-MEM-INSUFFICIENT_DATA",
+    /** TideMemory write attempted at an index already populated with data. */
+    MEM_INDEX_ALREADY_WRITTEN: "TIDE-TIDEJS-MEM-INDEX_ALREADY_WRITTEN",
 } as const);
 
 export type TideJsErrorCode = typeof TideJsErrorCodes[keyof typeof TideJsErrorCodes];

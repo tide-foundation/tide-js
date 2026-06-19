@@ -19,6 +19,8 @@ import { AuthorizerPack, Bytes2Hex, GetValue, StringFromUint8Array, TryGetValue 
 import BaseTideRequest from "./BaseTideRequest";
 import { Policy, ApprovalType, ExecutionType } from "./Policy";
 import { Serialization } from "../Cryptide/index";
+import { TideError } from "../Errors/TideError";
+import { TideJsErrorCodes } from "../Errors/codes";
 
 /**
  * Optional, DISPLAY-ONLY lookup tables the caller (the admin-ui, which already
@@ -46,7 +48,7 @@ export class ModelRegistry {
             return new CustomSignRequestBuilder(data, reqId, context);
         }
         const c = modelBuildersMap[r.id()];
-        if (!c) throw Error("Could not find model: " + r.id());
+        if (!c) throw new TideError({ code: TideJsErrorCodes.MODEL_UNKNOWN_MODEL, displayMessage: `Could not find model: ${r.id()}`, source: "tide-js/Models/ModelRegistry.ts:34" });
         return c.create(data, reqId, context);
     }
 }
