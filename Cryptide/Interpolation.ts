@@ -18,6 +18,8 @@
 import { mod, mod_inv } from "./Math";
 import { Point, CURVE } from "./Ed25519";
 import { Ed25519PublicComponent } from "./Components/Schemes/Ed25519/Ed25519Components";
+import { TideError } from "../Errors/TideError";
+import { TideJsErrorCodes } from "../Errors/codes";
 
 export function GetLi(xi: bigint, xs: bigint[], m: bigint = CURVE.n): bigint {
     var li = xs.filter(xj => xj != xi)
@@ -41,7 +43,7 @@ export function AggregatePublicComponents(points: Ed25519PublicComponent[]){
 
 export function AggregatePublicComponentArrays(pointArrays: Ed25519PublicComponent[][]){
     const arrayDepth = pointArrays[0].length;
-    if(!pointArrays.every(array => array.length == arrayDepth)) throw Error("Inconsistent amount of array depths");
+    if(!pointArrays.every(array => array.length == arrayDepth)) throw new TideError({ code: TideJsErrorCodes.CRYPTO_ORK_ARRAY_LENGTH_MISMATCH, displayMessage: `Inconsistent amount of array depths (expected ${arrayDepth} across ${pointArrays.length} arrays)`, source: "tide-js/Cryptide/Interpolation.ts:46" });
     return pointArrays[0].map((_, i) => AggregatePublicComponents(pointArrays.map(array => array[i])));
 }
 
@@ -50,7 +52,7 @@ export function AggregatePublicComponentArrays(pointArrays: Ed25519PublicCompone
  */
 export function AggregatePointArrays(pointArrays: Point[][]){
     const arrayDepth = pointArrays[0].length;
-    if(!pointArrays.every(array => array.length == arrayDepth)) throw Error("Inconsistent amount of array depths");
+    if(!pointArrays.every(array => array.length == arrayDepth)) throw new TideError({ code: TideJsErrorCodes.CRYPTO_ORK_ARRAY_LENGTH_MISMATCH, displayMessage: `Inconsistent amount of array depths (expected ${arrayDepth} across ${pointArrays.length} arrays)`, source: "tide-js/Cryptide/Interpolation.ts:55" });
     return pointArrays[0].map((_, i) => AggregatePoints(pointArrays.map(array => array[i])));
 }
 /**

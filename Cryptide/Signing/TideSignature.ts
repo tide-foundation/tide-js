@@ -17,6 +17,8 @@
 
 import { Serialization } from "../index";
 import { ConcatUint8Arrays, numberToUint8Array, StringToUint8Array } from "../Serialization";
+import { TideError } from "../../Errors/TideError";
+import { TideJsErrorCodes } from "../../Errors/codes";
 
 export class TideSignatureFormat{
     Name: string;
@@ -30,7 +32,7 @@ export class TideSignatureFormat{
             this.Message = StringToUint8Array(message);
         }else if(message instanceof Uint8Array) {
             this.Message = message.slice();
-        }else throw Error("Unknown type provided");
+        }else throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: `TideSignatureFormat: expected string or Uint8Array (got ${typeof message})`, source: "tide-js/Cryptide/Signing/TideSignature.ts:35" });
     }
     format(): Uint8Array {
         return ConcatUint8Arrays([StringToUint8Array(this.Header()), this.Message, StringToUint8Array(this.Footer())]);

@@ -40,6 +40,8 @@
 // 
 import { base64ToBytes, bytesToBase64 } from "./Serialization";
 import { SHA256_Digest } from "./Hashing/Hash";
+import { TideError } from "../Errors/TideError";
+import { TideJsErrorCodes } from "../Errors/codes";
 
 
 const P = 2n ** 255n - 19n; // ed25519 is twisted edwards curve
@@ -58,7 +60,11 @@ const CURVE = {
     d: _d, // -(121665/121666) mod p
     p: P, n: N, h: 8, Gx: Gx, Gy: Gy // field prime, curve (group) order, cofactor
 };
-const err = (m = '') => { throw new Error(m); }; // error helper, messes-up stack trace
+// error helper: route all sites through TideError under CRYPTO_ED25519_BAD_POINT.
+// Messages are upstream noble-curves classifier strings (e.g. "bad y coord 3",
+// "Uint8Array of valid length expected") which carry only validation metadata,
+// never raw scalars/points/keys.
+const err = (m = '') => { throw new TideError({ code: TideJsErrorCodes.CRYPTO_ED25519_BAD_POINT, displayMessage: m || "ed25519: bad input", source: "tide-js/Cryptide/Ed25519.ts:err" }); };
 const isS = (s) => typeof s === 'string'; // is string
 const isB = (s) => typeof s === 'bigint'; // is bigint
 const isu8 = (a) => (a instanceof Uint8Array || (ArrayBuffer.isView(a) && a.constructor.name === 'Uint8Array'));
@@ -126,7 +132,7 @@ class Point {
         const { a, d } = CURVE;
         const p = this;
         if (p.is0())
-            throw new Error('bad point: ZERO'); // TODO: optimize, with vars below?
+            throw new TideError({ code: TideJsErrorCodes.CRYPTO_ED25519_BAD_POINT, displayMessage: "bad point: ZERO", source: "tide-js/Cryptide/Ed25519.ts:133" }); // TODO: optimize, with vars below?
         // Equation in affine coordinates: ax² + y² = 1 + dx²y²
         // Equation in projective coordinates (X/Z, Y/Z, Z):  (aX² + Y²)Z² = Z⁴ + dX²Y²
         const { ex: X, ey: Y, ez: Z, et: T } = p;
@@ -138,12 +144,12 @@ class Point {
         const left = M(Z2 * M(aX2 + Y2)); // (aX² + Y²)Z²
         const right = M(Z4 + M(d * M(X2 * Y2))); // Z⁴ + dX²Y²
         if (left !== right)
-            throw new Error('bad point: equation left != right (1)');
+            throw new TideError({ code: TideJsErrorCodes.CRYPTO_ED25519_BAD_POINT, displayMessage: "bad point: equation left != right (1)", source: "tide-js/Cryptide/Ed25519.ts:145" });
         // In Extended coordinates we also have T, which is x*y=T/Z: check X*Y == Z*T
         const XY = M(X * Y);
         const ZT = M(Z * T);
         if (XY !== ZT)
-            throw new Error('bad point: equation left != right (2)');
+            throw new TideError({ code: TideJsErrorCodes.CRYPTO_ED25519_BAD_POINT, displayMessage: "bad point: equation left != right (2)", source: "tide-js/Cryptide/Ed25519.ts:150" });
         return true;
     }
     equals(other) {
@@ -286,9 +292,9 @@ const concatB = (...arrs) => {
     return r;
 };
 const invert = (num, md) => {
-    if(!isB(num)) throw Error("Expecting bigint");
+    if(!isB(num)) throw new TideError({ code: TideJsErrorCodes.CRYPTO_INVALID_BIGINT_INPUT, displayMessage: `invert: expected bigint (got ${typeof num})`, source: "tide-js/Cryptide/Ed25519.ts:295" });
     if (num === 0n || md <= 0n)
-        err('no inverse n=' + num + ' mod=' + md); // no neg exponent for now
+        err(`no inverse (num is ${num === 0n ? "zero" : "non-zero"}, mod is ${md <= 0n ? "non-positive" : "positive"})`); // no neg exponent for now
     let a = M(num, md), b = md, x = 0n, y = 1n, u = 1n, v = 0n;
     while (a !== 0n) { // uses euclidean gcd algorithm
         const q = b / a, r = b % a; // not constant-time

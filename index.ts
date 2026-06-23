@@ -27,3 +27,18 @@ export * as Tools from './Tools';
 // Backwards compatibility alias
 import * as Utils from './Tools';
 export { Utils };
+
+// Top-level convenience re-exports for downstream consumers (e.g. ORK SWE)
+export { TideError } from "./Errors/TideError";
+export { TideJsErrorCodes } from "./Errors/codes";
+export type { TideErrorInit, TideErrorDetail } from "./Errors/TideError";
+export { RecentRequestsBuffer } from "./Clients/RecentRequestsBuffer";
+export type { RecentRequestEntry } from "./Clients/RecentRequestsBuffer";
+
+/**
+ * Build-stamp for the tide-js bundle. The literal below is a placeholder; the
+ * Main Agent rewrites it at commit time to the current git short-SHA so that
+ * any error report consumer (e.g. keycloak-IGA) can correlate a thrown
+ * TideError back to the exact source build.
+ */
+export const tideJsVersion = "0.0.1-pre-error-reporting";

@@ -29,7 +29,7 @@ export function writeInt64LittleEndian(value: bigint) {
     const INT64_MAX = 9223372036854775807n;  // 2^63 - 1
 
     if (value < INT64_MIN || value > INT64_MAX) {
-        throw new RangeError("Value is out of range for a 64-bit signed integer.");
+        throw new TideError({ code: TideJsErrorCodes.SERIAL_LENGTH_OUT_OF_RANGE, displayMessage: "Value is out of range for a 64-bit signed integer.", source: "tide-js/Cryptide/Serialization.ts:32" });
     }
 
     const bytes = new Uint8Array(8);
@@ -41,7 +41,7 @@ export function writeInt64LittleEndian(value: bigint) {
 }
 export function readInt64LittleEndian(bytes: Uint8Array) {
     if (bytes.length !== 8) {
-        throw new Error("Invalid byte array length. Expected 8 bytes.");
+        throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_LENGTH, displayMessage: `Invalid byte array length. Expected 8 bytes, got ${bytes.length}.`, source: "tide-js/Cryptide/Serialization.ts:44" });
     }
 
     let value = 0n;
@@ -64,7 +64,7 @@ export class AuthorizerPack{
 		const isUint8Like = d && (d instanceof Uint8Array ||
 			(ArrayBuffer.isView(d) && d.constructor?.name === 'Uint8Array') ||
 			(typeof d === 'object' && typeof d.length === 'number' && d.buffer instanceof ArrayBuffer));
-		if(!isUint8Like) throw Error("Data must be byte array");
+		if(!isUint8Like) throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: "Data must be byte array", source: "tide-js/Cryptide/Serialization.ts:67" });
 		this.AuthFlow = StringFromUint8Array(GetValue(data, 0));
 		this.Authorizer = new GVRK_Pack(GetValue(data, 1));
 
@@ -126,9 +126,9 @@ export function CreateTideMemoryFromArray(datas: Uint8Array[]){
     return mem;
 }
 export function WriteValue(memory: Uint8Array, index: number, value: Uint8Array) {
-    if (index < 0) throw new Error("Index cannot be less than 0");
-    if (index === 0) throw new Error("Use CreateTideMemory to set value at index 0");
-    if (memory.length < 4 + value.length) throw new Error("Could not write to memory. Memory too small for this value");
+    if (index < 0) throw new TideError({ code: TideJsErrorCodes.MEM_NEGATIVE_INDEX, displayMessage: "Index cannot be less than 0", source: "tide-js/Cryptide/Serialization.ts:129" });
+    if (index === 0) throw new TideError({ code: TideJsErrorCodes.MEM_INDEX_ZERO_RESERVED, displayMessage: "Use CreateTideMemory to set value at index 0", source: "tide-js/Cryptide/Serialization.ts:130" });
+    if (memory.length < 4 + value.length) throw new TideError({ code: TideJsErrorCodes.MEM_BUFFER_OVERFLOW, displayMessage: `Could not write to memory. Memory too small for this value (memory.length=${memory.length}, required>=${4 + value.length})`, source: "tide-js/Cryptide/Serialization.ts:131" });
 
     const dataView = new DataView(memory.buffer);
     let dataLocationIndex = 4; // Start after the version number
@@ -162,7 +162,7 @@ export function WriteValue(memory: Uint8Array, index: number, value: Uint8Array)
     // Check if data has already been written to this index
     const existingLength = dataView.getInt32(dataLocationIndex, true);
     if (existingLength !== 0) {
-        throw new Error("Data has already been written to this index");
+        throw new TideError({ code: TideJsErrorCodes.MEM_INDEX_ALREADY_WRITTEN, displayMessage: `Data has already been written to this index (index=${index}, offset=${dataLocationIndex}, existingLength=${existingLength})`, source: "tide-js/Cryptide/Serialization.ts:165" });
     }
 
     // Write data length of value at current position
@@ -261,8 +261,8 @@ export async function EdPointToJWK(p: Point){
 export function DeserializeTIDE_KEY(key: string, prefix: string){
 	const header = key.substring(0, 8);
 	const data = base64ToBytes(key.substring(8, key.length));
-	if(header != "tide" + prefix + "key") throw Error("Unexpected header in deserialization");
-	if(data.length != 32) throw Error("Unexpected key length in deserialization");
+	if(header != "tide" + prefix + "key") throw new TideError({ code: TideJsErrorCodes.SERIAL_UNEXPECTED_HEADER, displayMessage: `Unexpected header in deserialization (expected "tide${prefix}key")`, source: "tide-js/Cryptide/Serialization.ts:264" });
+	if(data.length != 32) throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_LENGTH, displayMessage: `Unexpected key length in deserialization (expected 32 bytes, got ${data.length})`, source: "tide-js/Cryptide/Serialization.ts:265" });
 	return BigIntFromByteArray(data);
 }
 
@@ -291,7 +291,7 @@ export function ConcatUint8Arrays(arrays: Uint8Array[]) {
 
 export function XOR(array1: Uint8Array, array2: Uint8Array){
 	if (array1.length !== array2.length) {
-        throw new Error('Arrays have different lengths, cannot XOR them.');
+        throw new TideError({ code: TideJsErrorCodes.SERIAL_LENGTH_MISMATCH, displayMessage: `Arrays have different lengths, cannot XOR them. (array1.length=${array1.length}, array2.length=${array2.length})`, source: "tide-js/Cryptide/Serialization.ts:294" });
     }
     let result = new Uint8Array(array1.length);
     for (let i = 0; i < array1.length; i++) {
@@ -355,7 +355,7 @@ export class Byte {
 	 */
 	static fromNumber(number: number): Byte {
 		if (number < 0 || number > 255) {
-			throw Error("Number must be between 0 and 255"); // Adjusted the range check
+			throw new TideError({ code: TideJsErrorCodes.SERIAL_LENGTH_OUT_OF_RANGE, displayMessage: `Number must be between 0 and 255 (got ${number})`, source: "tide-js/Cryptide/Serialization.ts:358" }); // Adjusted the range check
 		}
 		let byte = new Byte();
 		let binaryString = number.toString(2).padStart(8, '0'); // Pad the string to ensure 8 bits
@@ -376,7 +376,7 @@ export function getBytesFromInt16(schemeInt: number) {
 }
 export function numberToUint8Array(num: number, len: number = -1) {
 	if (num < 0 || !Number.isInteger(num)) {
-        throw new Error('Number must be a non-negative integer.');
+        throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: `Number must be a non-negative integer. (got ${num})`, source: "tide-js/Cryptide/Serialization.ts:379" });
     }
 
     if (num === 0) return new Uint8Array([0]);
@@ -397,7 +397,7 @@ export function numberToUint8Array(num: number, len: number = -1) {
 }
 export function Uint8ArrayToNumber(byteArray: Uint8Array){
 	if (!(byteArray instanceof Uint8Array)) {
-        throw new Error('Input must be a Uint8Array.');
+        throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: `Input must be a Uint8Array. (got ${typeof byteArray})`, source: "tide-js/Cryptide/Serialization.ts:400" });
     }
 
     let num = 0;
@@ -495,7 +495,7 @@ export function uint8ArrayToBitArray(byteArray: Uint8Array) {
 }
 export function Hex2Bytes(string: string): Uint8Array {
     const hexRegex = /^0x[0-9A-Fa-f]+$|^[0-9A-Fa-f]+$/;
-    if (!hexRegex.test(string)) throw Error("Invalid Hex");
+    if (!hexRegex.test(string)) throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_HEX, displayMessage: "Invalid Hex", source: "tide-js/Cryptide/Serialization.ts:498" });
 
     const normal = string.length % 2 ? "0" + string : string; // Make even length
     const bytes = new Uint8Array(normal.length / 2);
@@ -552,11 +552,11 @@ const base64codes = [
 
 function getBase64Code(charCode) {
 	if (charCode >= base64codes.length) {
-		throw new Error("Unable to parse base64 string.");
+		throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_BASE64, displayMessage: `Unable to parse base64 string. (charCode ${charCode} >= base64codes.length ${base64codes.length})`, source: "tide-js/Cryptide/Serialization.ts:555" });
 	}
 	const code = base64codes[charCode];
 	if (code === 255) {
-		throw new Error("Unable to parse base64 string.");
+		throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_BASE64, displayMessage: `Unable to parse base64 string. (charCode ${charCode} is not a valid base64 character)`, source: "tide-js/Cryptide/Serialization.ts:559" });
 	}
 	return code;
 }
@@ -585,13 +585,13 @@ export function bytesToBase64(bytes: Uint8Array): string {
 
 export function base64ToBytes(str: string): Uint8Array {
 	const base64Regex = /^(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?$/;
-    if(!base64Regex.test(str)) throw Error("Not valid base64");
+    if(!base64Regex.test(str)) throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_BASE64, displayMessage: "Not valid base64", source: "tide-js/Cryptide/Serialization.ts:588" });
 	if (str.length % 4 !== 0) {
-		throw new Error("Unable to parse base64 string.");
+		throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_BASE64, displayMessage: `Unable to parse base64 string. (length ${str.length} is not a multiple of 4)`, source: "tide-js/Cryptide/Serialization.ts:590" });
 	}
 	const index = str.indexOf("=");
 	if (index !== -1 && index < str.length - 2) {
-		throw new Error("Unable to parse base64 string.");
+		throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_BASE64, displayMessage: `Unable to parse base64 string. (padding '=' at offset ${index} is not within the last 2 characters)`, source: "tide-js/Cryptide/Serialization.ts:594" });
 	}
 	let missingOctets = str.endsWith("==") ? 2 : str.endsWith("=") ? 1 : 0,
 		n = str.length,
