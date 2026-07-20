@@ -20,6 +20,8 @@ import { mod,} from "../../../Math";
 import { BigIntFromByteArray, BigIntToByteArray} from "../../../Serialization";
 import { Public, Private, Seed, BaseSeedComponent, BasePrivateComponent, BasePublicComponent } from "../../BaseComponent";
 import Ed25519Scheme from "./Ed25519Scheme";
+import { TideError } from "../../../../Errors/TideError";
+import { TideJsErrorCodes } from "../../../../Errors/codes";
 
 export class Ed25519PublicComponent extends BasePublicComponent{
     static Name = "Ed25519PublicComponent";
@@ -37,17 +39,17 @@ export class Ed25519PublicComponent extends BasePublicComponent{
             this.p = rawData;
         }else if(rawData instanceof Uint8Array){
             this.pb = rawData;
-        }else{ throw Error("unexpected type;") }
+        }else{ throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: "Ed25519PublicComponent: unexpected type (expected Point or Uint8Array)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Components.ts:42" }); }
     }
     get public() {
         if(!this.p && this.pb) this.p = Point.fromBytes(this.pb);
-        else if(!this.p && !this.pb) throw Error("empty object");
+        else if(!this.p && !this.pb) throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: "Ed25519PublicComponent.public: empty object (neither point nor bytes set)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Components.ts:46" });
         return this.p;
     }
-    
+
     get rawBytes() {
         if(!this.pb && this.p) this.pb = this.p.toRawBytes();
-        else if(!this.pb && !this.p) throw Error("empty object");
+        else if(!this.pb && !this.p) throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: "Ed25519PublicComponent.rawBytes: empty object (neither point nor bytes set)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Components.ts:52" });
         return this.pb;
     }
 
@@ -55,25 +57,25 @@ export class Ed25519PublicComponent extends BasePublicComponent{
         if(component instanceof Ed25519PublicComponent){
             return new Ed25519PublicComponent(this.public.add(component.public));
         }
-        throw Error("Mismatch with components");
+        throw new TideError({ code: TideJsErrorCodes.CRYPTO_COMPONENT_MISMATCH, displayMessage: "Ed25519PublicComponent.Add: mismatch with components (expected Ed25519PublicComponent)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Components.ts:60" });
     }
     MultiplyComponent(component){
         if(component instanceof Ed25519PrivateComponent){
             return new Ed25519PublicComponent(this.public.mul(component.priv));
         }
-        throw Error("Mismatch with components");
+        throw new TideError({ code: TideJsErrorCodes.CRYPTO_COMPONENT_MISMATCH, displayMessage: "Ed25519PublicComponent.Multiply: mismatch with components (expected Ed25519PrivateComponent)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Components.ts:66" });
     }
     MinusComponent(component){
         if(component instanceof Ed25519PublicComponent){
             return new Ed25519PublicComponent(this.public.add(component.public.negate()));
         }
-        throw Error("Mismatch with components");
+        throw new TideError({ code: TideJsErrorCodes.CRYPTO_COMPONENT_MISMATCH, displayMessage: "Ed25519PublicComponent.Minus: mismatch with components (expected Ed25519PublicComponent)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Components.ts:72" });
     }
     EqualsComponent(component){
         if(component instanceof Ed25519PublicComponent){
             return this.public.equals(component.public);
         }
-        throw Error("Mismatch with components");
+        throw new TideError({ code: TideJsErrorCodes.CRYPTO_COMPONENT_MISMATCH, displayMessage: "Ed25519PublicComponent.Equals: mismatch with components (expected Ed25519PublicComponent)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Components.ts:78" });
     }
     SerializeComponent(){
         return this.rawBytes.slice();
@@ -93,13 +95,13 @@ export class Ed25519PrivateComponent extends BasePrivateComponent{
 
     get priv() {
         if(!this.p && this.rB) this.p = BigIntFromByteArray(this.rB);
-        else if (!this.p && !this.rB) throw Error("Empty object");
+        else if (!this.p && !this.rB) throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: "Ed25519PrivateComponent.priv: empty object (neither bigint nor bytes set)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Components.ts:98" });
         return this.p;
     }
 
     get rawBytes() {
         if(!this.rB && this.p) this.rB = BigIntToByteArray(this.p);
-        else if(!this.rB && !this.p) throw Error("Empty object");
+        else if(!this.rB && !this.p) throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: "Ed25519PrivateComponent.rawBytes: empty object (neither bigint nor bytes set)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Components.ts:104" });
         return this.rB;
     }
 
@@ -109,7 +111,7 @@ export class Ed25519PrivateComponent extends BasePrivateComponent{
             this.p = rawData;
         }else if(rawData instanceof Uint8Array){
             this.rB = rawData;
-        }else{ throw Error("unexpected type;") }
+        }else{ throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: "Ed25519PrivateComponent: unexpected type (expected bigint or Uint8Array)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Components.ts:114" }); }
     }
     SerializeComponent(){
         return this.rawBytes.slice();
@@ -139,7 +141,7 @@ export class Ed25519SeedComponent extends BaseSeedComponent{
         super();
         if(rawData instanceof Uint8Array) this.rB = rawData.slice();
         else if(!rawData) this.rB = Ed25519SeedComponent.GenerateSeed(); // if nothing provided - self instanciate
-        else throw Error("Expecting Uint8Array or nothing for constructor");
+        else throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: "Ed25519SeedComponent: expected Uint8Array or no argument", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Components.ts:144" });
     }
 
     SerializeComponent(){

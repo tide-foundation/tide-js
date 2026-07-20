@@ -1,4 +1,7 @@
 // Tide Memory Object helper functions from tide-js
+import { TideError } from "../Errors/TideError";
+import { TideJsErrorCodes } from "../Errors/codes";
+
 export class TideMemory extends Uint8Array{
     static CreateFromArray(datas: Uint8Array[]): TideMemory   {
         if(datas.length == 0) return new TideMemory();
@@ -11,7 +14,7 @@ export class TideMemory extends Uint8Array{
     }
     static Create(initialValue: Uint8Array, totalLength: number, version: number = 1): TideMemory {
         if (totalLength < initialValue.length + 4) {
-            throw new Error("Not enough space to allocate requested data. Make sure to request more space in totalLength than length of InitialValue plus 4 bytes for length.");
+            throw new TideError({ code: TideJsErrorCodes.MEM_BUFFER_OVERFLOW, displayMessage: `Not enough space to allocate requested data. Make sure to request more space in totalLength than length of InitialValue plus 4 bytes for length. (totalLength=${totalLength}, initialValue.length=${initialValue.length}, required>=${initialValue.length + 4})`, source: "tide-js/Tools/TideMemory.ts:14" });
         }
 
         // Total buffer length is 4 (version) + totalLength
@@ -35,9 +38,9 @@ export class TideMemory extends Uint8Array{
     }
     
     WriteValue(index: number, value: Uint8Array): void {
-        if (index < 0) throw new Error("Index cannot be less than 0");
-        if (index === 0) throw new Error("Use CreateTideMemory to set value at index 0");
-        if (this.length < 4 + value.length) throw new Error("Could not write to memory. Memory too small for this value");
+        if (index < 0) throw new TideError({ code: TideJsErrorCodes.MEM_NEGATIVE_INDEX, displayMessage: "Index cannot be less than 0", source: "tide-js/Tools/TideMemory.ts:38" });
+        if (index === 0) throw new TideError({ code: TideJsErrorCodes.MEM_INDEX_ZERO_RESERVED, displayMessage: "Use CreateTideMemory to set value at index 0", source: "tide-js/Tools/TideMemory.ts:39" });
+        if (this.length < 4 + value.length) throw new TideError({ code: TideJsErrorCodes.MEM_BUFFER_OVERFLOW, displayMessage: `Could not write to memory. Memory too small for this value (this.length=${this.length}, required>=${4 + value.length})`, source: "tide-js/Tools/TideMemory.ts:40" });
 
         const dataView = new DataView(this.buffer);
         let dataLocationIndex = 4; // Start after the version number
@@ -45,7 +48,7 @@ export class TideMemory extends Uint8Array{
         // Navigate through existing data segments
         for (let i = 0; i < index; i++) {
             if (dataLocationIndex + 4 > this.length) {
-                throw new RangeError("Index out of range.");
+                throw new TideError({ code: TideJsErrorCodes.MEM_INDEX_OUT_OF_RANGE, displayMessage: `Index out of range. (while seeking to segment ${index}, sub-index ${i}, offset ${dataLocationIndex}+4 exceeds length ${this.length})`, source: "tide-js/Tools/TideMemory.ts:48" });
             }
 
             // Read data length at current position
@@ -57,13 +60,13 @@ export class TideMemory extends Uint8Array{
 
         // Check if there's enough space to write the value
         if (dataLocationIndex + 4 + value.length > this.length) {
-            throw new RangeError("Not enough space to write value");
+            throw new TideError({ code: TideJsErrorCodes.MEM_BUFFER_OVERFLOW, displayMessage: `Not enough space to write value (offset ${dataLocationIndex}+4+${value.length} exceeds length ${this.length})`, source: "tide-js/Tools/TideMemory.ts:60" });
         }
 
         // Check if data has already been written to this index
         const existingLength = dataView.getInt32(dataLocationIndex, true);
         if (existingLength !== 0) {
-            throw new Error("Data has already been written to this index");
+            throw new TideError({ code: TideJsErrorCodes.MEM_INDEX_ALREADY_WRITTEN, displayMessage: `Data has already been written to this index (index=${index}, offset=${dataLocationIndex}, existingLength=${existingLength})`, source: "tide-js/Tools/TideMemory.ts:66" });
         }
 
         // Write data length of value at current position
@@ -77,7 +80,7 @@ export class TideMemory extends Uint8Array{
     GetValue(index: number): TideMemory{
         // 'a' should be an ArrayBuffer or Uint8Array
         if (this.length < 4) {
-            throw new Error("Insufficient data to read.");
+            throw new TideError({ code: TideJsErrorCodes.MEM_INSUFFICIENT_DATA, displayMessage: `Insufficient data to read. (buffer length is ${this.length}, need at least 4 bytes for header)`, source: "tide-js/Tools/TideMemory.ts:80" });
         }
 
         // Create a DataView for reading integers in little-endian format
@@ -91,7 +94,7 @@ export class TideMemory extends Uint8Array{
         for (let i = 0; i < index; i++) {
             // Check if there's enough data to read the length of the next segment
             if (dataLocationIndex + 4 > this.length) {
-                throw new RangeError("Index out of range.");
+                throw new TideError({ code: TideJsErrorCodes.MEM_INDEX_OUT_OF_RANGE, displayMessage: `Index out of range. (requested segment ${index}, ran out at sub-index ${i}, offset ${dataLocationIndex}+4 exceeds length ${this.length})`, source: "tide-js/Tools/TideMemory.ts:94" });
             }
 
             const nextDataLength = dataView.getInt32(dataLocationIndex, true);
@@ -100,7 +103,7 @@ export class TideMemory extends Uint8Array{
 
         // Check if there's enough data to read the length of the final segment
         if (dataLocationIndex + 4 > this.length) {
-            throw new RangeError("Index out of range.");
+            throw new TideError({ code: TideJsErrorCodes.MEM_INDEX_OUT_OF_RANGE, displayMessage: `Index out of range. (requested segment ${index}, offset ${dataLocationIndex}+4 (length header) exceeds length ${this.length})`, source: "tide-js/Tools/TideMemory.ts:103" });
         }
 
         const finalDataLength = dataView.getInt32(dataLocationIndex, true);
@@ -108,7 +111,7 @@ export class TideMemory extends Uint8Array{
 
         // Check if the final data segment is within bounds
         if (dataLocationIndex + finalDataLength > this.length) {
-            throw new RangeError("Index out of range.");
+            throw new TideError({ code: TideJsErrorCodes.MEM_INDEX_OUT_OF_RANGE, displayMessage: `Index out of range. (requested segment ${index}, payload offset ${dataLocationIndex}+${finalDataLength} exceeds length ${this.length})`, source: "tide-js/Tools/TideMemory.ts:111" });
         }
 
         return this.subarray(dataLocationIndex, dataLocationIndex + finalDataLength) as TideMemory;

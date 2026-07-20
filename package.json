@@ -1,12 +1,12 @@
 {
   "name": "@tideorg/js",
-  "version": "0.13.33",
+  "version": "0.14.0",
   "description": "Browser side modules required to interact with the Tide's Cybersecurity Fabric.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "rm -rf dist && tsc && node --import ./Tests/node-test-setup.mjs --test Tests/ReservationErrors.test.mjs"
   },
   "files": [
     "dist"
