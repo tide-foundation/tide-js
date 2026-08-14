@@ -42,8 +42,8 @@ export interface HumanReadableContext {
 export class ModelRegistry {
     static getHumanReadableModelBuilder(reqId: string, data: Uint8Array, context?: HumanReadableContext): HumanReadableModelBuilder {
         const r = BaseTideRequest.decode(data);
-        const nameMatch = r.name.match(/^Custom<(.*)>$/)?.[1];
-        const versionMatch = r.version.match(/^Custom<(.*)>$/)?.[1];
+        const nameMatch = r.name.match(/^BasicCustom<(.*)>$/)?.[1];
+        const versionMatch = r.version.match(/^BasicCustom<(.*)>$/)?.[1];
         if (nameMatch && versionMatch) {
             return new CustomSignRequestBuilder(data, reqId, context);
         }
@@ -100,8 +100,8 @@ class CustomSignRequestBuilder extends HumanReadableModelBuilder {
     get _id() { return this._name + ":" + this._version; }
     constructor(data, reqId, context?: HumanReadableContext) {
         super(data, reqId, context);
-        this._name = this.request.name.match(/^Custom<(.*)>$/)?.[1];
-        this._version = this.request.version.match(/^Custom<(.*)>$/)?.[1];
+        this._name = this.request.name.match(/^BasicCustom<(.*)>$/)?.[1];
+        this._version = this.request.version.match(/^BasicCustom<(.*)>$/)?.[1];
         this.humanReadableJson = JSON.parse(StringFromUint8Array(GetValue(this.request.draft, 0)));
         this._humanReadableName = this.humanReadableJson["humanReadableName"];
     }
