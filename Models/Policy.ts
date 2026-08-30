@@ -20,11 +20,12 @@ export class Policy {
     approvalType: ApprovalType;
     executionType: ExecutionType;
     params: PolicyParameters;
+    expiry: bigint | undefined;
 
     dataToVerify: TideMemory | undefined;
     signature: Uint8Array | undefined;
 
-    constructor(data: { version: string, contractId: string, modelId: string[] | string, keyId: string, approvalType: ApprovalType, executionType: ExecutionType, params: Map<string, any> | PolicyParameters }) {
+    constructor(data: { version: string, contractId: string, modelId: string[] | string, keyId: string, approvalType: ApprovalType, executionType: ExecutionType, params: Map<string, any> | PolicyParameters, expiry?: bigint | number }) {
         if (typeof data["version"] !== "string") throw 'Version is not a string';
         // if Policy is constructed directly (not via a subclass), enforce latest version
         if(new.target === Policy){
@@ -48,14 +49,34 @@ export class Policy {
         if (!data["params"]) throw 'Params is null';
         this.params = data["params"] instanceof PolicyParameters ? data["params"] : new PolicyParameters(data["params"]);
 
-        this.dataToVerify = TideMemory.CreateFromArray([
+        this.expiry = data["expiry"] === undefined ? undefined : BigInt(data["expiry"]);
+
+        this.dataToVerify = this.buildTideMemory();
+    }
+
+    private buildTideMemory(): TideMemory {
+        const sections: Uint8Array[] = [
             StringToUint8Array(this.version),
             StringToUint8Array(this.contractId),
             TideMemory.CreateFromArray(this.modelIds.map(i => StringToUint8Array(i))),
             StringToUint8Array(this.keyId),
             StringToUint8Array(ApprovalType[this.approvalType]),
             StringToUint8Array(ExecutionType[this.executionType]),
-            this.params.toBytes()]);
+            this.params.toBytes()
+        ];
+
+        // only appended when set, so a policy without an expiry serialises as it did before
+        if (this.expiry !== undefined) {
+            const buffer = new Uint8Array(8);
+            new DataView(buffer.buffer).setBigInt64(0, this.expiry, true);
+            sections.push(buffer);
+        }
+
+        return TideMemory.CreateFromArray(sections);
+    }
+
+    hasExpired(): boolean {
+        return this.expiry !== undefined && this.expiry < BigInt(Math.floor(Date.now() / 1000));
     }
 
     static from(data: Uint8Array): Policy {
@@ -89,6 +110,8 @@ export class Policy {
 
         const params = new PolicyParameters(dataToVerify.GetValue(6));
 
+        const expiry = Policy.readOptionalExpiry(dataToVerify);
+
         const p = new Policy({
             version,
             contractId,
@@ -96,7 +119,8 @@ export class Policy {
             keyId,
             approvalType,
             executionType,
-            params
+            params,
+            expiry
         });
 
         const sigRes = { result: undefined };
@@ -106,17 +130,19 @@ export class Policy {
         return p;
     }
 
+    private static readOptionalExpiry(dataToVerify: TideMemory): bigint | undefined {
+        const returnObj = { result: undefined as Uint8Array | undefined };
+        if (!dataToVerify.TryGetValue(7, returnObj)) return undefined;
+
+        const expiry = returnObj.result;
+        if (!expiry || expiry.length === 0) return undefined;
+        if (expiry.length !== 8) throw new TideError({ code: TideJsErrorCodes.MODEL_VERSION_MISMATCH, displayMessage: `Policy expiry must be 8 bytes, got ${expiry.length}`, source: "tide-js/Models/Policy.ts" });
+
+        return new DataView(expiry.buffer, expiry.byteOffset, 8).getBigInt64(0, true);
+    }
+
     toBytes() {
-        let d: Uint8Array[] = [
-            TideMemory.CreateFromArray([
-                StringToUint8Array(this.version),
-                StringToUint8Array(this.contractId),
-                TideMemory.CreateFromArray(this.modelIds.map(i => StringToUint8Array(i))),
-                StringToUint8Array(this.keyId),
-                StringToUint8Array(ApprovalType[this.approvalType]),
-                StringToUint8Array(ExecutionType[this.executionType]),
-                this.params.toBytes()
-            ])];
+        let d: Uint8Array[] = [this.buildTideMemory()];
 
         if (this.signature) d.push(this.signature);
 
