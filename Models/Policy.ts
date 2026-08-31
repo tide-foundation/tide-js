@@ -12,7 +12,7 @@ export enum ExecutionType {
     PUBLIC
 }
 export class Policy {
-    static latestVersion: string = "3";
+    static latestVersion: string = "4";
     version: string;
     contractId: string;
     modelIds: string[];
@@ -92,6 +92,8 @@ export class Policy {
                     return PolicyV1.from(d);
                 case PolicyV2.thisVersion:
                     return PolicyV2.from(d);
+                case PolicyV3.thisVersion:
+                    return PolicyV3.from(d);
                 default:
                     throw new TideError({ code: TideJsErrorCodes.MODEL_VERSION_MISMATCH, displayMessage: `Unknown policy version: ${version}`, source: "tide-js/Models/Policy.ts:75" });
             }
@@ -111,6 +113,10 @@ export class Policy {
         const params = new PolicyParameters(dataToVerify.GetValue(6));
 
         const expiry = Policy.readOptionalExpiry(dataToVerify);
+
+        // Anything past the end of this layout belongs to a version we cannot interpret. Refusing here
+        // forces the next field onto a new version rather than letting an old client ignore it silently.
+        if (dataToVerify.TryGetValue(8, { result: undefined })) throw new TideError({ code: TideJsErrorCodes.MODEL_VERSION_MISMATCH, displayMessage: `Version ${Policy.latestVersion} policy has data past the end of its layout`, source: "tide-js/Models/Policy.ts" });
 
         const p = new Policy({
             version,
@@ -283,6 +289,56 @@ export class PolicyParameters {
         }
 
         return TideMemory.CreateFromArray(params);
+    }
+}
+
+/**
+ * The policy layout before the optional expiry existed. Kept so a current client can still read and
+ * verify policies that were signed against it.
+ */
+class PolicyV3 extends Policy {
+    static thisVersion = "3";
+    static from(data: TideMemory): Policy {
+        const dataToVerify = data.GetValue(0);
+        const v = StringFromUint8Array(dataToVerify.GetValue(0));
+        if (v != PolicyV3.thisVersion) {
+            throw new TideError({ code: TideJsErrorCodes.MODEL_DEV_ERROR, displayMessage: `PolicyV3.from: version mismatch (expected ${PolicyV3.thisVersion}, got ${v})`, source: "tide-js/Models/Policy.ts" });
+        }
+
+        const contractId = StringFromUint8Array(dataToVerify.GetValue(1));
+        const modelIdSection = dataToVerify.GetValue(2);
+        const modelIds = [];
+        let returnObj = { result: undefined };
+        for (let i = 0; modelIdSection.TryGetValue(i, returnObj); i++) {
+            modelIds.push(StringFromUint8Array(returnObj.result))
+        }
+        const keyId = StringFromUint8Array(dataToVerify.GetValue(3));
+        const approvalType: ApprovalType = ApprovalType[StringFromUint8Array(dataToVerify.GetValue(4)) as keyof typeof ApprovalType];
+        const executionType: ExecutionType = ExecutionType[StringFromUint8Array(dataToVerify.GetValue(5)) as keyof typeof ExecutionType];
+
+        const params = new PolicyParameters(dataToVerify.GetValue(6));
+
+        // This version has no expiry, so a section at index 7 is something we cannot interpret
+        if (dataToVerify.TryGetValue(7, { result: undefined })) {
+            throw new TideError({ code: TideJsErrorCodes.MODEL_VERSION_MISMATCH, displayMessage: `Version ${PolicyV3.thisVersion} policy has data past the end of its layout`, source: "tide-js/Models/Policy.ts" });
+        }
+
+        const p = new PolicyV3({
+            version: v,
+            contractId,
+            modelId: modelIds,
+            keyId,
+            approvalType,
+            executionType,
+            params
+        });
+
+        const sigRes = { result: undefined };
+        if (data.TryGetValue(1, sigRes)) {
+            p.signature = sigRes.result;
+        }
+
+        return p;
     }
 }
 

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { Policy, ApprovalType, ExecutionType } from "../dist/Models/Policy.js";
 
 const base = {
-    version: "3",
+    version: "4",
     contractId: "contract-1",
     modelId: ["model-1"],
     keyId: "key-1",
