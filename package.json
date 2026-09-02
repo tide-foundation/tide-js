@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "rm -rf dist && tsc && node --import ./Tests/node-test-setup.mjs --test Tests/ReservationErrors.test.mjs"
+    "test": "rm -rf dist && tsc && node --import ./Tests/node-test-setup.mjs --test Tests/*.test.mjs"
   },
   "files": [
     "dist"
