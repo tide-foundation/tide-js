@@ -229,6 +229,18 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
         summary["KeyId"] = policy.keyId;
         summary['Approval Type'] = ApprovalType[policy.approvalType];
         summary["Execution Type"] = ExecutionType[policy.executionType];
+
+        // WHEN THE THING BEING APPROVED STOPS BEING VALID.
+        //
+        // Shown here, from the policy in the draft, because that is the policy this request is
+        // asking to have signed. The card's own "Policy Expiry" line reads the request's attached
+        // policy, which on a policy signature is the EXISTING one authorising the approval - a
+        // different policy, and for the admin policy always an unexpiring one. An approver reading
+        // that line next to a policy approval reads it as this, and would be told "Never" about
+        // something that expires in days.
+        summary['Expiry'] = policy.expiry === undefined
+            ? 'Never'
+            : new Date(Number(policy.expiry) * 1000).toUTCString();
         for (const [key, value] of policy.params.entries.entries()) {
             if (!(value instanceof Uint8Array)) summary[`Parameter:${key}`] = value;
         }
