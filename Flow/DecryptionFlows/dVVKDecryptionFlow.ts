@@ -46,7 +46,7 @@ export default class dVVKDecryptionFlow{
             throw new TideError({
                 code: TideJsErrorCodes.CRYPTO_SESSION_KEY_MISMATCH,
                 displayMessage: `Doken session key (${dokenFp}) does not match supplied session key (${suppliedFp})`,
-                source: "Flow/DecryptionFlows/dVVKDecryptionFlow.ts:41",
+                source: "Flow/DecryptionFlows/dVVKDecryptionFlow.ts:constructor",
             });
         }
         this.sessKey = sessKey;

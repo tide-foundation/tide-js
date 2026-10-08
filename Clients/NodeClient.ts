@@ -195,7 +195,7 @@ export default class NodeClient extends ClientBase {
                 displayMessage: `Upstream returned an error for license-details lookup`,
                 endpoint: endpoint,
                 url: this.url + endpoint,
-                source: "Clients/NodeClient.ts:192",
+                source: "Clients/NodeClient.ts:GetLicenseDetails",
                 cause: new Error(typeof responseData === "string" ? responseData.slice(0, 256) : JSON.stringify(responseData ?? '').slice(0, 256)),
             });
         }
@@ -217,7 +217,7 @@ export default class NodeClient extends ClientBase {
                 displayMessage: `Upstream returned an error for license-details lookup`,
                 endpoint: endpoint,
                 url: this.url + endpoint,
-                source: "Clients/NodeClient.ts:207",
+                source: "Clients/NodeClient.ts:GetSubscriptionStatus",
                 cause: new Error(typeof responseData === "string" ? responseData.slice(0, 256) : JSON.stringify(responseData ?? '').slice(0, 256)),
             });
         }

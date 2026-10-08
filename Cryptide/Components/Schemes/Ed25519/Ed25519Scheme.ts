@@ -33,7 +33,7 @@ export default class Ed25519Scheme extends BaseScheme{
             if(msg instanceof Uint8Array && component instanceof Ed25519PrivateComponent){
                 return signNonDeterministicAsync(msg, component.priv);
             }
-            throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: "Ed25519Scheme.sign: mismatch of expected types (Uint8Array, Ed25519PrivateComponent)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.ts:36" });
+            throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: "Ed25519Scheme.sign: mismatch of expected types (Uint8Array, Ed25519PrivateComponent)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.ts:signingFunc" });
         }
         return signingFunc;
     }
@@ -41,9 +41,9 @@ export default class Ed25519Scheme extends BaseScheme{
         const verifyingFunc = async (msg, signature, component) => {
             if(msg instanceof Uint8Array && signature instanceof Uint8Array && component instanceof Ed25519PublicComponent){
                 const valid = await verifyAsync(signature, msg, component.rawBytes);
-                if(!valid) throw new TideError({ code: TideJsErrorCodes.SIG_VERIFY_FAILED, displayMessage: "Ed25519 signature validation failed", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.ts:44" });
+                if(!valid) throw new TideError({ code: TideJsErrorCodes.SIG_VERIFY_FAILED, displayMessage: "Ed25519 signature validation failed", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.ts:verifyingFunc" });
             }
-            else throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: "Ed25519Scheme.verify: mismatch of expected types (Uint8Array, Uint8Array, Ed25519PublicComponent)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.ts:46" });
+            else throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: "Ed25519Scheme.verify: mismatch of expected types (Uint8Array, Uint8Array, Ed25519PublicComponent)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.ts:verifyingFunc" });
         }
         return verifyingFunc;
     }
@@ -52,7 +52,7 @@ export default class Ed25519Scheme extends BaseScheme{
             if(msg instanceof Uint8Array && component instanceof Ed25519PublicComponent){
                 return await ElGamal.encryptDataRaw(msg, component.public);
             }
-            else throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: "Ed25519Scheme.encrypt: mismatch between expected types (Uint8Array, Ed25519PublicComponent)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.ts:55" });
+            else throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: "Ed25519Scheme.encrypt: mismatch between expected types (Uint8Array, Ed25519PublicComponent)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.ts:encryptingFunc" });
         }
         return encryptingFunc;
     }
@@ -61,7 +61,7 @@ export default class Ed25519Scheme extends BaseScheme{
             if(cipher instanceof Uint8Array && component instanceof Ed25519PrivateComponent){
                 return await ElGamal.decryptDataRaw(cipher, component.priv);
             }
-            else throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: "Ed25519Scheme.decrypt: mismatch between expected types (Uint8Array, Ed25519PrivateComponent)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.ts:64" });
+            else throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_TYPE, displayMessage: "Ed25519Scheme.decrypt: mismatch between expected types (Uint8Array, Ed25519PrivateComponent)", source: "tide-js/Cryptide/Components/Schemes/Ed25519/Ed25519Scheme.ts:decryptingFunc" });
         }
         return decryptingFunc;
     }

@@ -41,7 +41,7 @@ export async function encryptData(secretData: string | Uint8Array, key: Uint8Arr
     } else if(typeof(key) === 'bigint'){
         aesKey = BigIntToByteArray(key);
     }else{
-        throw new TideError({ code: TideJsErrorCodes.CRYPTO_AES_UNSUPPORTED_KEY_TYPE, displayMessage: `Unsupported key type (expected Uint8Array | string | bigint, got ${typeof key})`, source: "tide-js/Cryptide/Encryption/AES.ts:42" });
+        throw new TideError({ code: TideJsErrorCodes.CRYPTO_AES_UNSUPPORTED_KEY_TYPE, displayMessage: `Unsupported key type (expected Uint8Array | string | bigint, got ${typeof key})`, source: "tide-js/Cryptide/Encryption/AES.ts:encryptData" });
     }
     const encoded = typeof (secretData) === 'string' ? enc.encode(secretData) : secretData;
     const encrypted = await encryptDataRawOutput(encoded, aesKey);
@@ -71,7 +71,7 @@ export async function decryptData(encryptedData: string, key: Uint8Array | bigin
         aesKey = BigIntToByteArray(key);
     }
     else{
-        throw new TideError({ code: TideJsErrorCodes.CRYPTO_AES_UNSUPPORTED_KEY_TYPE, displayMessage: `Unsupported key type (expected Uint8Array | string | bigint, got ${typeof key})`, source: "tide-js/Cryptide/Encryption/AES.ts:72" });
+        throw new TideError({ code: TideJsErrorCodes.CRYPTO_AES_UNSUPPORTED_KEY_TYPE, displayMessage: `Unsupported key type (expected Uint8Array | string | bigint, got ${typeof key})`, source: "tide-js/Cryptide/Encryption/AES.ts:decryptData" });
     }
     const encryptedDataBuff = base64ToBytes(encryptedData);
     const decryptedContent = await decryptDataRawOutput(encryptedDataBuff, aesKey)

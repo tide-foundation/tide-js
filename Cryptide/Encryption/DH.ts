@@ -29,7 +29,7 @@ export async function computeSharedKey(pub: Point, priv: bigint | string | Uint8
         privNum = BigIntFromByteArray(priv);
     }else if(typeof(priv) == "bigint"){
         privNum = priv;
-    }else throw new TideError({ code: TideJsErrorCodes.CRYPTO_DH_UNSUPPORTED_PRIV_TYPE, displayMessage: `Unknown Type (expected bigint | string | Uint8Array, got ${typeof priv})`, source: "tide-js/Cryptide/Encryption/DH.ts:30" });
+    }else throw new TideError({ code: TideJsErrorCodes.CRYPTO_DH_UNSUPPORTED_PRIV_TYPE, displayMessage: `Unknown Type (expected bigint | string | Uint8Array, got ${typeof priv})`, source: "tide-js/Cryptide/Encryption/DH.ts:computeSharedKey" });
     return await SHA256_Digest(pub.mul(privNum).toRawBytes());
 }
 
