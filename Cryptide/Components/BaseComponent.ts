@@ -25,7 +25,7 @@ import { TideJsErrorCodes } from "../../Errors/codes";
 export class BaseComponent{
     constructor(){}
     static Name: any = () => { throw new TideError({ code: TideJsErrorCodes.CRYPTO_NOT_IMPLEMENTED, displayMessage: "Name not implemented", source: "tide-js/Cryptide/Components/BaseComponent.ts:BaseComponent.Name" }); }
-    static Version: any = () => { throw new TideError({ code: TideJsErrorCodes.CRYPTO_NOT_IMPLEMENTED, displayMessage: "Version not implemented", source: "tide-js/Cryptide/Components/BaseComponent.ts:BaseComponent.Version" }); }
+    static Version: number = 0; // serialized in the low 4 bits of the first header byte (max 15)
 
     Add(component){
         if(component.Scheme == this.Scheme){
@@ -84,8 +84,11 @@ export class BaseComponent{
         let componentTypeInt = ComponentKeyType.indexOf(this.ComponentType as any);
         if(schemeInt == -1 || componentTypeInt == -1) throw new TideError({ code: TideJsErrorCodes.CRYPTO_UNKNOWN_COMPONENT_TYPE, displayMessage: "Could not find scheme or component type in registries", source: "tide-js/Cryptide/Components/BaseComponent.ts:BaseComponent.Serialize" });
 
+        let version = (this.constructor as any).Version;
+        if(!Number.isInteger(version) || version < 0 || version > 0x0F) throw new TideError({ code: TideJsErrorCodes.MODEL_VALUE_OUT_OF_RANGE, displayMessage: `Component version ${version} does not fit in the 4-bit header field`, source: "tide-js/Cryptide/Components/BaseComponent.ts:BaseComponent.Serialize" });
+
         let schemeBytes = getBytesFromInt16(schemeInt);
-        let header = ConcatUint8Arrays([new Uint8Array([componentTypeInt << 4]), schemeBytes]); // shift to the left (for when we have version, but all versions are 0 for now)
+        let header = ConcatUint8Arrays([new Uint8Array([(componentTypeInt << 4) | (version & 0x0F)]), schemeBytes]); // high 4 bits: component type, low 4 bits: version (all tide-js components are version 0)
 
         return new SerializedComponent(ConcatUint8Arrays([header, raw]), this.ComponentType);
     }
@@ -106,9 +109,10 @@ export class BaseComponent{
         let scheme = SchemeType[toInt16(b.slice(1, 3), 0)];
         let k = (b[0] >> 4) & 0x0F;
         let keyType = ComponentKeyType[k];
+        let version = b[0] & 0x0F;
 
         let component = Registery[scheme.Name][keyType];
-        return component.Create(b.slice(3));
+        return component.Create(version, b.slice(3));
     }
 }
 

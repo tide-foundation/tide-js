@@ -31,7 +31,7 @@ export default class TideKey{
 
     static NewKey(scheme){
         const seedFactory = Registery[scheme.Name][Seed];
-        return new TideKey(seedFactory.Create(undefined));
+        return new TideKey(seedFactory.Create(0, undefined));
     }
 
     static FromSerializedComponent(c: Uint8Array | string){

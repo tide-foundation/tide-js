@@ -25,7 +25,7 @@ import { TideJsErrorCodes } from "../../../../Errors/codes";
 
 export class Ed25519PublicComponent extends BasePublicComponent{
     static Name = "Ed25519PublicComponent";
-    static Version = "1";
+    static Version = 0;
     get Scheme() { return Ed25519Scheme; }
     get ComponentType() { return Public };
 
@@ -84,7 +84,7 @@ export class Ed25519PublicComponent extends BasePublicComponent{
 
 export class Ed25519PrivateComponent extends BasePrivateComponent{
     static Name = "Ed25519PrivateComponent";
-    static Version = "1";
+    static Version = 0;
     get Scheme() { return Ed25519Scheme; }
     get ComponentType() { return Private };
 
@@ -124,9 +124,11 @@ export class Ed25519PrivateComponent extends BasePrivateComponent{
     }
 }
 
+// Version 0 seed is tide-js's own derivation: the seed is used directly as the scalar (no SHA-512).
+// It is NOT the ORK's LegacyV0Ed25519SeedComponent nor the ORK's version 1 (RFC 8032) seed - never exchange seeds with the ORK.
 export class Ed25519SeedComponent extends BaseSeedComponent{
     static Name = "Ed25519SeedComponent";
-    static Version = "1";
+    static Version = 0;
     get Scheme() { return Ed25519Scheme; }
     get ComponentType() { return Seed };
 
