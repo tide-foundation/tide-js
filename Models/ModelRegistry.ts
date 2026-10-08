@@ -42,8 +42,8 @@ export interface HumanReadableContext {
 export class ModelRegistry {
     static getHumanReadableModelBuilder(reqId: string, data: Uint8Array, context?: HumanReadableContext): HumanReadableModelBuilder {
         const r = BaseTideRequest.decode(data);
-        const nameMatch = r.name.match(/^Custom<(.*)>$/)?.[1];
-        const versionMatch = r.version.match(/^Custom<(.*)>$/)?.[1];
+        const nameMatch = r.name.match(/^BasicCustom<(.*)>$/)?.[1];
+        const versionMatch = r.version.match(/^BasicCustom<(.*)>$/)?.[1];
         if (nameMatch && versionMatch) {
             return new CustomSignRequestBuilder(data, reqId, context);
         }
@@ -100,8 +100,8 @@ class CustomSignRequestBuilder extends HumanReadableModelBuilder {
     get _id() { return this._name + ":" + this._version; }
     constructor(data, reqId, context?: HumanReadableContext) {
         super(data, reqId, context);
-        this._name = this.request.name.match(/^Custom<(.*)>$/)?.[1];
-        this._version = this.request.version.match(/^Custom<(.*)>$/)?.[1];
+        this._name = this.request.name.match(/^BasicCustom<(.*)>$/)?.[1];
+        this._version = this.request.version.match(/^BasicCustom<(.*)>$/)?.[1];
         this.humanReadableJson = JSON.parse(StringFromUint8Array(GetValue(this.request.draft, 0)));
         this._humanReadableName = this.humanReadableJson["humanReadableName"];
     }
@@ -229,6 +229,18 @@ class PolicySignRequestBuilder extends HumanReadableModelBuilder {
         summary["KeyId"] = policy.keyId;
         summary['Approval Type'] = ApprovalType[policy.approvalType];
         summary["Execution Type"] = ExecutionType[policy.executionType];
+
+        // WHEN THE THING BEING APPROVED STOPS BEING VALID.
+        //
+        // Shown here, from the policy in the draft, because that is the policy this request is
+        // asking to have signed. The card's own "Policy Expiry" line reads the request's attached
+        // policy, which on a policy signature is the EXISTING one authorising the approval - a
+        // different policy, and for the admin policy always an unexpiring one. An approver reading
+        // that line next to a policy approval reads it as this, and would be told "Never" about
+        // something that expires in days.
+        summary['Expiry'] = policy.expiry === undefined
+            ? 'Never'
+            : new Date(Number(policy.expiry) * 1000).toUTCString();
         for (const [key, value] of policy.params.entries.entries()) {
             if (!(value instanceof Uint8Array)) summary[`Parameter:${key}`] = value;
         }
