@@ -16,21 +16,24 @@
 //
 
 import {  Ed25519PrivateComponent, Ed25519PublicComponent, Ed25519SeedComponent } from "./Schemes/Ed25519/Ed25519Components";
+import { TideError } from "../../Errors/TideError";
+import { TideJsErrorCodes } from "../../Errors/codes";
 
 export class Ed25519PublicComponentFactory{
-    static Create(b){
+    static Create(version, b){ // version ignored
         return new Ed25519PublicComponent(b);
     }
 }
 
 export class Ed25519PrivateComponentFactory{
-    static Create(b){
+    static Create(version, b){ // version ignored
         return new Ed25519PrivateComponent(b);
     }
 }
 
 export class Ed25519SeedComponentFactory{
-    static Create(b){
+    static Create(version, b){
+        if(version !== 0) throw new TideError({ code: TideJsErrorCodes.CRYPTO_DESERIALIZE_FAILED, displayMessage: `Ed25519 seed component version ${version} is not supported in tide-js (only version 0; the ORK's version 1 RFC 8032 seed is not implemented here)`, source: "tide-js/Cryptide/Components/ComponentRegistry.ts:Ed25519SeedComponentFactory.Create" });
         return new Ed25519SeedComponent(b);
     }
 }

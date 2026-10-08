@@ -132,7 +132,7 @@ class Point {
         const { a, d } = CURVE;
         const p = this;
         if (p.is0())
-            throw new TideError({ code: TideJsErrorCodes.CRYPTO_ED25519_BAD_POINT, displayMessage: "bad point: ZERO", source: "tide-js/Cryptide/Ed25519.ts:133" }); // TODO: optimize, with vars below?
+            throw new TideError({ code: TideJsErrorCodes.CRYPTO_ED25519_BAD_POINT, displayMessage: "bad point: ZERO", source: "tide-js/Cryptide/Ed25519.ts:assertValidity" }); // TODO: optimize, with vars below?
         // Equation in affine coordinates: ax² + y² = 1 + dx²y²
         // Equation in projective coordinates (X/Z, Y/Z, Z):  (aX² + Y²)Z² = Z⁴ + dX²Y²
         const { ex: X, ey: Y, ez: Z, et: T } = p;
@@ -144,12 +144,12 @@ class Point {
         const left = M(Z2 * M(aX2 + Y2)); // (aX² + Y²)Z²
         const right = M(Z4 + M(d * M(X2 * Y2))); // Z⁴ + dX²Y²
         if (left !== right)
-            throw new TideError({ code: TideJsErrorCodes.CRYPTO_ED25519_BAD_POINT, displayMessage: "bad point: equation left != right (1)", source: "tide-js/Cryptide/Ed25519.ts:145" });
+            throw new TideError({ code: TideJsErrorCodes.CRYPTO_ED25519_BAD_POINT, displayMessage: "bad point: equation left != right (1)", source: "tide-js/Cryptide/Ed25519.ts:assertValidity" });
         // In Extended coordinates we also have T, which is x*y=T/Z: check X*Y == Z*T
         const XY = M(X * Y);
         const ZT = M(Z * T);
         if (XY !== ZT)
-            throw new TideError({ code: TideJsErrorCodes.CRYPTO_ED25519_BAD_POINT, displayMessage: "bad point: equation left != right (2)", source: "tide-js/Cryptide/Ed25519.ts:150" });
+            throw new TideError({ code: TideJsErrorCodes.CRYPTO_ED25519_BAD_POINT, displayMessage: "bad point: equation left != right (2)", source: "tide-js/Cryptide/Ed25519.ts:assertValidity" });
         return true;
     }
     equals(other) {
@@ -292,7 +292,7 @@ const concatB = (...arrs) => {
     return r;
 };
 const invert = (num, md) => {
-    if(!isB(num)) throw new TideError({ code: TideJsErrorCodes.CRYPTO_INVALID_BIGINT_INPUT, displayMessage: `invert: expected bigint (got ${typeof num})`, source: "tide-js/Cryptide/Ed25519.ts:295" });
+    if(!isB(num)) throw new TideError({ code: TideJsErrorCodes.CRYPTO_INVALID_BIGINT_INPUT, displayMessage: `invert: expected bigint (got ${typeof num})`, source: "tide-js/Cryptide/Ed25519.ts:invert" });
     if (num === 0n || md <= 0n)
         err(`no inverse (num is ${num === 0n ? "zero" : "non-zero"}, mod is ${md <= 0n ? "non-positive" : "positive"})`); // no neg exponent for now
     let a = M(num, md), b = md, x = 0n, y = 1n, u = 1n, v = 0n;

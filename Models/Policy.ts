@@ -95,7 +95,7 @@ export class Policy {
                 case PolicyV3.thisVersion:
                     return PolicyV3.from(d);
                 default:
-                    throw new TideError({ code: TideJsErrorCodes.MODEL_VERSION_MISMATCH, displayMessage: `Unknown policy version: ${version}`, source: "tide-js/Models/Policy.ts:75" });
+                    throw new TideError({ code: TideJsErrorCodes.MODEL_VERSION_MISMATCH, displayMessage: `Unknown policy version: ${version}`, source: "tide-js/Models/Policy.ts:Policy.from" });
             }
         }
 
@@ -205,7 +205,7 @@ export class PolicyParameters {
                     datum = new Uint8Array(dataBytes);
                     break;
                 default:
-                    throw new TideError({ code: TideJsErrorCodes.MODEL_UNKNOWN_PARAM_TYPE, displayMessage: `PolicyParameters.fromBytes: could not find type of ${type}`, source: "tide-js/Models/Policy.ts:176" });
+                    throw new TideError({ code: TideJsErrorCodes.MODEL_UNKNOWN_PARAM_TYPE, displayMessage: `PolicyParameters.fromBytes: could not find type of ${type}`, source: "tide-js/Models/Policy.ts:PolicyParameters.fromBytes" });
             }
 
             params.set(name, datum);
@@ -224,7 +224,7 @@ export class PolicyParameters {
 
     getParameter<T extends string | number | bigint | boolean | Uint8Array>(key: string): T {
         if (!this.entries.has(key)) {
-            throw new TideError({ code: TideJsErrorCodes.MODEL_PARAM_NOT_FOUND, displayMessage: `PolicyParameters.getParameter: parameter '${key}' not found`, source: "tide-js/Models/Policy.ts:195" });
+            throw new TideError({ code: TideJsErrorCodes.MODEL_PARAM_NOT_FOUND, displayMessage: `PolicyParameters.getParameter: parameter '${key}' not found`, source: "tide-js/Models/Policy.ts:PolicyParameters.getParameter" });
         }
 
         const value = this.entries.get(key);
@@ -248,7 +248,7 @@ export class PolicyParameters {
             (value instanceof Uint8Array);
 
         if (!isCorrectType) {
-            throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `PolicyParameters.getParameter: parameter '${key}' exists but has unexpected type '${actualType}'`, source: "tide-js/Models/Policy.ts:219" });
+            throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `PolicyParameters.getParameter: parameter '${key}' exists but has unexpected type '${actualType}'`, source: "tide-js/Models/Policy.ts:PolicyParameters.getParameter" });
         }
 
         return value as T;
@@ -280,7 +280,7 @@ export class PolicyParameters {
                 dataBytes = value;
                 typeStr = "byt";
             } else {
-                throw new TideError({ code: TideJsErrorCodes.MODEL_UNKNOWN_PARAM_TYPE, displayMessage: `PolicyParameters.toBytes: could not serialize key '${key}' of type '${typeof value}'`, source: "tide-js/Models/Policy.ts:253" });
+                throw new TideError({ code: TideJsErrorCodes.MODEL_UNKNOWN_PARAM_TYPE, displayMessage: `PolicyParameters.toBytes: could not serialize key '${key}' of type '${typeof value}'`, source: "tide-js/Models/Policy.ts:PolicyParameters.toBytes" });
             }
 
             const typeBytes = StringToUint8Array(typeStr);
@@ -348,7 +348,7 @@ class PolicyV2 extends Policy{
         const dataToVerify = data.GetValue(0);
         const v = StringFromUint8Array(dataToVerify.GetValue(0));
         if (v != PolicyV2.thisVersion) {
-            throw new TideError({ code: TideJsErrorCodes.MODEL_DEV_ERROR, displayMessage: `PolicyV2.from: version mismatch (expected ${PolicyV2.thisVersion}, got ${v})`, source: "tide-js/Models/Policy.ts:273" });
+            throw new TideError({ code: TideJsErrorCodes.MODEL_DEV_ERROR, displayMessage: `PolicyV2.from: version mismatch (expected ${PolicyV2.thisVersion}, got ${v})`, source: "tide-js/Models/Policy.ts:PolicyV2.from" });
         }
 
         const contractId = StringFromUint8Array(dataToVerify.GetValue(1));
@@ -400,7 +400,7 @@ class PolicyV1 extends Policy {
         const dataToVerify = data.GetValue(0);
         const v = StringFromUint8Array(dataToVerify.GetValue(0));
         if (v != PolicyV1.thisVersion) {
-            throw new TideError({ code: TideJsErrorCodes.MODEL_DEV_ERROR, displayMessage: `PolicyV1.from: version mismatch (expected ${PolicyV1.thisVersion}, got ${v})`, source: "tide-js/Models/Policy.ts:325" });
+            throw new TideError({ code: TideJsErrorCodes.MODEL_DEV_ERROR, displayMessage: `PolicyV1.from: version mismatch (expected ${PolicyV1.thisVersion}, got ${v})`, source: "tide-js/Models/Policy.ts:PolicyV1.from" });
         }
 
         const contractId = StringFromUint8Array(dataToVerify.GetValue(1));

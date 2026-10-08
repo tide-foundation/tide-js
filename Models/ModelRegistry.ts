@@ -48,7 +48,7 @@ export class ModelRegistry {
             return new CustomSignRequestBuilder(data, reqId, context);
         }
         const c = modelBuildersMap[r.id()];
-        if (!c) throw new TideError({ code: TideJsErrorCodes.MODEL_UNKNOWN_MODEL, displayMessage: `Could not find model: ${r.id()}`, source: "tide-js/Models/ModelRegistry.ts:34" });
+        if (!c) throw new TideError({ code: TideJsErrorCodes.MODEL_UNKNOWN_MODEL, displayMessage: `Could not find model: ${r.id()}`, source: "tide-js/Models/ModelRegistry.ts:ModelRegistry.getHumanReadableModelBuilder" });
         return c.create(data, reqId, context);
     }
 }

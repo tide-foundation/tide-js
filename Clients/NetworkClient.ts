@@ -37,7 +37,7 @@ export default class NetworkClient extends ClientBase {
             if(formattedResponse.length == 0) throw new TideError({
                 code: TideJsErrorCodes.VAL_UID_FORBIDDEN,
                 displayMessage: `Username forbidden (uid prefix=${(uid ?? '').slice(0, 12)}, endpoint=${endpoint ?? this.url})`,
-                source: "Clients/NetworkClient.ts:34",
+                source: "Clients/NetworkClient.ts:FindReservers",
             });
             const returnedResponse = formattedResponse.map(orkEntry => OrkInfo.from(orkEntry));
             return returnedResponse;
@@ -74,7 +74,7 @@ export default class NetworkClient extends ClientBase {
             throw new TideError({
                 code: TideJsErrorCodes.VAL_INVALID_ACCOUNT,
                 displayMessage: "simulator.invalidAccount",   // preserve the sentinel string in displayMessage for any callers matching on .message
-                source: "Clients/NetworkClient.ts:66",
+                source: "Clients/NetworkClient.ts:GetKeyInfo",
                 cause: err,                                   // preserve the upstream TideError if there is one
             });
         }

@@ -364,7 +364,7 @@ export async function WaitForNumberofORKs(orkList_Ref: OrkInfo[], pre_responses:
 		throw new TideError({
 			code: TideJsErrorCodes.PARSE_NODECLIENT_RESPONSE_SHAPE,
 			displayMessage: `WaitForThresholdNumberofORKs got unexpected response shape: keyType=${keyType}, index=${idx}, responseKeys=[${Object.keys(resp).join(',')}]`,
-			source: "Tools/Utils.ts:250",
+			source: "Tools/Utils.ts:WaitForNumberofORKs",
 		});
 	});
 	return {fulfilledResponses: cleanedResponses, bitwise};
@@ -373,7 +373,7 @@ export function removeRandomElements(array: any[], targetArraySize: number): any
     let newArray = array.slice();
     // Check if the array size is > n
     if (newArray.length < targetArraySize) {
-        throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_LENGTH, displayMessage: `Array size must be greater than n (got length=${newArray.length}, target=${targetArraySize}).`, source: "tide-js/Tools/Utils.ts:262" });
+        throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_LENGTH, displayMessage: `Array size must be greater than n (got length=${newArray.length}, target=${targetArraySize}).`, source: "tide-js/Tools/Utils.ts:removeRandomElements" });
     }
     else if(newArray.length == targetArraySize) return newArray;
 

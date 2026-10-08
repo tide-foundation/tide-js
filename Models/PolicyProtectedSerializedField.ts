@@ -38,7 +38,7 @@ export default class PolicyProtectedSerializedField{
     static deserialize(serializedField: Uint8Array){
         // Make sure version is 1
         const version = Uint8ArrayToNumber(Serialization.GetValue(serializedField, 0));
-        if(version != this.version) throw new TideError({ code: TideJsErrorCodes.MODEL_VERSION_MISMATCH, displayMessage: `PolicyProtectedSerializedField.deserialize: expected version ${this.version} (got ${version})`, source: "tide-js/Models/PolicyProtectedSerializedField.ts:41" });
+        if(version != this.version) throw new TideError({ code: TideJsErrorCodes.MODEL_VERSION_MISMATCH, displayMessage: `PolicyProtectedSerializedField.deserialize: expected version ${this.version} (got ${version})`, source: "tide-js/Models/PolicyProtectedSerializedField.ts:deserialize" });
 
         const encFieldChk = Serialization.GetValue(serializedField, 1);
         const timestamp = Serialization.GetValue(serializedField, 2); // keep as array until JS HANDLES 64 BIT NUMBERS!

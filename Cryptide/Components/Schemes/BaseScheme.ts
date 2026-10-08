@@ -19,8 +19,8 @@ import { TideError } from "../../../Errors/TideError";
 import { TideJsErrorCodes } from "../../../Errors/codes";
 
 export default class BaseScheme{
-    static get Name(): string { throw new TideError({ code: TideJsErrorCodes.CRYPTO_NOT_IMPLEMENTED, displayMessage: "Name not implemented", source: "tide-js/Cryptide/Components/Schemes/BaseScheme.ts:22" }); }
-    static GetVerifyingFunction = (): any => { throw new TideError({ code: TideJsErrorCodes.CRYPTO_NOT_IMPLEMENTED, displayMessage: "Verifying function not implemented", source: "tide-js/Cryptide/Components/Schemes/BaseScheme.ts:23" }); }
-    static GetSigningFunction = (): any => { throw new TideError({ code: TideJsErrorCodes.CRYPTO_NOT_IMPLEMENTED, displayMessage: "Signing function not implemented", source: "tide-js/Cryptide/Components/Schemes/BaseScheme.ts:24" }); }
-    static GetEncryptingFunction = (): any => { throw new TideError({ code: TideJsErrorCodes.CRYPTO_NOT_IMPLEMENTED, displayMessage: "Encrypting function not implemented", source: "tide-js/Cryptide/Components/Schemes/BaseScheme.ts:25" }); }
+    static get Name(): string { throw new TideError({ code: TideJsErrorCodes.CRYPTO_NOT_IMPLEMENTED, displayMessage: "Name not implemented", source: "tide-js/Cryptide/Components/Schemes/BaseScheme.ts:Name" }); }
+    static GetVerifyingFunction = (): any => { throw new TideError({ code: TideJsErrorCodes.CRYPTO_NOT_IMPLEMENTED, displayMessage: "Verifying function not implemented", source: "tide-js/Cryptide/Components/Schemes/BaseScheme.ts:GetVerifyingFunction" }); }
+    static GetSigningFunction = (): any => { throw new TideError({ code: TideJsErrorCodes.CRYPTO_NOT_IMPLEMENTED, displayMessage: "Signing function not implemented", source: "tide-js/Cryptide/Components/Schemes/BaseScheme.ts:GetSigningFunction" }); }
+    static GetEncryptingFunction = (): any => { throw new TideError({ code: TideJsErrorCodes.CRYPTO_NOT_IMPLEMENTED, displayMessage: "Encrypting function not implemented", source: "tide-js/Cryptide/Components/Schemes/BaseScheme.ts:GetEncryptingFunction" }); }
 }

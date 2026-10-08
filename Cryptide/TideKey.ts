@@ -31,7 +31,7 @@ export default class TideKey{
 
     static NewKey(scheme){
         const seedFactory = Registery[scheme.Name][Seed];
-        return new TideKey(seedFactory.Create(undefined));
+        return new TideKey(seedFactory.Create(0, undefined));
     }
 
     static FromSerializedComponent(c: Uint8Array | string){
@@ -44,15 +44,15 @@ export default class TideKey{
 
     constructor(c: BaseComponent){
         if(c instanceof BaseComponent) this.component = c;
-        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_KEY, displayMessage: "Expecting object derived from BaseComponent", source: "tide-js/Cryptide/TideKey.ts:45" });
+        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_KEY, displayMessage: "Expecting object derived from BaseComponent", source: "tide-js/Cryptide/TideKey.ts:constructor" });
     }
     get_private_component(): BasePrivateComponent {
-        if(!hasOwnInstanceMethod(this.component, "GetPrivate") && !(this.component instanceof BasePrivateComponent)) throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_KEY, displayMessage: "Cannot generate or find private component", source: "tide-js/Cryptide/TideKey.ts:48" });
+        if(!hasOwnInstanceMethod(this.component, "GetPrivate") && !(this.component instanceof BasePrivateComponent)) throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_KEY, displayMessage: "Cannot generate or find private component", source: "tide-js/Cryptide/TideKey.ts:get_private_component" });
         this.privateComponent = this.component instanceof BasePrivateComponent ? this.component : (this.component as any).GetPrivate();
         return this.privateComponent;
     }
     get_public_component(): BasePublicComponent {
-        if(!hasOwnInstanceMethod(this.component, "GetPublic") && !(this.component instanceof BasePublicComponent)) throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_KEY, displayMessage: "Cannot generate or find public component", source: "tide-js/Cryptide/TideKey.ts:53" });
+        if(!hasOwnInstanceMethod(this.component, "GetPublic") && !(this.component instanceof BasePublicComponent)) throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_KEY, displayMessage: "Cannot generate or find public component", source: "tide-js/Cryptide/TideKey.ts:get_public_component" });
         this.publicComponent = this.component instanceof BasePublicComponent ? this.component : (this.component as any).GetPublic();
         return this.publicComponent;
     }
@@ -77,7 +77,7 @@ export default class TideKey{
 
     async prepVouchersReq(gORKn){
         // Ensure scheme is Ed25519 for tide vouchers
-        if(this.component.Scheme !== Ed25519Scheme) throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_KEY, displayMessage: "Cannot execute prepVouchersReq on a non Ed25519 key", source: "tide-js/Cryptide/TideKey.ts:78" });
+        if(this.component.Scheme !== Ed25519Scheme) throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_KEY, displayMessage: "Cannot execute prepVouchersReq on a non Ed25519 key", source: "tide-js/Cryptide/TideKey.ts:prepVouchersReq" });
         let blurKeyPub = [];
         for(let i = 0; i< gORKn.length; i++){
             const z = mod(BigIntFromByteArray(await computeSharedKey(gORKn[i], this.get_private_component().priv)));

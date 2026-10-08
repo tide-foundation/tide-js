@@ -52,7 +52,7 @@ export function AuthorizedEncryptionFlow(config){
         throw new TideError({
             code: TideJsErrorCodes.CRYPTO_SESSION_KEY_MISMATCH,
             displayMessage: `Doken session key (${dokenFp}) does not match supplied session key (${suppliedFp})`,
-            source: "Flow/EncryptionFlows/AuthorizedEncryptionFlow.ts:48",
+            source: "Flow/EncryptionFlows/AuthorizedEncryptionFlow.ts:AuthorizedEncryptionFlow",
         });
     }
 
@@ -163,7 +163,7 @@ export function AuthorizedEncryptionFlow(config){
                 if(b.signature == null) throw new TideError({
                     code: TideJsErrorCodes.VAL_INPUT_SHAPE,
                     displayMessage: "The data you are trying to decrypt is missing its authorization signature and cannot be decrypted. Please refresh and try again, or contact support if the problem persists.",
-                    source: "Flow/EncryptionFlows/AuthorizedEncryptionFlow.ts:163",
+                    source: "Flow/EncryptionFlows/AuthorizedEncryptionFlow.ts:AuthorizedEncryptionFlow",
                     details: [
                         {
                             displayMessage: "SerializedField.deserialize returned a record with no `signature` field",
