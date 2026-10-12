@@ -15,7 +15,7 @@
 // If not, see https://tide.org/licenses_tcoc2-0-0-en
 //
 
-import { AuthorizerPack, Bytes2Hex, GetValue, StringFromUint8Array, TryGetValue } from "../Cryptide/Serialization";
+import { AuthorizerPack, Bytes2Hex, bytesToBase64, GetValue, StringFromUint8Array, TryGetValue } from "../Cryptide/Serialization";
 import BaseTideRequest from "./BaseTideRequest";
 import { Policy, ApprovalType, ExecutionType } from "./Policy";
 import { Serialization } from "../Cryptide/index";
@@ -366,38 +366,80 @@ class TestInitSignRequestBuilder extends HumanReadableModelBuilder {
     }
 }
 
-class ServerCertSignRequestBuilder extends HumanReadableModelBuilder {
-    _name = "ServerCert";
+class ResourceIdentitySignRequestBuilder extends HumanReadableModelBuilder {
+    _name = "ResourceIdentity";
     _version = "1";
-    _humanReadableName = "Server Certificate";
     get _id() { return this._name + ":" + this._version; }
+    _realm: any; // realm_config attestation payload
+    _realmCsr: Uint8Array | undefined;
+    _frontendUrl: string | undefined;
+    _resourceClient: any; // client_config attestation payload
+    _resourceCsr: Uint8Array | undefined;
     constructor(data, reqId) {
         super(data, reqId);
+        if (!data) return;
+        this.deserialize();
+
+        if (this._realmCsr && !this._resourceCsr) {
+            this._humanReadableName = `Realm mTLS Certificate for ${this._realm.name}`;
+        } else if (this._resourceCsr && !this._realmCsr) {
+            this._humanReadableName = `Resource mTLS Certificate for ${this._resourceClient.client_id}`;
+        } else {
+            this._humanReadableName = `mTLS Certificates for ${this._resourceClient.client_id} client of realm ${this._realm.name}`;
+        }
+    }
+    deserialize() {
+        // attestations are CBOR unit + 64 byte signature, decodeCbor ignores the trailing signature
+        this._realm = decodeCbor(GetValue(this._draft, 0)).payload;
+        const resourceInfo = GetValue(this._draft, 1); // [csr, client attestation, serial]
+        const realmInfo = GetValue(this._draft, 2); // [csr, serial, frontendUrl]
+
+        if (resourceInfo.length > 0) {
+            this._resourceCsr = GetValue(resourceInfo, 0);
+            this._resourceClient = decodeCbor(GetValue(resourceInfo, 1)).payload;
+        }
+        if (realmInfo.length > 0) {
+            this._realmCsr = GetValue(realmInfo, 0);
+            this._frontendUrl = StringFromUint8Array(GetValue(realmInfo, 2)) || this._realm.attributes.find(a => a.name == "frontendUrl")?.value;
+        }
     }
     getDetailsMap(): any {
         let summary: any = {};
 
-        // DynamicData is JSON bytes, parse as string
-        if (this.request && this.request.dyanmicData && this.request.dyanmicData.length > 0) {
-            try {
-                const jsonStr = new TextDecoder().decode(this.request.dyanmicData);
-                const parsed = JSON.parse(jsonStr);
-                if (parsed.realm) summary["Realm"] = parsed.realm;
-                if (parsed.clientId) summary["Client ID"] = parsed.clientId;
-                if (parsed.instanceId) summary["Instance ID"] = parsed.instanceId;
-                if (parsed.spiffeId) summary["SPIFFE ID"] = parsed.spiffeId;
-            } catch { /* DynamicData not parseable as JSON */ }
+        if (this._realmCsr) {
+            summary["Realm Name"] = this._realm.name;
+            summary["Realm SPKI Key"] = bytesToBase64(csrKeys(this._realmCsr).spki);
+            if (this._frontendUrl) summary["Realm Frontend URL"] = this._frontendUrl;
         }
-
+        if (this._resourceCsr) {
+            const keys = csrKeys(this._resourceCsr);
+            summary["Resource Client ID"] = this._resourceClient.client_id;
+            summary["Resource SPKI Key"] = bytesToBase64(keys.spki);
+            if (keys.tideKey) summary["Resource Tide Key"] = bytesToBase64(keys.tideKey);
+        }
         return summary;
     }
-    getRequestDataJson() {
-        let data: any = {};
-        if (this._draft && this._draft.length > 0) {
-            data["TBS Certificate (DER)"] = Bytes2Hex(this._draft);
+}
+
+// Pulls the subject public key (SPKI) and the subjectAltPublicKeyInfo extension (2.5.29.72 - the tide key, if requested) out of a DER PKCS#10 CSR
+function csrKeys(csr: Uint8Array) {
+    const tlv = (pos: number) => { // content [start, end) of the DER element at pos
+        let len = csr[pos + 1], start = pos + 2;
+        if (len & 0x80) { const n = len & 0x7f; len = 0; for (let i = 0; i < n; i++) len = len * 256 + csr[start++]; }
+        return { start, end: start + len };
+    };
+    const info = tlv(tlv(0).start); // CertificationRequest -> CertificationRequestInfo
+    const subject = tlv(tlv(info.start).end); // skip version
+    const spkiEnd = tlv(subject.end).end;
+    let tideKey: Uint8Array | undefined;
+    for (let i = spkiEnd; i < info.end - 5 && !tideKey; i++) {
+        if (csr[i] == 0x06 && csr[i + 1] == 0x03 && csr[i + 2] == 0x55 && csr[i + 3] == 0x1d && csr[i + 4] == 0x48) {
+            let v = tlv(i + 5);
+            if (csr[i + 5] == 0x01) v = tlv(v.end); // skip critical flag
+            tideKey = csr.subarray(v.start, v.end);
         }
-        return data;
     }
+    return { spki: csr.subarray(subject.end, spkiEnd), tideKey };
 }
 
 // ---------------------------------------------------------------------------
@@ -1181,6 +1223,6 @@ const modelBuildersMap = {
     [new HederaSignRequestBuilder(null as any, null as any)._id]: HederaSignRequestBuilder,
     [new PolicyEnabledEncryptionRequestBuilder(null as any, null as any)._id]: PolicyEnabledEncryptionRequestBuilder,
     [new PolicyEnabledDecryptionRequestBuilder(null as any, null as any)._id]: PolicyEnabledDecryptionRequestBuilder,
-    [new ServerCertSignRequestBuilder(null as any, null as any)._id]: ServerCertSignRequestBuilder,
+    [new ResourceIdentitySignRequestBuilder(null as any, null as any)._id]: ResourceIdentitySignRequestBuilder,
     [new AttestationUnitSignRequestBuilder(null as any, null as any)._id]: AttestationUnitSignRequestBuilder,
 }
