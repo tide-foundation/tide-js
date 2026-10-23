@@ -6,7 +6,7 @@
 //   node dist/sim/cli.js checklist --run <runId>
 
 import "../protocol/undici-setup.js";
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resolveTarget, assertAllowedUrl, CALLBACK_URL, OIDC_CLIENT_ID, type Target } from "./targets.js";
 import { parseRate, parseDuration, fmtRate, fmtDuration, newRunId, utcStamp, sleep } from "./util.js";
@@ -21,7 +21,25 @@ import { setupOnce } from "./scenarios/setup.js";
 import { prepareRealms, type RealmsFile } from "./scenarios/prepare.js";
 import { BrowserHost, RealmPool, type PoolRealm, LoginUserPool, RefreshStore, makeSignupOp, makeLoginOp, makeRefreshOp, newRunPassword } from "./scenarios/browser.js";
 import { NodeCmkClient } from "../protocol/nodeCmkClient.js";
-import { resolveBrowserOpts, AZURE_PRICE_PER_MIN, type BrowserOpts } from "./remote.js";
+import { resolveBrowserOpts, AZURE_PRICE_PER_MIN, type BrowserOpts, type BrowserUsage } from "./remote.js";
+import { RunCollector, collectAll, readMeta, readSnaps, type ServerMeta } from "./collect/index.js";
+import { STAGING_COLLECT, inventory, type CollectConfig, type StepWindow, type StepServer } from "./collect/collectors.js";
+import { azLoggedIn } from "./collect/az.js";
+import { dirname as pathDirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HARNESS_DIR = pathDirname(pathDirname(pathDirname(fileURLToPath(import.meta.url))));
+
+// --collect auto|off. auto collects on staging when az is logged in; never on a local target.
+async function collectConfig(o: Opts, target: string, log: (s: string) => void): Promise<CollectConfig | null> {
+  const mode = str(o, "collect", "auto");
+  if (mode !== "auto" && mode !== "off") throw new Error("--collect must be auto or off");
+  if (mode === "off") return null;
+  if (target !== "staging") { log("collect: server collection is staging-only; skipped for this target"); return null; }
+  if (!(await azLoggedIn())) { log("collect: az is not logged in; server collection skipped (az login, or managed identity on the VM)"); return null; }
+  const stub = str(o, "stripe-stub-url");
+  return { ...STAGING_COLLECT, stubUrl: stub === "off" ? null : stub ?? STAGING_COLLECT.stubUrl };
+}
 
 function describeBrowsers(b: BrowserOpts, worstMs: number): string {
   if (b.endpoint === "local") return "local Chromium";
@@ -78,7 +96,7 @@ const KNOWN = new Set([
   "break-error-rate", "knee-p95-mult", "knee-throughput", "client-cpu", "client-queue-wait", "realms", "realms-from",
   "seats-per-realm", "users-from", "users-file", "realm", "refresh-ratio", "engine", "headless", "email-domain",
   "setup-retries", "setup-retry-delay", "watch-restarts", "watch-prom", "prom-error-threshold", "ork-apps",
-  "confirm-stripe-test", "incident-ratios", "home-ork", "nav-timeout", "no-token", "count", "no-browser-check", "run", "help", "basic", "tide-full", "expect-eddsa", "browser-endpoint", "remote-browsers", "contexts-per-browser",
+  "confirm-stripe-test", "incident-ratios", "home-ork", "nav-timeout", "no-token", "count", "no-browser-check", "run", "help", "basic", "tide-full", "expect-eddsa", "browser-endpoint", "remote-browsers", "contexts-per-browser", "collect", "collect-wait", "stripe-stub-url", "recollect",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -364,10 +382,16 @@ async function cmdRun(o: Opts): Promise<number> {
     }
   }
 
+  const ccfg = await collectConfig(o, c.target.name, log);
+  const collector = ccfg ? new RunCollector(ccfg, dir, HARNESS_DIR, log) : null;
+  if (collector) await collector.start();
+
   engine = new Engine({
     runId: c.runId, scenario, steps, stepMs, cooldownMs, drainMs, arrival: str(o, "arrival", "poisson") === "uniform" ? "uniform" : "poisson",
     thresholds: th, events, stepsLog, monitor, log,
     secrets: () => [password, ...loginPool.passwords(), ...(admin?.secrets() ?? [])],
+    onStepStart: async (n) => { await collector?.snap(n, "start"); },
+    onStepEnd: async (n) => { await collector?.snap(n, "end"); },
   }, ops);
 
   const watch = new ServerWatch({
@@ -402,11 +426,22 @@ async function cmdRun(o: Opts): Promise<number> {
   }
   log(`############## RUN ${c.runId} END ${utcStamp()} ##############`);
 
+  let server: StepServer[] = [];
+  if (collector) {
+    const windows: StepWindow[] = result.steps.map((st) => ({ step: st.step, kind: st.kind, startMs: st.startMs, endMs: st.endMs }));
+    try {
+      server = await collector.finish(windows, parseDuration(str(o, "collect-wait", "3m")!));
+    } catch (e) {
+      log(`collect: failed (${(e as Error).message}); re-pull with report --run ${c.runId} --recollect`);
+    }
+  }
+
   const rep = writeReport({
     dir, runId: c.runId, scenario, target: c.target.name, promJob: c.target.promJob,
     config: { steps: steps.length, stepMs, cooldownMs, startRate, factor, add, maxRate, browserPool, httpConc, opRatios, thresholds: th, engine: engineKind },
     result, manifest: manifest.data, watch: { restarts: watch.restartLog, prom: watch.promLog },
     browserUsage: host?.usage(),
+    server, serverMeta: collector?.meta ?? null,
   });
   console.log(`\nreport: ${rep.md}\nevents: ${join(dir, "events.jsonl")}\n`);
   console.log(cleanupChecklist(manifest.data, manifest.path));
@@ -457,6 +492,10 @@ async function cmdPrepare(o: Opts): Promise<number> {
   });
   const admin = new AdminClient(c.target.tcBase, creds);
   let file: RealmsFile;
+  const ccfg = await collectConfig(o, c.target.name, log);
+  const collector = ccfg ? new RunCollector(ccfg, dir, HARNESS_DIR, log) : null;
+  if (collector) { await collector.start(); await collector.snap(1, "start"); }
+  const t0 = Date.now();
   try {
     await host?.start();
     await admin.getToken();
@@ -474,6 +513,20 @@ async function cmdPrepare(o: Opts): Promise<number> {
     log(`remote browser-minutes: ${u.browserMinutes.toFixed(2)} (est. $${u.estCostUsd.toFixed(3)})`);
   }
   const ready = file.realms.filter((r) => r.ready).length;
+  const t1 = Date.now();
+  if (collector) {
+    await collector.snap(1, "end");
+    try {
+      const server = await collector.finish([{ step: 1, kind: "prepare", startMs: t0, endMs: t1 }], parseDuration(str(o, "collect-wait", "3m")!));
+      const rep = writeReport({
+        dir, runId: c.runId, scenario: "prepare-realms", target: c.target.name, promJob: c.target.promJob, config: { count, concurrency: conc },
+        result: { steps: [], abortReason: null, stopReason: null, baselineP95: {} }, manifest: manifest.data,
+        browserUsage: host?.usage(), server, serverMeta: collector.meta,
+        window: { start: new Date(t0).toISOString(), end: new Date(t1).toISOString() },
+      });
+      log(`report: ${rep.md}`);
+    } catch (e) { log(`collect: failed (${(e as Error).message}); re-pull with report --run ${c.runId} --recollect`); }
+  }
   const seatTotal = file.realms.filter((r) => r.ready).reduce((a, r) => a + r.seats, 0);
   log(`prepared ${ready}/${count} ready realm(s) = ${seatTotal} sign-up seats. Use: --realms-from ${c.runId}`);
   console.log(`\n${cleanupChecklist(manifest.data, manifest.path)}`);
@@ -484,7 +537,23 @@ async function cmdPrepare(o: Opts): Promise<number> {
 // report / checklist
 // ---------------------------------------------------------------------------
 
-function cmdReport(o: Opts, onlyChecklist: boolean): number {
+// Step windows for a run: steps.jsonl, or the prepare.log span for a prepare-realms run.
+function runWindows(dir: string): { windows: StepWindow[]; steps: StepSummaryLite[] } {
+  const stepsPath = join(dir, "steps.jsonl");
+  if (existsSync(stepsPath)) {
+    const steps = readFileSync(stepsPath, "utf8").split("\n").filter(Boolean).map((l: string) => JSON.parse(l) as StepSummaryLite);
+    return { steps, windows: steps.map((st) => ({ step: st.step, kind: st.kind, startMs: st.startMs, endMs: st.endMs })) };
+  }
+  const logPath = join(dir, "prepare.log");
+  if (existsSync(logPath)) {
+    const ts = readFileSync(logPath, "utf8").split("\n").map((l) => Date.parse(l.slice(0, 24))).filter((t) => Number.isFinite(t));
+    if (ts.length) return { steps: [], windows: [{ step: 1, kind: "prepare", startMs: Math.min(...ts) - 5_000, endMs: Math.max(...ts) + 5_000 }] };
+  }
+  throw new Error(`no steps.jsonl or prepare.log in ${dir}`);
+}
+type StepSummaryLite = import("./engine.js").StepSummary;
+
+async function cmdReport(o: Opts, onlyChecklist: boolean): Promise<number> {
   const id = str(o, "run");
   if (!id) throw new Error("--run <runId> is required");
   const dir = join(resolve(str(o, "out", "runs")!), id);
@@ -493,14 +562,29 @@ function cmdReport(o: Opts, onlyChecklist: boolean): number {
     console.log(cleanupChecklist(manifest, join(dir, "manifest.json")));
     return 0;
   }
-  const stepsPath = join(dir, "steps.jsonl");
-  if (!existsSync(stepsPath)) throw new Error(`no steps.jsonl in ${dir}`);
-  const steps = readFileSync(stepsPath, "utf8").split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
-  const prev = existsSync(join(dir, "summary.json")) ? readJson<{ abortReason: string | null; stopReason: string | null; baselineP95: Record<string, number>; scenario: string; target: string }>(join(dir, "summary.json")) : null;
+  const { steps, windows } = runWindows(dir);
+  const prev = existsSync(join(dir, "summary.json")) ? readJson<{ abortReason: string | null; stopReason: string | null; baselineP95: Record<string, number>; scenario: string; target: string; browser?: BrowserUsage | null }>(join(dir, "summary.json")) : null;
+  let meta: ServerMeta | null = readMeta(dir);
+  let server: StepServer[] = (await import("./collect/index.js")).readServer(dir);
+  if (flag(o, "recollect")) {
+    const log = makeLogger(join(dir, "collect.log"));
+    if (manifest.target !== "staging") throw new Error("--recollect needs a staging run (server data comes from Azure)");
+    const cfg = await collectConfig(o, "staging", log);
+    if (!cfg) throw new Error("server collection unavailable (az not logged in, or --collect off)");
+    if (meta?.config.stubUrl !== undefined && !str(o, "stripe-stub-url")) cfg.stubUrl = meta.config.stubUrl;
+    if (!meta?.start) {
+      // Older run without a start inventory: use the current one and say so.
+      const inv = await inventory(cfg, HARNESS_DIR);
+      meta = { collect: "auto", config: { rg: cfg.rg, pgName: cfg.pgName, promJob: cfg.promJob, stubUrl: cfg.stubUrl }, start: null, end: inv, notes: [`no inventory was taken during the run; app list and revisions are from recollect time ${inv.at}`] };
+      writeFileSync(join(dir, "server-meta.json"), JSON.stringify(meta, null, 2));
+    }
+    server = await collectAll(cfg, dir, meta.start ?? meta.end, windows, readSnaps(dir), log);
+  }
+  const w = windows.length ? { start: new Date(windows[0].startMs).toISOString(), end: new Date(windows[windows.length - 1].endMs).toISOString() } : undefined;
   const rep = writeReport({
-    dir, runId: id, scenario: prev?.scenario ?? "?", target: prev?.target ?? manifest.target, promJob: "sork-env/ork", config: {},
+    dir, runId: id, scenario: prev?.scenario ?? (steps.length ? "?" : "prepare-realms"), target: prev?.target ?? manifest.target, promJob: "sork-env/ork", config: {},
     result: { steps, abortReason: prev?.abortReason ?? null, stopReason: prev?.stopReason ?? null, baselineP95: prev?.baselineP95 ?? {} },
-    manifest,
+    manifest, browserUsage: prev?.browser ?? undefined, server, serverMeta: meta, window: w,
   });
   console.log(`report: ${rep.md}`);
   return 0;
@@ -510,7 +594,7 @@ const HELP = `staging incident simulator
 
   run --scenario setup|signup|login|incident --target staging|local [options]
   prepare-realms --count N --target staging|local [--seats-per-realm 5] [--concurrency 1]
-  report --run <runId>        rebuild summary.md from steps.jsonl
+  report --run <runId> [--recollect]   rebuild summary.md; --recollect re-pulls server data from Azure
   checklist --run <runId>     print the manual cleanup checklist
 
 Add --dry-run to any run or prepare-realms to print the plan without sending anything.

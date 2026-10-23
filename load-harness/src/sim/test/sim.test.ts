@@ -239,3 +239,78 @@ test("remote browser-minute accounting", async () => {
   assert.equal(u.estCostUsd, 0.042);
   assert.equal(usageOf("local", [], null).browserMinutes, 0);
 });
+
+test("redaction strips connection strings, keys and tokens", async () => {
+  const { redact, redactDeep } = await import("../collect/az.js");
+  const s = redact('Host=db;Password=hunter2;User=x sk_test_abc123 rk_live_zzz whsec_q1 "access_token":"abc" eyJaaaaaaaaaaaa.bbb.ccc');
+  for (const bad of ["hunter2", "abc123", "zzz", "q1", '"abc"', "eyJaaaaaaaaaaaa"]) assert.ok(!s.includes(bad), `leaked ${bad} in ${s}`);
+  assert.deepEqual(redactDeep({ a: ["Pwd=x;"] }), { a: ["Pwd=[REDACTED];"] });
+});
+
+test("stub delta flags passthrough beyond the price catalogue", async () => {
+  const { stubDelta } = await import("../collect/collectors.js");
+  const a = { decisions: { stubbed: 1, passthrough: 1 }, byRoute: { "stubbed POST /v1/customers": 1, "passthrough GET /v1/prices": 1 } };
+  const ok = stubDelta(a, { decisions: { stubbed: 3, passthrough: 2 }, byRoute: { "stubbed POST /v1/customers": 2, "stubbed POST /v1/subscriptions": 1, "passthrough GET /v1/prices": 2 } });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.decisions, { stubbed: 2, passthrough: 1 });
+  const bad = stubDelta(a, { decisions: {}, byRoute: { ...a.byRoute, "passthrough POST /v1/customers": 1 } });
+  assert.equal(bad.ok, false);
+  assert.deepEqual(bad.unexpectedPassthrough, { "passthrough POST /v1/customers": 1 });
+});
+
+function fakeStep(step: number, verdict: string, p95: number, opts: { cpu?: number; queue?: number; keygen?: number } = {}) {
+  return {
+    step, kind: "ramp", baseRate: step, startedAt: "", endedAt: "", startMs: step * 1000, endMs: step * 1000 + 500,
+    ops: [{ op: "signup", targetRate: 1, arrivals: 10, completed: 10, ok: 10, failed: 0, expected: 0, dropped: 0, late: 0, errorRate: 0, onTimeRatio: 1, okPerMin: 1,
+      p50: p95, p95, p99: p95, queueWaitP95: opts.queue ?? 0, codes: {}, signatures: {}, phaseP95: { enclave_load: 900, keygen_wait: opts.keygen ?? 1300 } }],
+    client: { cpuAvg: opts.cpu ?? 20, cpuMax: opts.cpu ?? 20, loopLagP95: 5, maxQueue: {}, poolBusyAvg: {} },
+    flags: { knee: false, break: false, clientBound: false, breakSignatures: [], reasons: [] },
+    verdict,
+  } as unknown as import("../engine.js").StepSummary;
+}
+
+function fakeServer(step: number, o: { sorkCpu?: number; submitP95?: number; sqlite?: number; pgConn?: number } = {}) {
+  return {
+    step, kind: "ramp", window: { start: "", end: "" },
+    apps: { sork1: { cpuPctAvg: 10, cpuPctMax: o.sorkCpu ?? 20, memPctAvg: 30, memPctMax: 30, cpuCoresMax: 0.1, limitCores: 0.5, replicasMax: 1, restarts: 0, requests: 10, respMsAvg: 10, respMsMax: 20 } },
+    pg: { cpuPctAvg: 10, cpuPctMax: 15, memPctMax: 60, activeConnMax: o.pgConn ?? 20, maxConnections: 100, connPctMax: o.pgConn ?? 20, iopsPctMax: 1, cpuCreditsMin: 200, connectionsFailed: 0 },
+    logs: { signatures: { sork3: { sqlite_locked: o.sqlite ?? 0, seat_cap: 2, error_lines: 0 } }, exec: [{ app: "sork1", op: "Master.SubmitUser", n: 10, p50: 20, p95: o.submitP95 ?? 40, max: 60 }], system: [] },
+    prom: null, stub: null, missing: [],
+  } as unknown as import("../collect/collectors.js").StepServer;
+}
+
+test("analysis: server crossing first gives server-bound with ranked evidence", async () => {
+  const { analyse } = await import("../collect/analysis.js");
+  const client = [fakeStep(1, "ok", 5000), fakeStep(2, "ok", 6000), fakeStep(3, "knee", 12000, { keygen: 4000 })];
+  const server = [fakeServer(1), fakeServer(2, { submitP95: 400 }), fakeServer(3, { submitP95: 900, sqlite: 3 })];
+  const inv = { at: "", apps: [{ name: "sork1", role: "master ORK" }, { name: "sork3", role: "ORK + payer" }], pg: null, workspaces: [], harnessCommit: null, missing: [] } as unknown as import("../collect/collectors.js").Inventory;
+  const [a] = analyse(client, server, inv);
+  assert.equal(a.step, 3);
+  assert.match(a.verdict, /^server-bound/);
+  assert.equal(a.first?.component, "master ORK SubmitUser (sork1)");
+  assert.equal(a.first?.step, 2);
+  assert.ok(a.ranked.some((s) => s.component === "SQLite store (sork3)" && s.value === 3));
+  assert.ok(!a.ranked.some((s) => s.metric === "log seat_cap"), "seat cap is expected, not a suspect");
+  assert.ok(a.ranked.some((s) => s.component.startsWith("phase signup.keygen_wait")));
+  assert.match(a.slowestOrk ?? "", /sork1 \(Master.SubmitUser p95 900ms/);
+  assert.match(a.slowestPhase ?? "", /keygen_wait p95 4000ms \(3.1x baseline 1300ms\)/);
+});
+
+test("analysis: client CPU crossing first gives client-bound", async () => {
+  const { analyse } = await import("../collect/analysis.js");
+  const client = [fakeStep(1, "ok", 5000), fakeStep(2, "client-bound", 9000, { cpu: 92 })];
+  const server = [fakeServer(1), fakeServer(2, { sorkCpu: 85 })];
+  const [a] = analyse(client, server, null);
+  assert.match(a.verdict, /^mixed|^client-bound/);
+  const client2 = [fakeStep(1, "ok", 5000), fakeStep(2, "knee", 9000, { cpu: 95 }), fakeStep(3, "break", 9000, { cpu: 95 })];
+  const server2 = [fakeServer(1), fakeServer(2), fakeServer(3, { pgConn: 90 })];
+  const res = analyse(client2, server2, null);
+  assert.match(res[0].verdict, /^client-bound/);
+  assert.ok(res[1].ranked.some((s) => s.component === "Postgres dauthme-staging" && s.metric === "connections % of max"));
+});
+
+test("analysis: nothing crossed says so", async () => {
+  const { analyse } = await import("../collect/analysis.js");
+  const [a] = analyse([fakeStep(1, "ok", 5000)], [fakeServer(1)], null);
+  assert.match(a.verdict, /no threshold crossed/);
+});

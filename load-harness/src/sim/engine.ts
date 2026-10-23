@@ -285,6 +285,9 @@ export interface EngineOpts {
   monitor: ClientMonitor;
   log: (s: string) => void;
   secrets?: () => string[];
+  // Best-effort hooks around each step (Stripe stub snapshots). Errors are swallowed.
+  onStepStart?: (step: number) => Promise<void>;
+  onStepEnd?: (step: number) => Promise<void>;
 }
 
 export interface EngineResult {
@@ -391,6 +394,7 @@ export class Engine {
   }
 
   private async runStep(step: PlannedStep): Promise<StepSummary> {
+    await this.o.onStepStart?.(step.index).catch(() => undefined);
     const rows: EventRow[] = [];
     const startMs = Date.now();
     const stepEnd = startMs + this.o.stepMs;
@@ -423,6 +427,7 @@ export class Engine {
     if (!drained) this.o.log(`step ${step.index}: drain timeout, ${inflight.length} arrivals, some still running`);
     const endMs = Date.now();
     this.o.log(`STEP ${step.index} END ${utcStamp()}`);
+    await this.o.onStepEnd?.(step.index).catch(() => undefined);
 
     const ops = this.ops.map((op) => summariseOp(rows, op.name, step.baseRate * op.ratio, this.o.stepMs));
     const win = this.o.monitor.window(startMs, endMs);

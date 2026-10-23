@@ -7,6 +7,10 @@ import type { Manifest } from "./sink.js";
 import { fmtRate } from "./util.js";
 import { SIGNATURES } from "./signatures.js";
 import { AZURE_PRICE_PER_MIN, type BrowserUsage } from "./remote.js";
+import type { StepServer } from "./collect/collectors.js";
+import type { ServerMeta } from "./collect/index.js";
+import { analyse, analysisMarkdown } from "./collect/analysis.js";
+import { metadataMarkdown, phaseMarkdown, serverMarkdown } from "./collect/render.js";
 
 export function kql(startIso: string, endIso: string): string {
   return [
@@ -125,6 +129,9 @@ export interface ReportInput {
   manifest: Manifest;
   watch?: { restarts: unknown; prom: unknown };
   browserUsage?: BrowserUsage;
+  server?: StepServer[];
+  serverMeta?: ServerMeta | null;
+  window?: { start: string; end: string };   // for runs without steps (prepare-realms)
 }
 
 export function browserSection(u: BrowserUsage | undefined): string[] {
@@ -140,8 +147,8 @@ export function browserSection(u: BrowserUsage | undefined): string[] {
 
 export function writeReport(r: ReportInput): { json: string; md: string } {
   const steps = r.result.steps;
-  const start = steps[0]?.startedAt ?? new Date().toISOString();
-  const end = steps[steps.length - 1]?.endedAt ?? new Date().toISOString();
+  const start = steps[0]?.startedAt ?? r.window?.start ?? new Date().toISOString();
+  const end = steps[steps.length - 1]?.endedAt ?? r.window?.end ?? new Date().toISOString();
   const pad = (iso: string, ms: number) => new Date(new Date(iso).getTime() + ms).toISOString();
   const winStart = pad(start, -60_000);
   const winEnd = pad(end, 60_000);
@@ -153,12 +160,18 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
     for (const [k, v] of Object.entries(o.codes)) codeTotals[k] = (codeTotals[k] ?? 0) + v;
   }
   const algs = algCounts(join(r.dir, "events.jsonl"));
+  const server = r.server ?? [];
+  const inv = r.serverMeta?.start ?? r.serverMeta?.end ?? null;
+  const analysis = analyse(steps, server, inv);
   const localSigned = Object.values(algs).some((m) => Object.keys(m).some((a) => a !== "EdDSA"));
   const summary = {
     algs,
     runId: r.runId, scenario: r.scenario, target: r.target, window: { start: winStart, end: winEnd },
     abortReason: r.result.abortReason, stopReason: r.result.stopReason, baselineP95: r.result.baselineP95,
     browser: r.browserUsage ?? null,
+    analysis,
+    serverCollected: server.length > 0,
+    serverMissing: server.flatMap((x) => x.missing.map((m) => `step ${x.step}: ${m}`)),
     ceilings: ceil, signatures: sigTotals, codes: codeTotals, config: r.config, steps, watch: r.watch ?? null,
   };
   const json = join(r.dir, "summary.json");
@@ -180,6 +193,7 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
     ``,
     `A client-bound step means the load machine, not staging, was the limit at that rate.`,
     ``,
+    ...analysisMarkdown(analysis),
     `## Browsers`,
     ``,
     ...browserSection(r.browserUsage),
@@ -193,6 +207,7 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
     ``,
     stepTable(steps),
     ``,
+    ...phaseMarkdown(steps),
     `## Step reasons`,
     ``,
     ...steps.map((s) => `- step ${s.step} (${s.startedAt} to ${s.endedAt}): ${s.verdict}${s.flags.reasons.length ? ": " + s.flags.reasons.join("; ") : ""}`),
@@ -205,6 +220,8 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
     ``,
     ...(Object.keys(codeTotals).length ? Object.entries(codeTotals).map(([k, v]) => `- ${k}: ${v}`) : ["- none"]),
     ``,
+    ...serverMarkdown(server, inv),
+    ...metadataMarkdown(r.serverMeta ?? null),
     `## Server side, for this window`,
     ``,
     "```kusto",

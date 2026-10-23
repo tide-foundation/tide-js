@@ -378,6 +378,60 @@ node dist/sim/cli.js prepare-realms --count 5 --target staging --confirm-stripe-
   above `--prom-error-threshold` (default 0.5/s) with `--watch-prom`; any browser request to a
   production host; Ctrl-C. Expected outcomes (seat cap, empty pools) never count as errors.
 
+### Server evidence and bottleneck analysis
+
+With `--collect auto` (the default; it switches itself off when `az` is not logged in, and on
+`--target local`), every staging run also pulls server-side evidence for each step window, all
+read-only through the Azure CLI:
+
+| Source | What is collected per step |
+|---|---|
+| Container Apps metrics (tidecloak-staging, sork1..5, stripe-stub) | CPU avg/max % of limit (and cores against the configured limit), memory max %, replicas, restart increase, requests, response time |
+| Postgres `dauthme-staging` | CPU, memory, active connections vs `max_connections`, disk IOPS %, Burstable CPU credits, failed connections |
+| Log Analytics (sork-env and TideCloak workspaces) | per-app counts of SQLite Error 5/11, could not find uid, statement timeout/57014, VENDOR_ALREADY_CREATED, seat cap, VENDOR_KEYGEN_FAILED, Npgsql timeouts, unhandled exceptions, error lines; ORK "Execution time for <op>" p50/p95/max per op per app; container restarts, terminations and exit codes |
+| Prometheus (`ORK-prometheus`, job `sork-env/ork`) | outbound calls by target and status, outbound p95/avg (payer, master, peer ORKs), protocol p95 by op, sync semaphore wait/waiters, throttle rejections, thread-pool queue. The window is at least 5 minutes ending at the step end |
+| Stripe stub | `/__stub/stats` at the start and end of each step: delta per route, plus a check that only `GET /v1/prices` passed through |
+| Run metadata | harness commit, image tag and revision of every app at run start and end (a change is flagged as a mid-run deploy or restart), stub on/off per payer, browser endpoint and remote browser-minutes |
+
+Azure metrics land 1 to 3 minutes late, so after the last step the run waits `--collect-wait`
+(default 3m) before pulling. Press Ctrl-C twice to leave early, then re-pull later:
+
+```bash
+node dist/sim/cli.js report --run <runId> --recollect     # works for prepare-realms runs too
+```
+
+`summary.md` then has:
+- **Bottleneck analysis (heuristic):** for the knee and break steps (or the last step), which
+  metric crossed its threshold first and which component it belongs to, a ranked suspect list
+  with the raw numbers, the slowest ORK and the slowest client phase, and a client-bound vs
+  server-bound verdict.
+  - Rules: CPU or memory above 80% of limit; p95 above 2x the first step; any failure signature;
+    Postgres connections above 80% of max; IOPS above 80%; Burstable credits below 30; client CPU
+    above 80% or queue wait above 2 s. Expected signatures (seat cap) are not suspects.
+- **Client phase p95 per step**, so it is visible which phase grows.
+- **Server evidence per step**, with the tables above.
+- **Run metadata**.
+
+Raw data is kept in `server-metrics.jsonl` (one row per step), `server-meta.json` (inventories)
+and `stub-snapshots.jsonl`. A failed query becomes a "missing data" note; it never fails the run.
+Anything in query output that looks like a secret (`Password=`, `sk_`/`rk_`/`whsec_` keys, tokens)
+is redacted.
+
+Options:
+- `--collect auto|off`;
+- `--collect-wait 3m`;
+- `--stripe-stub-url <url>|off` (default: the staging stub).
+
+**Azure roles for the identity that runs it** (your user, or the load VM's managed identity), all
+read-only:
+
+| Role | Scope |
+|---|---|
+| Reader | resource group `Tide-Staging` (Container Apps, environments, Postgres config) |
+| Monitoring Reader | resource group `Tide-Staging` (Azure Monitor metrics) |
+| Log Analytics Reader | workspace `workspace-idetagingzkBm` (RG `Tide-Staging`, sork-env logs) and `tidecloaklogs` (RG `Tide-Support`, TideCloak logs) |
+| Monitoring Data Reader | Azure Monitor workspace `ORK-prometheus` (RG `Tide-Network`), for the Prometheus queries; optional |
+
 ### Output (`runs/<runId>/`, gitignored)
 
 - `events.jsonl`: one row per operation: op, step, target rate, ok, code, failure signatures,
