@@ -21,6 +21,15 @@ import { setupOnce } from "./scenarios/setup.js";
 import { prepareRealms, type RealmsFile } from "./scenarios/prepare.js";
 import { BrowserHost, RealmPool, type PoolRealm, LoginUserPool, RefreshStore, makeSignupOp, makeLoginOp, makeRefreshOp, newRunPassword } from "./scenarios/browser.js";
 import { NodeCmkClient } from "../protocol/nodeCmkClient.js";
+import { resolveBrowserOpts, AZURE_PRICE_PER_MIN, type BrowserOpts } from "./remote.js";
+
+function describeBrowsers(b: BrowserOpts, worstMs: number): string {
+  if (b.endpoint === "local") return "local Chromium";
+  const maxMin = (b.remoteBrowsers * worstMs) / 60_000;
+  return `Azure Playwright workspace, ${b.remoteBrowsers} remote browser(s) x ${b.contextsPerBrowser} contexts, ` +
+    `open for the whole run: worst case ~${maxMin.toFixed(0)} browser-minutes (~$${(maxMin * AZURE_PRICE_PER_MIN).toFixed(2)} at $${AZURE_PRICE_PER_MIN}/min); ` +
+    `PLAYWRIGHT_SERVICE_URL ${process.env.PLAYWRIGHT_SERVICE_URL ? "set" : "NOT set"}`;
+}
 
 // ---------------------------------------------------------------------------
 // Args
@@ -69,7 +78,7 @@ const KNOWN = new Set([
   "break-error-rate", "knee-p95-mult", "knee-throughput", "client-cpu", "client-queue-wait", "realms", "realms-from",
   "seats-per-realm", "users-from", "users-file", "realm", "refresh-ratio", "engine", "headless", "email-domain",
   "setup-retries", "setup-retry-delay", "watch-restarts", "watch-prom", "prom-error-threshold", "ork-apps",
-  "confirm-stripe-test", "incident-ratios", "home-ork", "nav-timeout", "no-token", "count", "no-browser-check", "run", "help", "basic", "tide-full", "expect-eddsa",
+  "confirm-stripe-test", "incident-ratios", "home-ork", "nav-timeout", "no-token", "count", "no-browser-check", "run", "help", "basic", "tide-full", "expect-eddsa", "browser-endpoint", "remote-browsers", "contexts-per-browser",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -86,6 +95,11 @@ interface Common {
   dryRun: boolean;
   emailDomain: string;
   headless: boolean;
+  browser: BrowserOpts;
+}
+
+function browserOpts(o: Opts, target: string): BrowserOpts {
+  return resolveBrowserOpts(str(o, "browser-endpoint"), target, num(o, "remote-browsers", 4), num(o, "contexts-per-browser", 5));
 }
 
 function common(o: Opts, prefix: string): Common {
@@ -99,6 +113,7 @@ function common(o: Opts, prefix: string): Common {
     dryRun: flag(o, "dry-run"),
     emailDomain: str(o, "email-domain", "invalid.tide.test")!,
     headless: str(o, "headless", "true") !== "false",
+    browser: browserOpts(o, target.name),
   };
 }
 
@@ -220,7 +235,9 @@ async function cmdRun(o: Opts): Promise<number> {
   const maxRate = str(o, "max-rate") ? parseRate(str(o, "max-rate")!) : startRate * Math.pow(factor, 7);
   const maxSteps = num(o, "max-steps", 8);
   const steps = planSteps({ startRate, factor, add, maxRate, maxSteps, stepMs, cooldownMs });
-  const browserPool = num(o, "browser-pool", 10);
+  // With remote browsers the pool is spread across them: N browsers x M contexts.
+  const browserPool = c.browser.endpoint === "azure" ? c.browser.remoteBrowsers * c.browser.contextsPerBrowser : num(o, "browser-pool", 10);
+  if (c.browser.endpoint === "azure" && str(o, "browser-pool")) console.log("  note: --browser-pool is ignored with --browser-endpoint azure (pool = remote browsers x contexts per browser)");
   const httpConc = num(o, "concurrency", 4);
   const ratios = scenario === "incident" ? parseRatios(str(o, "incident-ratios", "1:10:0.05")!) : null;
   const refreshRatio = num(o, "refresh-ratio", 0);
@@ -247,6 +264,7 @@ async function cmdRun(o: Opts): Promise<number> {
   const seats = realmInfo?.seats ?? num(o, "seats-per-realm", 5);
   console.log(`PLAN ${scenario} run=${c.runId} target=${c.target.name} tc=${c.target.tcBase}`);
   console.log(`  engine=${needsBrowser ? `browser (pool ${browserPool} contexts, headless=${c.headless})` : scenario === "setup" ? "http" : engineKind} http-concurrency=${httpConc} arrivals=${str(o, "arrival", "poisson")}`);
+  if (needsBrowser) console.log(`  browsers: ${describeBrowsers(c.browser, steps.length * (stepMs + cooldownMs) + drainMs)}`);
   console.log(`  client=${OIDC_CLIENT_ID} redirect=${CALLBACK_URL} (intercepted in-process)`);
   console.log(`  steps: ${steps.length} x ${fmtDuration(stepMs)} + ${fmtDuration(cooldownMs)} cooldown, factor ${add > 0 ? "+" + fmtRate(add) : "x" + factor}, worst case ${fmtDuration(steps.length * (stepMs + cooldownMs))} plus one confirm step`);
   let cumSignups = 0;
@@ -295,7 +313,10 @@ async function cmdRun(o: Opts): Promise<number> {
   const httpSlots = new Pool("http", httpConc);
   const monitor = new ClientMonitor([browserSlots, httpSlots]);
   let engine: Engine | null = null;
-  const host = needsBrowser ? new BrowserHost(c.headless, c.target.name, (h) => engine?.abort(`browser tried to reach production host ${h}`), log) : null;
+  const host = needsBrowser ? new BrowserHost({
+    headless: c.headless, target: c.target.name, log, onProdHit: (h) => engine?.abort(`browser tried to reach production host ${h}`),
+    endpoint: c.browser.endpoint, remoteBrowsers: c.browser.remoteBrowsers, contextsPerBrowser: c.browser.contextsPerBrowser,
+  }) : null;
   const admin = creds ? new AdminClient(c.target.tcBase, creds) : null;
   const loginPool = new LoginUserPool();
   userInfo?.users.forEach((u) => loginPool.add(u));
@@ -359,7 +380,8 @@ async function cmdRun(o: Opts): Promise<number> {
   process.on("SIGINT", () => {
     sigints++;
     if (sigints === 1) engine?.abort("SIGINT from operator (Ctrl-C again to exit without a report)");
-    else process.exit(130);
+    // Still close the browsers first so remote sessions stop billing.
+    else void Promise.race([host?.stop() ?? Promise.resolve(), sleep(5000)]).then(() => process.exit(130));
   });
 
   log(`############## RUN ${c.runId} START ${utcStamp()} ##############`);
@@ -384,6 +406,7 @@ async function cmdRun(o: Opts): Promise<number> {
     dir, runId: c.runId, scenario, target: c.target.name, promJob: c.target.promJob,
     config: { steps: steps.length, stepMs, cooldownMs, startRate, factor, add, maxRate, browserPool, httpConc, opRatios, thresholds: th, engine: engineKind },
     result, manifest: manifest.data, watch: { restarts: watch.restartLog, prom: watch.promLog },
+    browserUsage: host?.usage(),
   });
   console.log(`\nreport: ${rep.md}\nevents: ${join(dir, "events.jsonl")}\n`);
   console.log(cleanupChecklist(manifest.data, manifest.path));
@@ -411,6 +434,7 @@ async function cmdPrepare(o: Opts): Promise<number> {
     ? `    iga.attestor=tide, link-tide-account-action, client ${OIDC_CLIENT_ID}, sign IdP settings, toggle-iga, approve pending ADOPT CRs (firstAdmin), sign IdP settings`
     : `    client ${OIDC_CLIENT_ID}, sign IdP settings`);
   console.log(`  ready check: ${tideFull ? "IGA on + attestor tide + EdDSA, sign-up screen renders, probe sign-up + login both mint EdDSA tokens" : flag(o, "no-browser-check") ? "licence active (sign-up screen check skipped)" : "licence active + Tide sign-up screen renders"}`);
+  if (!flag(o, "no-browser-check")) console.log(`  browsers: ${describeBrowsers(c.browser, count * 120_000)}`);
   console.log(`  this is workspace-setup load on the target; it is logged separately and not part of any S1 measurement`);
   console.log(`  output: ${join(c.outBase, c.runId)}/realms.json + manifest.json`);
   if (c.dryRun) {
@@ -427,7 +451,10 @@ async function cmdPrepare(o: Opts): Promise<number> {
   });
   const secret = new UsersSecret(dir);
   let prodHit: string | null = null;
-  const host = flag(o, "no-browser-check") ? null : new BrowserHost(c.headless, c.target.name, (h) => { prodHit = h; }, log);
+  const host = flag(o, "no-browser-check") ? null : new BrowserHost({
+    headless: c.headless, target: c.target.name, log, onProdHit: (h) => { prodHit = h; },
+    endpoint: c.browser.endpoint, remoteBrowsers: c.browser.remoteBrowsers, contextsPerBrowser: c.browser.contextsPerBrowser,
+  });
   const admin = new AdminClient(c.target.tcBase, creds);
   let file: RealmsFile;
   try {
@@ -442,6 +469,10 @@ async function cmdPrepare(o: Opts): Promise<number> {
     await host?.stop();
   }
   if (prodHit) log(`WARNING: a production host (${prodHit}) was requested and blocked`);
+  if (host && host.endpoint === "azure") {
+    const u = host.usage();
+    log(`remote browser-minutes: ${u.browserMinutes.toFixed(2)} (est. $${u.estCostUsd.toFixed(3)})`);
+  }
   const ready = file.realms.filter((r) => r.ready).length;
   const seatTotal = file.realms.filter((r) => r.ready).reduce((a, r) => a + r.seats, 0);
   log(`prepared ${ready}/${count} ready realm(s) = ${seatTotal} sign-up seats. Use: --realms-from ${c.runId}`);

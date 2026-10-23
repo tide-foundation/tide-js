@@ -6,6 +6,7 @@ import type { EngineResult, StepSummary } from "./engine.js";
 import type { Manifest } from "./sink.js";
 import { fmtRate } from "./util.js";
 import { SIGNATURES } from "./signatures.js";
+import { AZURE_PRICE_PER_MIN, type BrowserUsage } from "./remote.js";
 
 export function kql(startIso: string, endIso: string): string {
   return [
@@ -123,6 +124,18 @@ export interface ReportInput {
   result: EngineResult;
   manifest: Manifest;
   watch?: { restarts: unknown; prom: unknown };
+  browserUsage?: BrowserUsage;
+}
+
+export function browserSection(u: BrowserUsage | undefined): string[] {
+  if (!u) return ["- no browsers used"];
+  if (u.endpoint === "local") return ["- endpoint: local Chromium"];
+  return [
+    `- endpoint: Azure Playwright workspace`,
+    `- remote browsers: ${u.remoteBrowsers} (${u.contextsPerBrowser ?? "-"} contexts each)`,
+    `- remote browser-minutes: ${u.browserMinutes.toFixed(2)} (est. $${u.estCostUsd.toFixed(3)} at $${AZURE_PRICE_PER_MIN}/min)`,
+    ...u.sessions.map((s) => `- browser ${s.index}: ${s.error ? "connect FAILED: " + s.error : `connect ${s.connectMs}ms, open ${s.openedAt !== null ? (((s.closedAt ?? Date.now()) - s.openedAt) / 60_000).toFixed(2) : "0"} min`}`),
+  ];
 }
 
 export function writeReport(r: ReportInput): { json: string; md: string } {
@@ -145,6 +158,7 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
     algs,
     runId: r.runId, scenario: r.scenario, target: r.target, window: { start: winStart, end: winEnd },
     abortReason: r.result.abortReason, stopReason: r.result.stopReason, baselineP95: r.result.baselineP95,
+    browser: r.browserUsage ?? null,
     ceilings: ceil, signatures: sigTotals, codes: codeTotals, config: r.config, steps, watch: r.watch ?? null,
   };
   const json = join(r.dir, "summary.json");
@@ -165,6 +179,10 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
     ...ceil.map((c) => `| ${c.op} | ${c.lastOk !== null ? fmtRate(c.lastOk) : "-"} | ${c.knee !== null ? fmtRate(c.knee) : "-"} | ${c.brk !== null ? fmtRate(c.brk) : "-"} | ${c.clientBound !== null ? fmtRate(c.clientBound) : "-"} |`),
     ``,
     `A client-bound step means the load machine, not staging, was the limit at that rate.`,
+    ``,
+    `## Browsers`,
+    ``,
+    ...browserSection(r.browserUsage),
     ``,
     `## Token signing`,
     ``,

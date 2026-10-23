@@ -212,7 +212,7 @@ The malformed-request crash repro is deliberately not included.
 ```bash
 cd tide-js && npm ci && npm run build          # parent dist first (globalThis.crypto trap)
 cd load-harness && npm install && npm run build
-npx playwright install chromium                 # once per machine
+npx playwright install chromium                 # once per machine, and again after a Playwright upgrade
 npm test                                        # unit tests, no network
 ```
 
@@ -311,6 +311,52 @@ Only realms that pass every step are listed as ready. Per-step timings and failu
 `users.secret.json`. If one of their sign-up, login or refresh tokens comes back RS256, the
 operation fails with `NOT_TIDE_SIGNED`, which counts as a break signature. For your own realms or
 users files, add `--expect-eddsa` to apply the same check.
+
+### Cloud browsers (Azure Playwright Workspaces)
+
+`--browser-endpoint azure` runs the browser contexts in the `Tide-loadtest` workspace (RG
+`Tide-Staging`, australiaeast) instead of on the load machine. Local browsers stay the default.
+
+- **Auth:** Microsoft Entra ID only (the workspace has local auth disabled), through
+  `DefaultAzureCredential`: `az login` on a dev machine, the managed identity on the load VM. The
+  identity needs data-plane access to the workspace. Contributor inherited from the resource group
+  worked for this machine's user. Credentials and tokens are never printed.
+- **Endpoint:** `PLAYWRIGHT_SERVICE_URL` is the workspace dataplane URI with `https://` swapped
+  for `wss://` and `/browsers` appended:
+  `wss://australiaeast.api.playwright.microsoft.com/playwrightworkspaces/021c8a38-318d-4f26-9754-e7406a8870f1/browsers`.
+- **Pool:** `--remote-browsers N` (default 4) x `--contexts-per-browser M` (default 5). The browser
+  pool becomes N x M, and `--browser-pool` is ignored. Each operation gets a fresh context on the
+  least-busy remote browser.
+- **Billing:** a remote browser is billed per minute while connected ($0.021/min, Linux). All N
+  connect at run start and close at the end after the drain, on abort, and on Ctrl-C (a second
+  Ctrl-C still closes them before exiting). `--dry-run` prints the worst-case browser-minutes;
+  `summary.md` reports the actual remote browser-minutes, the estimated cost, and the connect time
+  per browser.
+- **Reach:** cloud browsers reach staging (public) but not localhost, so `--target local` with
+  `azure` is refused. The OIDC callback still works: the code is read from the redirect request
+  event in this process, so nothing has to listen on the load machine.
+- **Client-bound detection** still applies. With remote browsers, local CPU is mostly the Node
+  driver, so a full queue (pool too small) is the usual client-side limit.
+
+Load VM, once:
+
+```bash
+# Node 20+, git; then build as in "Build" above (npm install pulls @azure/playwright + @azure/identity)
+az login --identity              # managed identity (or: az login, for a person)
+az account set --subscription 5fb4ede5-fb25-4405-8588-ee0316ce1a42
+export PLAYWRIGHT_SERVICE_URL=wss://australiaeast.api.playwright.microsoft.com/playwrightworkspaces/021c8a38-318d-4f26-9754-e7406a8870f1/browsers
+# For a user-assigned managed identity also: export AZURE_CLIENT_ID=<identity client id>
+```
+
+Runs:
+
+```bash
+node dist/sim/cli.js run --scenario login --target staging --browser-endpoint azure \
+  --remote-browsers 4 --contexts-per-browser 5 --users-from <signupRun> --start-rate 15/min --dry-run
+node dist/sim/cli.js run --scenario signup --target staging --browser-endpoint azure \
+  --remote-browsers 4 --contexts-per-browser 5 --realms-from <poolRun> --start-rate 2/min
+node dist/sim/cli.js prepare-realms --count 5 --target staging --confirm-stripe-test --browser-endpoint azure --remote-browsers 1
+```
 
 ### Ramp, knee, break, abort
 

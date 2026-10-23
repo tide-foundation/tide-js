@@ -209,3 +209,33 @@ test("cleanup checklist lists realms and the email pattern", () => {
   assert.ok(txt.includes("lt-r1-*@invalid.tide.test"));
   assert.ok(txt.includes("cus_1"));
 });
+
+test("browser endpoint options", async () => {
+  const { resolveBrowserOpts, serviceUrlFromDataplane, checkServiceUrl } = await import("../remote.js");
+  assert.deepEqual(resolveBrowserOpts(undefined, "staging", 4, 5), { endpoint: "local", remoteBrowsers: 4, contextsPerBrowser: 5 });
+  assert.equal(resolveBrowserOpts("azure", "staging", 2, 3).endpoint, "azure");
+  assert.throws(() => resolveBrowserOpts("azure", "local", 1, 1), /cannot reach a local stack/);
+  assert.throws(() => resolveBrowserOpts("cloud", "staging", 1, 1), /local or azure/);
+  assert.throws(() => resolveBrowserOpts("azure", "staging", 0, 1), /remote-browsers/);
+  const url = serviceUrlFromDataplane("https://australiaeast.api.playwright.microsoft.com/playwrightworkspaces/021c8a38-318d-4f26-9754-e7406a8870f1");
+  assert.equal(url, "wss://australiaeast.api.playwright.microsoft.com/playwrightworkspaces/021c8a38-318d-4f26-9754-e7406a8870f1/browsers");
+  assert.equal(checkServiceUrl(url), url);
+  assert.throws(() => checkServiceUrl("wss://evil.example.com/browsers"));
+  assert.throws(() => checkServiceUrl(undefined), /PLAYWRIGHT_SERVICE_URL/);
+});
+
+test("remote browser-minute accounting", async () => {
+  const { browserMinutes, usageOf } = await import("../remote.js");
+  const t = 1_000_000;
+  const sessions = [
+    { index: 0, connectMs: 900, openedAt: t, closedAt: t + 90_000 },          // 1.5 min
+    { index: 1, connectMs: 1100, openedAt: t, closedAt: null },               // still open: counts to now
+    { index: 2, connectMs: null, openedAt: null, closedAt: null, error: "x" }, // never connected
+  ];
+  assert.equal(browserMinutes(sessions, t + 30_000), 1.5 + 0.5);
+  const u = usageOf("azure", sessions, 5, t + 30_000);
+  assert.equal(u.remoteBrowsers, 3);
+  assert.equal(u.browserMinutes, 2);
+  assert.equal(u.estCostUsd, 0.042);
+  assert.equal(usageOf("local", [], null).browserMinutes, 0);
+});

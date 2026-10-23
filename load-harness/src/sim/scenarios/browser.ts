@@ -1,5 +1,6 @@
 // S1 sign-up and S2 login through the real enclave in Playwright, plus the Node-only refresh op.
-// One Chromium, one fresh context per operation, concurrency capped by the shared browser pool.
+// One fresh context per operation on a local Chromium or remote Azure browsers, concurrency capped
+// by the shared browser pool.
 
 import { chromium, type Browser, type Page } from "playwright";
 import { randomBytes } from "node:crypto";
@@ -10,29 +11,80 @@ import { CALLBACK_URL, type TargetName } from "../targets.js";
 import type { OpContext, OpOutcome } from "../engine.js";
 import type { ManifestWriter, UsersSecret } from "../sink.js";
 import { matchSignatures } from "../signatures.js";
+import { connectAzureBrowsers, usageOf, type BrowserEndpoint, type BrowserUsage, type Session } from "../remote.js";
 
 // ---------------------------------------------------------------------------
 // Browser host
 // ---------------------------------------------------------------------------
 
-export class BrowserHost {
-  private browser: Browser | null = null;
-  constructor(private headless: boolean, private target: TargetName, private onProdHit: (host: string) => void, private log: (s: string) => void) {}
+export interface BrowserHostOpts {
+  headless: boolean;
+  target: TargetName;
+  onProdHit: (host: string) => void;
+  log: (s: string) => void;
+  endpoint?: BrowserEndpoint;      // default local
+  remoteBrowsers?: number;         // azure only
+  contextsPerBrowser?: number;     // azure only, for the usage record
+}
 
-  async start(): Promise<void> {
-    this.browser = await chromium.launch({ headless: this.headless });
+// One local Chromium, or N remote browsers in an Azure Playwright workspace. Each operation gets a
+// fresh context on the least-busy browser.
+export class BrowserHost {
+  private browsers: Browser[] = [];
+  private active = new Map<Browser, number>();
+  private sessions: Session[] = [];
+  private stopped = false;
+  readonly endpoint: BrowserEndpoint;
+
+  constructor(private o: BrowserHostOpts) {
+    this.endpoint = o.endpoint ?? "local";
   }
 
+  async start(): Promise<void> {
+    if (this.endpoint === "local") {
+      this.browsers = [await chromium.launch({ headless: this.o.headless })];
+    } else {
+      const r = await connectAzureBrowsers(this.o.remoteBrowsers ?? 1, this.o.log);
+      this.browsers = r.browsers;
+      this.sessions = r.sessions;
+      if (!this.browsers.length) throw new Error("no remote browser could be connected (see the log for the reason)");
+    }
+    for (const b of this.browsers) this.active.set(b, 0);
+  }
+
+  // Closes every browser; safe to call more than once. Remote sessions stop billing here.
   async stop(): Promise<void> {
-    await this.browser?.close().catch(() => undefined);
+    if (this.stopped) return;
+    this.stopped = true;
+    await Promise.all(this.browsers.map(async (b, i) => {
+      await b.close().catch(() => undefined);
+      const s = this.sessions[i];
+      if (s && s.closedAt === null && s.openedAt !== null) s.closedAt = Date.now();
+    }));
+  }
+
+  usage(): BrowserUsage {
+    return usageOf(this.endpoint, this.sessions, this.endpoint === "azure" ? this.o.contextsPerBrowser ?? null : null);
   }
 
   async context() {
-    if (!this.browser) throw new Error("browser not started");
-    return guardedContext(this.browser, this.target, (host, denied) => {
-      if (denied) this.onProdHit(host);
-      else this.log(`note: browser reached off-allowlist host ${host} (allowed, reported once)`);
-    });
+    const alive = this.browsers.filter((b) => b.isConnected());
+    if (!alive.length) throw new Error(this.stopped ? "browser host stopped" : "no connected browser");
+    const b = alive.reduce((x, y) => ((this.active.get(y) ?? 0) < (this.active.get(x) ?? 0) ? y : x));
+    this.active.set(b, (this.active.get(b) ?? 0) + 1);
+    let gc;
+    try {
+      gc = await guardedContext(b, this.o.target, (host, denied) => {
+        if (denied) this.o.onProdHit(host);
+        else this.o.log(`note: browser reached off-allowlist host ${host} (allowed, reported once)`);
+      });
+    } catch (e) {
+      this.active.set(b, (this.active.get(b) ?? 1) - 1);
+      throw e;
+    }
+    const close = gc.close;
+    let done = false;
+    return { ...gc, close: async () => { await close(); if (!done) { done = true; this.active.set(b, (this.active.get(b) ?? 1) - 1); } } };
   }
 }
 

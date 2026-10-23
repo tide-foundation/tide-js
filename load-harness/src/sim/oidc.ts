@@ -61,7 +61,7 @@ export async function guardedContext(
     try { u = new URL(req.url()); } catch { return; }
     if (!/^https?:$/.test(u.protocol)) return;
     // The callback arrives as a redirect, which route handlers never see, so catch it here.
-    if (u.origin === cb.origin && u.pathname === cb.pathname) { resolveCb(u); return; }
+    if (u.hostname === cb.hostname) { if (u.origin === cb.origin && u.pathname === cb.pathname) resolveCb(u); return; }
     if (isAllowedHost(target, u.hostname) || isDeniedHost(u.hostname) || reportedHosts.has(u.hostname)) return;
     reportedHosts.add(u.hostname);
     onViolation(u.hostname, false);
