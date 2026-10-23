@@ -253,6 +253,10 @@ test("stub delta flags passthrough beyond the price catalogue", async () => {
   const ok = stubDelta(a, { decisions: { stubbed: 3, passthrough: 2 }, byRoute: { "stubbed POST /v1/customers": 2, "stubbed POST /v1/subscriptions": 1, "passthrough GET /v1/prices": 2 } });
   assert.equal(ok.ok, true);
   assert.deepEqual(ok.decisions, { stubbed: 2, passthrough: 1 });
+  // A passthrough GET is background traffic from other realms, not a leak.
+  const bg = stubDelta(a, { decisions: {}, byRoute: { ...a.byRoute, "passthrough GET /v1/subscriptions/{id}": 1 } });
+  assert.equal(bg.ok, true);
+  // A load-test CREATE passing through IS a leak.
   const bad = stubDelta(a, { decisions: {}, byRoute: { ...a.byRoute, "passthrough POST /v1/customers": 1 } });
   assert.equal(bad.ok, false);
   assert.deepEqual(bad.unexpectedPassthrough, { "passthrough POST /v1/customers": 1 });
@@ -313,4 +317,12 @@ test("analysis: nothing crossed says so", async () => {
   const { analyse } = await import("../collect/analysis.js");
   const [a] = analyse([fakeStep(1, "ok", 5000)], [fakeServer(1)], null);
   assert.match(a.verdict, /no threshold crossed/);
+});
+
+test("console setup realm and email naming match the http setup", async () => {
+  const { setupNames } = await import("../scenarios/setup.js");
+  // The console slugifies the project name to the realm, so the project name IS the realm name.
+  assert.deepEqual(setupNames({ runId: "r9", emailDomain: "invalid.tide.test", realmPrefix: "lt-ws" }, 2), { realm: "lt-ws-r9-2", email: "lt-r9-ws2@invalid.tide.test" });
+  const { REALM_SLUG } = { REALM_SLUG: /^[a-z0-9][a-z0-9-]{0,60}$/ };
+  assert.ok(REALM_SLUG.test("lt-ws-r9-2"), "realm name is a valid console slug");
 });

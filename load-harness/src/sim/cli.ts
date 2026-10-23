@@ -21,6 +21,7 @@ import { setupOnce } from "./scenarios/setup.js";
 import { prepareRealms, type RealmsFile } from "./scenarios/prepare.js";
 import { BrowserHost, RealmPool, type PoolRealm, LoginUserPool, RefreshStore, makeSignupOp, makeLoginOp, makeRefreshOp, newRunPassword } from "./scenarios/browser.js";
 import { NodeCmkClient } from "../protocol/nodeCmkClient.js";
+import { makeConsoleSetupOp } from "./scenarios/consoleSetup.js";
 import { resolveBrowserOpts, AZURE_PRICE_PER_MIN, type BrowserOpts, type BrowserUsage } from "./remote.js";
 import { RunCollector, collectAll, readMeta, readSnaps, type ServerMeta } from "./collect/index.js";
 import { STAGING_COLLECT, inventory, type CollectConfig, type StepWindow, type StepServer } from "./collect/collectors.js";
@@ -243,7 +244,11 @@ async function cmdRun(o: Opts): Promise<number> {
   const scenario = str(o, "scenario") as Scenario;
   if (!SCENARIOS.includes(scenario)) throw new Error(`--scenario must be one of ${SCENARIOS.join("|")} (crash repro is intentionally not offered)`);
   const c = common(o, "s");
-  const engineKind = str(o, "engine", "browser")!;
+  // setup defaults to the http driver, but to the browser driver when cloud browsers are chosen
+  // (so the load comes from Azure, not this machine). Other browser scenarios default to browser.
+  const engineDefault = scenario === "setup" ? (c.browser.endpoint === "azure" ? "browser" : "http") : "browser";
+  const engineKind = str(o, "engine") ?? engineDefault;
+  if (engineKind !== "browser" && engineKind !== "http" && engineKind !== "node") throw new Error("--engine must be browser, http or node");
   const stepMs = parseDuration(str(o, "step-duration", "5m")!);
   const cooldownMs = parseDuration(str(o, "cooldown", "2m")!);
   const drainMs = parseDuration(str(o, "drain", "5m")!);
@@ -260,7 +265,7 @@ async function cmdRun(o: Opts): Promise<number> {
   const ratios = scenario === "incident" ? parseRatios(str(o, "incident-ratios", "1:10:0.05")!) : null;
   const refreshRatio = num(o, "refresh-ratio", 0);
   const th = thresholds(o);
-  const needsBrowser = scenario === "signup" || scenario === "incident" || (scenario === "login" && engineKind === "browser");
+  const needsBrowser = scenario === "signup" || scenario === "incident" || (scenario === "login" && engineKind === "browser") || (scenario === "setup" && engineKind === "browser");
   const needsAdmin = scenario === "setup" || (scenario === "incident" && ratios!.setup > 0);
   const needsRealms = scenario === "signup" || scenario === "incident";
   const needsUsers = scenario === "login";
@@ -281,7 +286,8 @@ async function cmdRun(o: Opts): Promise<number> {
   const totalSetups = Math.ceil(steps.reduce((a, s) => a + s.baseRate * (opRatios.find((x) => x.op === "setup")?.ratio ?? 0) * stepMin, 0));
   const seats = realmInfo?.seats ?? num(o, "seats-per-realm", 5);
   console.log(`PLAN ${scenario} run=${c.runId} target=${c.target.name} tc=${c.target.tcBase}`);
-  console.log(`  engine=${needsBrowser ? `browser (pool ${browserPool} contexts, headless=${c.headless})` : scenario === "setup" ? "http" : engineKind} http-concurrency=${httpConc} arrivals=${str(o, "arrival", "poisson")}`);
+  console.log(`  engine=${needsBrowser ? `browser (pool ${browserPool} contexts, headless=${c.headless})` : engineKind} http-concurrency=${httpConc} arrivals=${str(o, "arrival", "poisson")}`);
+  if (scenario === "setup" && engineKind === "browser") console.log(`  setup runs through the tide-console create-realm wizard as the master admin; it measures through setUpTideRealm (the workspace-setup load) and stops at the wizard's human Tide-account-link step`);
   if (needsBrowser) console.log(`  browsers: ${describeBrowsers(c.browser, steps.length * (stepMs + cooldownMs) + drainMs)}`);
   console.log(`  client=${OIDC_CLIENT_ID} redirect=${CALLBACK_URL} (intercepted in-process)`);
   console.log(`  steps: ${steps.length} x ${fmtDuration(stepMs)} + ${fmtDuration(cooldownMs)} cooldown, factor ${add > 0 ? "+" + fmtRate(add) : "x" + factor}, worst case ${fmtDuration(steps.length * (stepMs + cooldownMs))} plus one confirm step`);
@@ -347,12 +353,19 @@ async function cmdRun(o: Opts): Promise<number> {
   for (const r of opRatios) {
     if (r.ratio <= 0) continue;
     if (r.op === "setup") {
-      let n = 0;
-      ops.push({ name: "setup", ratio: r.ratio, pool: httpSlots, maxQueue: maxQueue(httpSlots), run: () => setupOnce({
-        admin: admin!, manifest, runId: c.runId, emailDomain: c.emailDomain,
-        retries: num(o, "setup-retries", 2), retryDelayMs: parseDuration(str(o, "setup-retry-delay", "5s")!),
-        realmPrefix: "lt-ws", purpose: "s3-setup",
-      }, ++n) });
+      if (engineKind === "browser" && scenario === "setup") {
+        ops.push({ name: "setup", ratio: r.ratio, pool: browserSlots, maxQueue: maxQueue(browserSlots), run: makeConsoleSetupOp({
+          host: host!, tcBase: c.target.tcBase, runId: c.runId, emailDomain: c.emailDomain, creds: creds!, manifest,
+          retries: num(o, "setup-retries", 1), log,
+        }) });
+      } else {
+        let n = 0;
+        ops.push({ name: "setup", ratio: r.ratio, pool: httpSlots, maxQueue: maxQueue(httpSlots), run: () => setupOnce({
+          admin: admin!, manifest, runId: c.runId, emailDomain: c.emailDomain,
+          retries: num(o, "setup-retries", 2), retryDelayMs: parseDuration(str(o, "setup-retry-delay", "5s")!),
+          realmPrefix: "lt-ws", purpose: "s3-setup",
+        }, ++n) });
+      }
     } else if (r.op === "signup") {
       ops.push({ name: "signup", ratio: r.ratio, pool: browserSlots, maxQueue: maxQueue(browserSlots), run: makeSignupOp({
         host: host!, tcBase: c.target.tcBase, runId: c.runId, emailDomain: c.emailDomain, password,

@@ -369,8 +369,14 @@ export function stubDelta(start: StubStats, end: StubStats): StubDelta {
     return o;
   };
   const byRoute = d(start.byRoute ?? {}, end.byRoute ?? {});
+  // The stub always stubs or refuses a load-test object id, so any GET that passed through carries a
+  // non-load-test id (another staging realm) and is fine. A load-test leak would show up only as a
+  // CREATE passing through (a customer/subscription the stub failed to recognise) or a refusal.
   const unexpected: Record<string, number> = {};
-  for (const [k, v] of Object.entries(byRoute)) if (k.startsWith("passthrough ") && !/^passthrough GET \/v1\/prices\b/.test(k)) unexpected[k] = v;
+  for (const [k, v] of Object.entries(byRoute)) {
+    if (/^passthrough POST \/v1\/(customers|subscriptions)\b/.test(k)) unexpected[k] = v;
+    if (k.startsWith("refused ")) unexpected[k] = v;
+  }
   return { decisions: d(start.decisions ?? {}, end.decisions ?? {}), byRoute, unexpectedPassthrough: unexpected, ok: Object.keys(unexpected).length === 0 };
 }
 

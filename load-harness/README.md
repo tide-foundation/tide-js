@@ -338,6 +338,15 @@ users files, add `--expect-eddsa` to apply the same check.
 - **Client-bound detection** still applies. With remote browsers, local CPU is mostly the Node
   driver, so a full queue (pool too small) is the usual client-side limit.
 
+`--scenario setup` has two engines:
+- `--engine http` (default on a local load machine): the fast REST path (create realm + setUpTideRealm directly).
+- `--engine browser` (default with `--browser-endpoint azure`): the real tide-console create-realm wizard, driven as the master admin, so the load originates from Azure cloud browsers rather than a home IP. Each arrival opens `/realms/master/tide-console/tide/setup`, logs in on the Keycloak form (`TC_ADMIN_USER` / `TC_ADMIN_PASSWORD`, one login per context), fills the wizard with project name `lt-ws-<runId>-<n>` and the tagged email, submits, and records `console_load`, `admin_login`, `wizard_submit`, `setup_done`. The setUpTideRealm response (and any 4xx/5xx from the vendor/IGA calls seen in the page network) is the failure code (e.g. `VENDOR_KEYGEN_FAILED`); one Retry is mimicked on failure and the trail is recorded. It measures through setUpTideRealm (the workspace-setup load: Stripe via the stub + VVK keygen across the ORKs) and stops at the wizard's human Tide-account-link step, which a driver cannot complete; it adds no steps of its own.
+
+```bash
+node dist/sim/cli.js run --scenario setup --target staging --browser-endpoint azure \
+  --remote-browsers 4 --contexts-per-browser 5 --confirm-stripe-test --start-rate 1/min --dry-run
+```
+
 Load VM, once:
 
 ```bash
