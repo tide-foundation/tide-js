@@ -1,0 +1,38 @@
+// Known failure signatures from the 2026-10-22 incident, matched against error text.
+// "expected" ones (like the seat cap) are reported but do not count as staging breaking.
+
+export interface Signature {
+  id: string;
+  re: RegExp;
+  expected?: boolean;
+  note: string;
+}
+
+export const SIGNATURES: Signature[] = [
+  { id: "SEAT_CAP", re: /exceeded its total user count/i, expected: true, note: "realm seat limit reached (expected, pool sizing)" },
+  { id: "SQLITE_LOCKED", re: /database is locked|SQLITE_BUSY|SqliteException/i, note: "ORK SQLite lock on Create/Commit" },
+  { id: "VENDOR_ALREADY_CREATED", re: /VENDOR_ALREADY_CREATED/i, note: "payer refused vendor after partial VVK setup" },
+  { id: "UID_NOT_FOUND", re: /could not find uid/i, note: "master SubmitUser lag" },
+  { id: "STATEMENT_TIMEOUT", re: /statement timeout|canceling statement due to statement timeout/i, note: "Postgres statement_timeout" },
+  { id: "VENDOR_KEYGEN_FAILED", re: /VENDOR_KEYGEN_FAILED/i, note: "VVK setup failed after wallet commit" },
+  { id: "VENDOR_SETUP_FAILED", re: /VENDOR_REALM_SETUP_FAILED|VENDOR_STRIPE_CHECKOUT_FAILED/i, note: "setUpTideRealm failed" },
+  { id: "RESERVATION_CONFLICT", re: /GetReservers|already reserved|ReserveUserId.*409/i, note: "stale user-id reservation" },
+  { id: "NOT_ENOUGH_ORKS", re: /Could not reach enough|NET_THRESHOLD_FAILURE|not enough ORKs/i, note: "ORK fan-out below threshold" },
+  { id: "UID_THROTTLED", re: /throttl|too many requests|\b429\b/i, note: "per-user throttle (spread users wider)" },
+  { id: "GATEWAY", re: /HTTP 50[234]\b|Bad Gateway|Service Unavailable|Gateway Timeout/i, note: "ingress or upstream unavailable" },
+];
+
+export function matchSignatures(text: string): Signature[] {
+  if (!text) return [];
+  return SIGNATURES.filter((s) => s.re.test(text));
+}
+
+// Signatures that count toward "break" (server-side failure, not client or pool sizing).
+export function isBreakSignature(id: string): boolean {
+  const s = SIGNATURES.find((x) => x.id === id);
+  return !!s && !s.expected && id !== "UID_THROTTLED";
+}
+
+export function isExpectedSignature(id: string): boolean {
+  return !!SIGNATURES.find((x) => x.id === id && x.expected);
+}

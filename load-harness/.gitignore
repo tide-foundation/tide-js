@@ -14,3 +14,6 @@ fixtures.json
 # userIds, never commit.
 loadtest-results*.json
 loadtest-results*.jsonl
+dist-test/
+runs/
+*.secret.json
