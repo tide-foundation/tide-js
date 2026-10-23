@@ -1,0 +1,19 @@
+{
+  "name": "tide-stripe-stub",
+  "version": "0.1.0",
+  "description": "Passthrough Stripe stub for Tide load tests: fakes load-test objects, forwards everything else to api.stripe.com.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && esbuild src/main.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/main.js",
+    "start": "node dist/main.js",
+    "test": "esbuild test/*.test.ts --bundle --platform=node --format=esm --target=node20 --outdir=dist-test --external:stripe && node --test dist-test/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "esbuild": "^0.24.0",
+    "stripe": "^17.7.0",
+    "typescript": "^5.5.0"
+  }
+}

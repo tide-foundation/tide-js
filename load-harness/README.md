@@ -368,3 +368,72 @@ users files, add `--expect-eddsa` to apply the same check.
   OIDC code and is untested in this simulator.
 - One Chromium per process. Past roughly 10 to 20 contexts the client CPU usually becomes the
   limit; the run will say so. Run several processes or machines for more.
+
+## Stripe stub (`stripe-stub/`)
+
+Stripe does not allow load testing its API, test mode included. The stub sits between the
+staging payers and Stripe. It fakes Stripe for the load test's own objects, and passes everything
+else through to `https://api.stripe.com` unchanged, so other staging realms keep working.
+
+**What it fakes:**
+- `POST /v1/customers` whose `email` ends with `STUB_EMAIL_SUFFIX` (default `@invalid.tide.test`,
+  which the simulator uses). Ids look like `cus_lt_...`.
+- `POST /v1/subscriptions` for a stub customer. Ids look like `sub_lt_...`, `si_lt_...`, plus a paid
+  $0 invoice `in_lt_...`. The subscription:
+  - is `active`;
+  - echoes `customer`, `metadata` and `currency`;
+  - copies the real price object from Stripe (fetched through passthrough with the caller's key
+    and cached), so tiers and `user_limit` metadata are real;
+  - ends its first period at `billing_cycle_anchor` when that is in the future (as Stripe does,
+    and as the payer's free tier sends: one month minus 7 days), otherwise one month out. The
+    period is set on the subscription and on each item.
+- Any GET, update, cancel or void on `cus_lt_*` / `sub_lt_*` / `in_lt_*`.
+- `GET /v1/subscriptions?customer=` and `GET /v1/invoices?customer=` for a stub customer.
+- `expand[]` of `latest_invoice` (and `latest_invoice.payment_intent`, which is null on a $0 invoice).
+
+**What passes through:** everything else (for example the catalogue's
+`GET /v1/prices?product=...&expand[]=data.tiers`), with the same method, path, query, body and
+headers. Responses are streamed back with their status. Requests that name a stub id on an endpoint
+the stub does not implement are refused with a Stripe-shaped 400 and never forwarded.
+
+**Safety:**
+- Live keys (`sk_live_` / `rk_live_`) get a 403 and are never forwarded.
+- The upstream can only be `https://api.stripe.com`.
+- The log holds method, path, decision, status, ms and stub ids; never headers, keys or bodies.
+
+**Config (env):**
+
+| Variable | Meaning |
+|---|---|
+| `PORT` | listen port (default 8090) |
+| `STRIPE_UPSTREAM` | must be `https://api.stripe.com` |
+| `STUB_EMAIL_SUFFIX` | emails that get stub customers (default `@invalid.tide.test`) |
+| `STUB_STATE_FILE` | JSON file that keeps stub objects across restarts |
+| `STUB_LOG_FILE` | JSONL request log (stdout when unset) |
+
+**Endpoints:**
+- `GET /__stub/health` for health checks.
+- `GET /__stub/stats` gives counts per decision and per route, plus stub object counts. Put it in
+  the load-test report to show Stripe itself was not load-tested.
+
+```bash
+cd load-harness/stripe-stub
+npm install && npm run build && npm test     # unit + Stripe SDK integration (passthrough uses sk_test_ STRIPE_SK from ~/.env)
+PORT=8090 STUB_STATE_FILE=./state.json STUB_LOG_FILE=./requests.jsonl npm start
+docker build -t tide-stripe-stub .           # image for a later Azure Container App
+# Stripe.net 47.3.0 (the payer's version) check against a running stub:
+cd test/dotnet-check && STUB=http://127.0.0.1:8090 PRICE=<price id> STRIPE_SK=<sk_test_...> dotnet run
+```
+
+### Runbook (staging, once the ORK `stripe-api-base` payer arg is deployed)
+
+1. Run the stub somewhere the payers can reach over HTTPS (for example an Azure Container App
+   from the Dockerfile, with a volume for `STUB_STATE_FILE`). Check `GET /__stub/health`.
+2. Add `--stripe-api-base=https://<stub-host>` to the launch args of the staging payers
+   (sork3, sork4) and roll them. The exact arg spelling comes from the ORK PR; check it there.
+3. Smoke: `prepare-realms --count 1`. `/__stub/stats` should show `stubbed POST /v1/customers` and
+   `stubbed POST /v1/subscriptions`, with only catalogue reads under passthrough.
+4. Run the load test. Record `/__stub/stats` before and after for the report.
+5. Remove the arg from sork3/sork4 and roll them back, so all Stripe calls go to Stripe directly
+   again. Stub-created workspaces keep working only while the stub is in the path; after removal
+   their `cus_lt_` / `sub_lt_` ids are unknown to Stripe, so delete those realms.
