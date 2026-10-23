@@ -7,14 +7,16 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && npm run bundle",
-    "bundle": "esbuild src/server.ts src/warmup/index.ts src/loadtest/index.ts src/protocol/cli.ts src/protocol/loadtest.ts src/admin/provision.ts --bundle --platform=node --format=esm --target=node20 --outdir=dist --external:playwright --external:express --external:undici --external:tough-cookie --external:@types/* --banner:js=\"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);\"",
+    "bundle": "esbuild src/server.ts src/warmup/index.ts src/loadtest/index.ts src/protocol/cli.ts src/protocol/loadtest.ts src/admin/provision.ts src/sim/cli.ts --bundle --platform=node --format=esm --target=node20 --outdir=dist --external:playwright --external:express --external:undici --external:tough-cookie --external:@types/* --banner:js=\"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);\"",
     "start": "node dist/server.js",
     "warmup": "node dist/warmup/index.js",
     "loadtest": "node dist/loadtest/index.js",
     "protocol:test": "node dist/protocol/cli.js",
     "protocol:load": "node dist/protocol/loadtest.js",
     "protocol:provision": "node dist/admin/provision.js",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "sim": "node dist/sim/cli.js",
+    "test": "esbuild src/sim/test/*.test.ts --bundle --platform=node --format=esm --target=node20 --outdir=dist-test --external:playwright --external:undici && node --test dist-test/*.test.js"
   },
   "dependencies": {
     "@tideorg/js": "file:..",

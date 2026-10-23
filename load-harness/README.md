@@ -192,3 +192,148 @@ interface FixturesFile {
 - **sessKey serialization format.** Same story for `Cryptide.TideKey`.
   Inspect `localStorage` / the SWE postMessage payload during a real
   login to lock down the format.
+
+## Staging incident simulator (`dist/sim/cli.js`)
+
+Replays the 2026-10-22 production surge shape against **staging only** and ramps each
+scenario until it breaks. Scenarios:
+
+| scenario | what one operation is | driven by |
+|---|---|---|
+| `setup` (S3) | create realm `lt-ws-<run>-<n>`, then `setUpTideRealm` (free tier), retrying like the console's Retry button | plain HTTP, master admin token |
+| `signup` (S1) | a new Tide account through the real enclave sign-up, then the token exchange | Playwright, one Chromium, N contexts |
+| `login` (S2) | a full enclave login (authorize, Tide sign-in, callback, token) | Playwright (default) or `--engine node` |
+| `incident` (S5) | signup + login + setup together at `--incident-ratios` (default 1:10:0.05, the incident shape) | both |
+
+The malformed-request crash repro is deliberately not included.
+
+### Build
+
+```bash
+cd tide-js && npm ci && npm run build          # parent dist first (globalThis.crypto trap)
+cd load-harness && npm install && npm run build
+npx playwright install chromium                 # once per machine
+npm test                                        # unit tests, no network
+```
+
+### Before a staging run
+
+1. **Seats.** Staging realms are on Business v2, where free tier is 5 seats, so one realm
+   caps sign-ups at 5. S1 spreads sign-ups round-robin over a realm list and skips a realm once
+   it is full (5 seats counted locally, plus the server's `exceeded its total user count`
+   refusal, reported as the expected `SEAT_CAP`). When every realm is full the run stops with
+   "need more realms" so a pool limit is never read as staging breaking. The tool never raises
+   capacity. Either prepare enough realms (below), pass your own with `--realms a,b,c`, or raise
+   capacity by hand. `--dry-run` prints how many realms each step needs.
+   Seats already used by earlier runs are not known up front; the tool finds out from the cap error.
+2. **Stripe test mode.** Every realm setup creates a Stripe customer and subscription on the
+   staging payers. Confirm the payers run a `sk_test_` key, then pass `--confirm-stripe-test`
+   (required for `setup`, `prepare-realms` and `incident` with setups on staging).
+3. **Admin password.** `export TC_ADMIN_PASSWORD=...` (master admin of the target TideCloak;
+   `TC_ADMIN_USER` defaults to `admin`). Never printed or written to disk.
+4. **Port 3000.** The OIDC client redirects to `http://localhost:3000/callback`. The browser
+   reads the code from that request itself, so nothing needs to listen there, but keep the port
+   free so no other local app sees the codes.
+5. **Infra.** Leave staging as is. Record the pre-state for the report:
+
+   ```bash
+   az postgres flexible-server parameter show -g Tide-Staging --server-name dauthme-staging --name max_connections --query value -o tsv
+   az containerapp show -n tidecloak-staging -g Tide-Staging --query '{scale: properties.template.scale, sticky: properties.configuration.ingress.stickySessions}' -o json
+   for i in 1 2 3 4 5; do az containerapp show -n sork$i -g Tide-Staging --query '{name:name, cpu:properties.template.containers[0].resources.cpu, mem:properties.template.containers[0].resources.memory}' -o tsv; done
+   ```
+
+### Commands
+
+Always look at the plan first: add `--dry-run` to any command. Nothing is sent.
+
+```bash
+# Realm pool for S1/S2 (runs sequentially by default; this is setup load, logged to prepare.log)
+node dist/sim/cli.js prepare-realms --count 20 --target staging --confirm-stripe-test --dry-run
+node dist/sim/cli.js prepare-realms --count 20 --target staging --confirm-stripe-test
+#   -> runs/<poolRun>/realms.json  (only realms whose licence is active and whose sign-up screen renders)
+
+# S3 workspace-setup surge
+node dist/sim/cli.js run --scenario setup --target staging --confirm-stripe-test \
+  --start-rate 1/min --concurrency 4 --watch-restarts
+
+# S1 sign-up surge across the pool
+node dist/sim/cli.js run --scenario signup --target staging --realms-from <poolRun> \
+  --start-rate 2/min --browser-pool 10 --watch-restarts
+
+# S2 login surge using the users S1 created (plus an optional users file)
+node dist/sim/cli.js run --scenario login --target staging --users-from <signupRun> \
+  [--users-file ./load-test-users.json --realm tide-metrics-load] \
+  --start-rate 15/min --browser-pool 10 [--refresh-ratio 2] --watch-restarts
+
+# S5 incident mix (signups feed the login pool as they are created)
+node dist/sim/cli.js run --scenario incident --target staging --realms-from <poolRun> \
+  --users-from <signupRun> --confirm-stripe-test --start-rate 2/min --watch-restarts
+
+# Afterwards
+node dist/sim/cli.js report --run <runId>       # rebuild summary.md
+node dist/sim/cli.js checklist --run <runId>    # manual cleanup list
+```
+
+`--target local` points everything at the local stack (`http://localhost:8080`, ORKs on
+localhost / hostgateway) for a smoke test.
+
+### Ramp, knee, break, abort
+
+- Open-loop arrivals (Poisson by default, `--arrival uniform` for fixed gaps) at the step's target
+  rate. Each arrival takes a free browser context (or HTTP slot) or queues; queue wait is recorded
+  separately so a busy client never looks like a slow server.
+- Steps: `--step-duration 5m`, `--cooldown 2m`, doubling (`--step-factor 2`, or `--step-add 2/min`),
+  up to `--max-steps 8` / `--max-rate`. In-flight work drains (`--drain 5m`) before a step is judged.
+- **Knee**: p95 above 2x the first step's p95 (`--knee-p95-mult`), or fewer than 90% of arrivals
+  finished inside the step (`--knee-throughput`). The ramp continues.
+- **Break**: error rate above 5% (`--break-error-rate`) or any server failure signature (SQLite
+  locked, VENDOR_ALREADY_CREATED, could not find uid, statement timeout, keygen failed, gateway
+  errors, not enough ORKs). One confirmation step at the last good rate follows, then the run stops.
+- **Client-bound**: client CPU above 85% (`--client-cpu`, machine-wide, Chromium included), queue
+  wait p95 above 2 s (`--client-queue-wait`), or arrivals dropped because the queue is full
+  (`--max-queue`, default 4x the pool). The run stops and says the load machine is the limit.
+- **Hard abort**: rolling 30 s error rate above 20% (`--abort-error-rate`); any ORK restart with
+  `--watch-restarts` (read-only `az containerapp replica list` every 60 s); ORK outbound error rate
+  above `--prom-error-threshold` (default 0.5/s) with `--watch-prom`; any browser request to a
+  production host; Ctrl-C. Expected outcomes (seat cap, empty pools) never count as errors.
+
+### Output (`runs/<runId>/`, gitignored)
+
+- `events.jsonl`: one row per operation: op, step, target rate, ok, code, failure signatures,
+  queue wait, latency, phases (sign-up: `enclave_load`, `signup_form`, `email_step`, `keygen_wait`,
+  `fbl_submit`, `token_ms`; login: `enclave_load`, `sign_in_to_callback`, `token_ms`; setup:
+  `create_realm_ms`, `setup_attemptN_ms`), token `alg`.
+- `steps.jsonl` and `summary.md` / `summary.json`: per-step table, verdicts with reasons, the
+  ceiling per op (last ok, knee, break, client-bound rates), signature and code totals, client
+  CPU/queue, and ready-to-paste KQL (`ContainerAppConsoleLogs_CL`, `ContainerAppSystemLogs_CL`) and
+  PromQL for the UTC window.
+- `manifest.json`: every realm created (with Stripe customer/subscription ids when readable), every
+  user id attempted, the test email pattern. `users.secret.json` (mode 0600) holds passwords for
+  created users, for later login runs. `sim.log` / `prepare.log`.
+- The cleanup checklist is printed at the end of every run. **Cleanup is manual**: delete the
+  realms, cancel/delete the Stripe test customers, optionally remove payer rows. Tide accounts on
+  the ORKs have no delete path.
+
+### Safety
+
+- Only `staging.dauth.me` and `sork*.tideprotocol.com` (or localhost for `--target local`) can be
+  configured. `login.dauth.me` and `ork*.tideprotocol.com` are refused at startup and blocked in
+  the browser (a hit aborts the run). Other unexpected hosts the enclave loads (fonts) are allowed
+  and logged once.
+- Fresh ids every run: users `lt-<runId>-<n>`, realms `lt-pool-<runId>-<n>` / `lt-ws-<runId>-<n>`,
+  emails `lt-<runId>-...@invalid.tide.test`. No index is ever reused, so stale ORK reservations
+  from failed attempts cannot collide.
+- No infra changes. The az calls are read-only and opt-in.
+
+### Known limits
+
+- **PreSign coverage.** TideCloak signs tokens through the Tide network (Key.PreSign,
+  TidecloakSessionStartTokenSign) only on realms with IGA enabled and EdDSA as the default
+  algorithm (`DefaultTokenManager`). Realms from `prepare-realms` have IGA off, so their tokens
+  are RS256 and S2 there measures the enclave login (Convert/Authenticate, vouchers) but not
+  PreSign. The report counts token algs and warns. To cover PreSign, point S2 at IGA-enabled
+  EdDSA realms (`--realms`/`--users-file`).
+- `--engine node` (browserless cmkOnly login) is kept for higher rates later; it stops at the
+  OIDC code and is untested in this simulator.
+- One Chromium per process. Past roughly 10 to 20 contexts the client CPU usually becomes the
+  limit; the run will say so. Run several processes or machines for more.

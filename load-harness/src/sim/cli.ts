@@ -1,0 +1,487 @@
+// Staging incident simulator CLI. See load-harness/README.md, section "Staging incident simulator".
+//
+//   node dist/sim/cli.js run --scenario setup|signup|login|incident --target staging [options]
+//   node dist/sim/cli.js prepare-realms --count N --target staging [options]
+//   node dist/sim/cli.js report --run <runId>
+//   node dist/sim/cli.js checklist --run <runId>
+
+import "../protocol/undici-setup.js";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { resolveTarget, assertAllowedUrl, CALLBACK_URL, OIDC_CLIENT_ID, type Target } from "./targets.js";
+import { parseRate, parseDuration, fmtRate, fmtDuration, newRunId, utcStamp, sleep } from "./util.js";
+import { planSteps, Engine, DEFAULT_THRESHOLDS, type OpSpec, type PlannedStep, type Thresholds, type EngineResult, type OpOutcome } from "./engine.js";
+import { Pool } from "./pool.js";
+import { ClientMonitor } from "./monitor.js";
+import { Jsonl, ManifestWriter, UsersSecret, runDir, readJson, type Manifest, type SecretUser } from "./sink.js";
+import { ServerWatch } from "./watchers.js";
+import { writeReport, cleanupChecklist } from "./report.js";
+import { AdminClient } from "./admin.js";
+import { setupOnce } from "./scenarios/setup.js";
+import { prepareRealms, type RealmsFile } from "./scenarios/prepare.js";
+import { BrowserHost, RealmPool, LoginUserPool, RefreshStore, makeSignupOp, makeLoginOp, makeRefreshOp, newRunPassword } from "./scenarios/browser.js";
+import { NodeCmkClient } from "../protocol/nodeCmkClient.js";
+
+// ---------------------------------------------------------------------------
+// Args
+// ---------------------------------------------------------------------------
+
+type Opts = Map<string, string | true>;
+
+function parseArgs(argv: string[]): { cmd: string; opts: Opts } {
+  const opts: Opts = new Map();
+  let cmd = "run";
+  let i = 0;
+  if (argv[0] && !argv[0].startsWith("--")) { cmd = argv[0]; i = 1; }
+  for (; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith("--")) throw new Error(`unexpected argument "${a}"`);
+    const eq = a.indexOf("=");
+    if (eq > 0) { opts.set(a.slice(2, eq), a.slice(eq + 1)); continue; }
+    const key = a.slice(2);
+    const next = argv[i + 1];
+    if (next !== undefined && !next.startsWith("--")) { opts.set(key, next); i++; }
+    else opts.set(key, true);
+  }
+  return { cmd, opts };
+}
+
+const str = (o: Opts, k: string, d?: string): string | undefined => {
+  const v = o.get(k);
+  return v === undefined ? d : v === true ? "true" : v;
+};
+const num = (o: Opts, k: string, d: number): number => {
+  const v = str(o, k);
+  if (v === undefined) return d;
+  const n = Number(v);
+  if (!Number.isFinite(n)) throw new Error(`--${k} must be a number`);
+  return n;
+};
+const flag = (o: Opts, k: string): boolean => {
+  const v = o.get(k);
+  return v === true || v === "true" || v === "1" || v === "yes";
+};
+const list = (o: Opts, k: string): string[] => (str(o, k) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+
+const KNOWN = new Set([
+  "scenario", "target", "tc-url", "run-id", "out", "dry-run", "start-rate", "step-factor", "step-add", "max-rate", "max-steps",
+  "step-duration", "cooldown", "drain", "arrival", "browser-pool", "concurrency", "max-queue", "abort-error-rate",
+  "break-error-rate", "knee-p95-mult", "knee-throughput", "client-cpu", "client-queue-wait", "realms", "realms-from",
+  "seats-per-realm", "users-from", "users-file", "realm", "refresh-ratio", "engine", "headless", "email-domain",
+  "setup-retries", "setup-retry-delay", "watch-restarts", "watch-prom", "prom-error-threshold", "ork-apps",
+  "confirm-stripe-test", "incident-ratios", "home-ork", "nav-timeout", "no-token", "count", "no-browser-check", "run", "help",
+]);
+
+// ---------------------------------------------------------------------------
+// Shared setup
+// ---------------------------------------------------------------------------
+
+const SCENARIOS = ["setup", "signup", "login", "incident"] as const;
+type Scenario = typeof SCENARIOS[number];
+
+interface Common {
+  target: Target;
+  runId: string;
+  outBase: string;
+  dryRun: boolean;
+  emailDomain: string;
+  headless: boolean;
+}
+
+function common(o: Opts, prefix: string): Common {
+  const t = str(o, "target");
+  if (!t) throw new Error("--target is required (staging or local)");
+  const target = resolveTarget(t, str(o, "tc-url"), list(o, "ork-apps"));
+  return {
+    target,
+    runId: str(o, "run-id") ?? newRunId(prefix),
+    outBase: resolve(str(o, "out", "runs")!),
+    dryRun: flag(o, "dry-run"),
+    emailDomain: str(o, "email-domain", "invalid.tide.test")!,
+    headless: str(o, "headless", "true") !== "false",
+  };
+}
+
+function adminCreds(required: boolean): { user: string; password: string } | null {
+  const user = process.env.TC_ADMIN_USER ?? "admin";
+  const password = process.env.TC_ADMIN_PASSWORD;
+  if (!password) {
+    if (required) throw new Error("TC_ADMIN_PASSWORD is not set (master admin password for the target TideCloak)");
+    return null;
+  }
+  return { user, password };
+}
+
+function requireStripeTest(o: Opts, target: Target, dryRun: boolean): void {
+  if (target.name !== "staging" || dryRun) return;
+  if (!flag(o, "confirm-stripe-test")) {
+    throw new Error("realm setup creates Stripe subscriptions on the staging payers. Confirm they run in Stripe TEST mode " +
+      "(sk_test_ key) and pass --confirm-stripe-test. See README, Safety.");
+  }
+}
+
+function makeLogger(path: string): (s: string) => void {
+  return (s: string) => {
+    const line = `${new Date().toISOString()} ${s}`;
+    console.log(line);
+    try { appendFileSync(path, line + "\n"); } catch { /* log dir gone */ }
+  };
+}
+
+function loadRealms(o: Opts, outBase: string): { realms: string[]; seats: number; source: string } {
+  const explicit = list(o, "realms");
+  const from = str(o, "realms-from");
+  let seats = num(o, "seats-per-realm", 5);
+  const realms = [...explicit];
+  let source = explicit.length ? "--realms" : "";
+  if (from) {
+    for (const id of from.split(",")) {
+      const p = join(outBase, id.trim(), "realms.json");
+      if (!existsSync(p)) throw new Error(`no realm pool file at ${p}`);
+      const f = readJson<RealmsFile>(p);
+      realms.push(...f.realms.filter((r) => r.ready).map((r) => r.realm));
+      if (!str(o, "seats-per-realm")) seats = f.seatsPerRealm;
+    }
+    source = source ? `${source} + ${from}` : `realms-from ${from}`;
+  }
+  return { realms: [...new Set(realms)], seats, source };
+}
+
+function loadUsers(o: Opts, outBase: string): { users: SecretUser[]; source: string } {
+  const users: SecretUser[] = [];
+  const sources: string[] = [];
+  const from = str(o, "users-from");
+  if (from) {
+    for (const id of from.split(",")) {
+      const p = join(outBase, id.trim(), "users.secret.json");
+      if (!existsSync(p)) throw new Error(`no users file at ${p}`);
+      users.push(...(readJson<{ users: SecretUser[] }>(p).users ?? []));
+    }
+    sources.push(`users-from ${from}`);
+  }
+  const file = str(o, "users-file");
+  if (file) {
+    const defRealm = str(o, "realm");
+    const raw = readJson<{ users: Array<{ userId?: string; password?: string; realm?: string }> }>(file).users ?? [];
+    for (const u of raw) {
+      if (!u.userId || !u.password) continue;
+      const realm = u.realm ?? defRealm;
+      if (!realm) throw new Error(`${file}: user without realm; pass --realm`);
+      users.push({ userId: u.userId, password: u.password, realm });
+    }
+    sources.push(`users-file ${file}`);
+  }
+  return { users, source: sources.join(" + ") };
+}
+
+function thresholds(o: Opts): Thresholds {
+  return {
+    ...DEFAULT_THRESHOLDS,
+    abortErrorRate: num(o, "abort-error-rate", DEFAULT_THRESHOLDS.abortErrorRate),
+    breakErrorRate: num(o, "break-error-rate", DEFAULT_THRESHOLDS.breakErrorRate),
+    kneeP95Mult: num(o, "knee-p95-mult", DEFAULT_THRESHOLDS.kneeP95Mult),
+    kneeThroughput: num(o, "knee-throughput", DEFAULT_THRESHOLDS.kneeThroughput),
+    clientCpuPct: num(o, "client-cpu", DEFAULT_THRESHOLDS.clientCpuPct),
+    clientQueueWaitMs: num(o, "client-queue-wait", DEFAULT_THRESHOLDS.clientQueueWaitMs),
+  };
+}
+
+const DEFAULT_START: Record<Scenario, string> = { setup: "1/min", signup: "2/min", login: "15/min", incident: "2/min" };
+
+function parseRatios(s: string): { signup: number; login: number; setup: number } {
+  const [a, b, c] = s.split(":").map(Number);
+  if (![a, b, c].every((x) => Number.isFinite(x) && x >= 0)) throw new Error("--incident-ratios must be signup:login:setup, e.g. 1:10:0.05");
+  return { signup: a, login: b, setup: c };
+}
+
+// ---------------------------------------------------------------------------
+// run
+// ---------------------------------------------------------------------------
+
+async function cmdRun(o: Opts): Promise<number> {
+  const scenario = str(o, "scenario") as Scenario;
+  if (!SCENARIOS.includes(scenario)) throw new Error(`--scenario must be one of ${SCENARIOS.join("|")} (crash repro is intentionally not offered)`);
+  const c = common(o, "s");
+  const engineKind = str(o, "engine", "browser")!;
+  const stepMs = parseDuration(str(o, "step-duration", "5m")!);
+  const cooldownMs = parseDuration(str(o, "cooldown", "2m")!);
+  const drainMs = parseDuration(str(o, "drain", "5m")!);
+  const startRate = parseRate(str(o, "start-rate", DEFAULT_START[scenario])!);
+  const factor = num(o, "step-factor", 2);
+  const add = str(o, "step-add") ? parseRate(str(o, "step-add")!) : 0;
+  const maxRate = str(o, "max-rate") ? parseRate(str(o, "max-rate")!) : startRate * Math.pow(factor, 7);
+  const maxSteps = num(o, "max-steps", 8);
+  const steps = planSteps({ startRate, factor, add, maxRate, maxSteps, stepMs, cooldownMs });
+  const browserPool = num(o, "browser-pool", 10);
+  const httpConc = num(o, "concurrency", 4);
+  const ratios = scenario === "incident" ? parseRatios(str(o, "incident-ratios", "1:10:0.05")!) : null;
+  const refreshRatio = num(o, "refresh-ratio", 0);
+  const th = thresholds(o);
+  const needsBrowser = scenario === "signup" || scenario === "incident" || (scenario === "login" && engineKind === "browser");
+  const needsAdmin = scenario === "setup" || (scenario === "incident" && ratios!.setup > 0);
+  const needsRealms = scenario === "signup" || scenario === "incident";
+  const needsUsers = scenario === "login";
+
+  // Op rates as ratios of the base step rate.
+  const opRatios: Array<{ op: string; ratio: number }> =
+    scenario === "incident" ? [{ op: "signup", ratio: ratios!.signup }, { op: "login", ratio: ratios!.login }, { op: "setup", ratio: ratios!.setup }]
+    : [{ op: scenario, ratio: 1 }];
+  if (refreshRatio > 0 && (scenario === "login" || scenario === "incident")) opRatios.push({ op: "refresh", ratio: refreshRatio * (ratios?.login ?? 1) });
+
+  const realmInfo = needsRealms ? loadRealms(o, c.outBase) : null;
+  const userInfo = (needsUsers || str(o, "users-from") || str(o, "users-file")) ? loadUsers(o, c.outBase) : null;
+
+  // ------- plan (always printed) -------
+  const stepMin = stepMs / 60_000;
+  const signupRatio = opRatios.find((x) => x.op === "signup")?.ratio ?? 0;
+  const totalSignups = Math.ceil(steps.reduce((a, s) => a + s.baseRate * signupRatio * stepMin, 0));
+  const totalSetups = Math.ceil(steps.reduce((a, s) => a + s.baseRate * (opRatios.find((x) => x.op === "setup")?.ratio ?? 0) * stepMin, 0));
+  const seats = realmInfo?.seats ?? num(o, "seats-per-realm", 5);
+  console.log(`PLAN ${scenario} run=${c.runId} target=${c.target.name} tc=${c.target.tcBase}`);
+  console.log(`  engine=${needsBrowser ? `browser (pool ${browserPool} contexts, headless=${c.headless})` : scenario === "setup" ? "http" : engineKind} http-concurrency=${httpConc} arrivals=${str(o, "arrival", "poisson")}`);
+  console.log(`  client=${OIDC_CLIENT_ID} redirect=${CALLBACK_URL} (intercepted in-process)`);
+  console.log(`  steps: ${steps.length} x ${fmtDuration(stepMs)} + ${fmtDuration(cooldownMs)} cooldown, factor ${add > 0 ? "+" + fmtRate(add) : "x" + factor}, worst case ${fmtDuration(steps.length * (stepMs + cooldownMs))} plus one confirm step`);
+  let cumSignups = 0;
+  for (const s of steps) {
+    cumSignups += s.baseRate * (opRatios.find((x) => x.op === "signup")?.ratio ?? 0) * stepMin;
+    const realmsNote = cumSignups > 0 ? `  [realms to finish this step: ~${Math.ceil(cumSignups / (realmInfo?.seats ?? num(o, "seats-per-realm", 5)))}]` : "";
+    console.log(`  step ${s.index}: ` + opRatios.map((r) => `${r.op} ${fmtRate(s.baseRate * r.ratio)} (~${(s.baseRate * r.ratio * stepMin).toFixed(1)}/step)`).join(", ") + realmsNote);
+  }
+  console.log(`  knee: p95 > ${th.kneeP95Mult}x baseline or on-time < ${th.kneeThroughput * 100}%; break: errors > ${th.breakErrorRate * 100}% or a server failure signature`);
+  console.log(`  abort: rolling ${th.abortWindowMs / 1000}s errors > ${th.abortErrorRate * 100}%${flag(o, "watch-restarts") ? ", any ORK restart" : ""}${flag(o, "watch-prom") ? `, ORK error rate > ${num(o, "prom-error-threshold", 0.5)}/s` : ""}`);
+  console.log(`  client-bound: CPU avg > ${th.clientCpuPct}%, queue wait p95 > ${th.clientQueueWaitMs}ms, or dropped arrivals`);
+  if (signupRatio > 0) {
+    const need = Math.ceil(totalSignups / seats);
+    console.log(`  sign-ups if every step runs: ~${totalSignups}; at ${seats} seats/realm that needs ~${need} realms` +
+      (realmInfo ? ` (have ${realmInfo.realms.length} from ${realmInfo.source || "nothing"})` : ""));
+    if (realmInfo && realmInfo.realms.length < need) console.log(`  NOTE: the realm pool runs out before the last step; S1 stops with "need more realms" (prepare-realms --count ${need - realmInfo.realms.length}).`);
+  }
+  if (totalSetups > 0) console.log(`  realm setups if every step runs: ~${totalSetups} (each creates a realm + a Stripe test subscription; cleanup is manual)`);
+  if (userInfo) console.log(`  login users: ${userInfo.users.length} from ${userInfo.source || "none"} across ${new Set(userInfo.users.map((u) => u.realm)).size} realm(s)`);
+  console.log(`  output: ${join(c.outBase, c.runId)}/`);
+  if (c.dryRun) {
+    if (needsAdmin && !process.env.TC_ADMIN_PASSWORD) console.log(`  (live run needs TC_ADMIN_PASSWORD${c.target.name === "staging" ? " and --confirm-stripe-test" : ""})`);
+    console.log("DRY RUN: nothing was sent.");
+    return 0;
+  }
+
+  // ------- preflight -------
+  if (needsRealms && (!realmInfo || realmInfo.realms.length === 0)) throw new Error("no realms: pass --realms a,b,c or --realms-from <prepare runId>");
+  if (needsUsers && (!userInfo || userInfo.users.length === 0)) throw new Error("no login users: pass --users-from <signup runId> and/or --users-file");
+  if (needsAdmin) requireStripeTest(o, c.target, c.dryRun);
+  const creds = adminCreds(needsAdmin);
+  const homeOrk = str(o, "home-ork", c.target.name === "staging" ? "https://sork1.tideprotocol.com" : "http://localhost:1001")!;
+  if (engineKind === "node") assertAllowedUrl(c.target.name, homeOrk);
+
+  const dir = runDir(c.outBase, c.runId);
+  const log = makeLogger(join(dir, "sim.log"));
+  const manifest = new ManifestWriter(dir, {
+    runId: c.runId, createdAt: new Date().toISOString(), target: c.target.name, tcBase: c.target.tcBase,
+    command: `run --scenario ${scenario}`, args: Object.fromEntries(o), emailPattern: `lt-${c.runId}-*@${c.emailDomain}`,
+  });
+  const secret = new UsersSecret(dir);
+  const events = new Jsonl(join(dir, "events.jsonl"));
+  const stepsLog = new Jsonl(join(dir, "steps.jsonl"));
+
+  const browserSlots = new Pool("browser", browserPool);
+  const httpSlots = new Pool("http", httpConc);
+  const monitor = new ClientMonitor([browserSlots, httpSlots]);
+  let engine: Engine | null = null;
+  const host = needsBrowser ? new BrowserHost(c.headless, c.target.name, (h) => engine?.abort(`browser tried to reach production host ${h}`), log) : null;
+  const admin = creds ? new AdminClient(c.target.tcBase, creds) : null;
+  const loginPool = new LoginUserPool();
+  userInfo?.users.forEach((u) => loginPool.add(u));
+  const refresh = refreshRatio > 0 ? new RefreshStore() : undefined;
+  const password = newRunPassword();
+  const maxQueue = (p: Pool) => num(o, "max-queue", p.capacity * 4);
+  const navTimeoutMs = parseDuration(str(o, "nav-timeout", "60s")!);
+
+  const ops: OpSpec[] = [];
+  for (const r of opRatios) {
+    if (r.ratio <= 0) continue;
+    if (r.op === "setup") {
+      let n = 0;
+      ops.push({ name: "setup", ratio: r.ratio, pool: httpSlots, maxQueue: maxQueue(httpSlots), run: () => setupOnce({
+        admin: admin!, manifest, runId: c.runId, emailDomain: c.emailDomain,
+        retries: num(o, "setup-retries", 2), retryDelayMs: parseDuration(str(o, "setup-retry-delay", "5s")!),
+        realmPrefix: "lt-ws", purpose: "s3-setup",
+      }, ++n) });
+    } else if (r.op === "signup") {
+      ops.push({ name: "signup", ratio: r.ratio, pool: browserSlots, maxQueue: maxQueue(browserSlots), run: makeSignupOp({
+        host: host!, tcBase: c.target.tcBase, runId: c.runId, emailDomain: c.emailDomain, password,
+        realms: new RealmPool(realmInfo!.realms, realmInfo!.seats), manifest, secret,
+        loginPool: scenario === "incident" ? loginPool : undefined, exchangeToken: !flag(o, "no-token"), log,
+      }) });
+    } else if (r.op === "login") {
+      if (engineKind === "node") {
+        const clients = new Map<string, NodeCmkClient>();
+        ops.push({ name: "login", ratio: r.ratio, pool: httpSlots, maxQueue: maxQueue(httpSlots), run: async (): Promise<OpOutcome> => {
+          const u = loginPool.next();
+          if (!u) return { ok: false, code: "NO_LOGIN_USERS", expected: true };
+          let cl = clients.get(u.realm);
+          if (!cl) {
+            cl = new NodeCmkClient({ tcBase: c.target.tcBase, tcRealm: u.realm, clientId: OIDC_CLIENT_ID, callbackUrl: CALLBACK_URL, homeOrkUrl: homeOrk });
+            clients.set(u.realm, cl);
+          }
+          const res = await cl.login(u, { realm: u.realm, vvkid: "-", vvkPublic: "-", voucherURL: "-", homeOrkUrl: homeOrk, orks: [] });
+          const phases = { fetch1_ms: res.phases.fetch1Ms ?? 0, crypto_ms: res.phases.cryptoMs ?? 0, fetch2_ms: res.phases.fetch2Ms ?? 0 };
+          return res.ok ? { ok: true, phases } : { ok: false, code: "NODE_LOGIN_FAILED", message: res.message, phases };
+        } });
+      } else {
+        ops.push({ name: "login", ratio: r.ratio, pool: browserSlots, maxQueue: maxQueue(browserSlots), run: makeLoginOp({ host: host!, tcBase: c.target.tcBase, users: loginPool, refresh, navTimeoutMs }) });
+      }
+    } else if (r.op === "refresh") {
+      ops.push({ name: "refresh", ratio: r.ratio, pool: httpSlots, maxQueue: maxQueue(httpSlots), run: makeRefreshOp(c.target.tcBase, refresh!) });
+    }
+  }
+
+  engine = new Engine({
+    runId: c.runId, scenario, steps, stepMs, cooldownMs, drainMs, arrival: str(o, "arrival", "poisson") === "uniform" ? "uniform" : "poisson",
+    thresholds: th, events, stepsLog, monitor, log,
+    secrets: () => [password, ...loginPool.passwords(), ...(admin?.secrets() ?? [])],
+  }, ops);
+
+  const watch = new ServerWatch({
+    restarts: flag(o, "watch-restarts"), prom: flag(o, "watch-prom"), promErrorThreshold: num(o, "prom-error-threshold", 0.5),
+    rg: c.target.resourceGroup, apps: c.target.orkApps, promJob: c.target.promJob, intervalMs: 60_000,
+    onAbort: (r) => engine?.abort(r), log,
+  });
+
+  let sigints = 0;
+  process.on("SIGINT", () => {
+    sigints++;
+    if (sigints === 1) engine?.abort("SIGINT from operator (Ctrl-C again to exit without a report)");
+    else process.exit(130);
+  });
+
+  log(`############## RUN ${c.runId} START ${utcStamp()} ##############`);
+  let result: EngineResult;
+  try {
+    if (c.target.name === "local" && (flag(o, "watch-restarts") || flag(o, "watch-prom"))) log("note: Azure watchers are for staging; they will likely fail on a local target");
+    await watch.start();
+    monitor.start();
+    await host?.start();
+    if (admin) await admin.getToken();
+    result = await engine.run();
+  } finally {
+    watch.stop();
+    monitor.stop();
+    await host?.stop();
+    events.close();
+    stepsLog.close();
+  }
+  log(`############## RUN ${c.runId} END ${utcStamp()} ##############`);
+
+  const rep = writeReport({
+    dir, runId: c.runId, scenario, target: c.target.name, promJob: c.target.promJob,
+    config: { steps: steps.length, stepMs, cooldownMs, startRate, factor, add, maxRate, browserPool, httpConc, opRatios, thresholds: th, engine: engineKind },
+    result, manifest: manifest.data, watch: { restarts: watch.restartLog, prom: watch.promLog },
+  });
+  console.log(`\nreport: ${rep.md}\nevents: ${join(dir, "events.jsonl")}\n`);
+  console.log(cleanupChecklist(manifest.data, manifest.path));
+  return result.abortReason ? 2 : 0;
+}
+
+// ---------------------------------------------------------------------------
+// prepare-realms
+// ---------------------------------------------------------------------------
+
+async function cmdPrepare(o: Opts): Promise<number> {
+  const c = common(o, "p");
+  const count = num(o, "count", 0);
+  if (count < 1) throw new Error("--count N is required");
+  const seats = num(o, "seats-per-realm", 5);
+  const conc = num(o, "concurrency", 1);
+  console.log(`PLAN prepare-realms run=${c.runId} target=${c.target.name} tc=${c.target.tcBase}`);
+  console.log(`  ${count} realm(s) lt-pool-${c.runId}-1..${count}, concurrency ${conc}, ${seats} seats each = ${count * seats} sign-ups of capacity`);
+  console.log(`  per realm: create realm, setUpTideRealm (FreeTier, email lt-${c.runId}-pool<n>@${c.emailDomain}), registration on, verifyEmail off, client ${OIDC_CLIENT_ID}`);
+  console.log(`  ready check: licence active + ${flag(o, "no-browser-check") ? "(sign-up screen check skipped)" : "Tide sign-up screen renders"}`);
+  console.log(`  this is workspace-setup load on the target; it is logged separately and not part of any S1 measurement`);
+  console.log(`  output: ${join(c.outBase, c.runId)}/realms.json + manifest.json`);
+  if (c.dryRun) {
+    console.log("DRY RUN: nothing was sent.");
+    return 0;
+  }
+  requireStripeTest(o, c.target, false);
+  const creds = adminCreds(true)!;
+  const dir = runDir(c.outBase, c.runId);
+  const log = makeLogger(join(dir, "prepare.log"));
+  const manifest = new ManifestWriter(dir, {
+    runId: c.runId, createdAt: new Date().toISOString(), target: c.target.name, tcBase: c.target.tcBase,
+    command: "prepare-realms", args: Object.fromEntries(o), emailPattern: `lt-${c.runId}-pool*@${c.emailDomain}`,
+  });
+  let prodHit: string | null = null;
+  const host = flag(o, "no-browser-check") ? null : new BrowserHost(c.headless, c.target.name, (h) => { prodHit = h; }, log);
+  const admin = new AdminClient(c.target.tcBase, creds);
+  let file: RealmsFile;
+  try {
+    await host?.start();
+    await admin.getToken();
+    file = await prepareRealms({
+      admin, manifest, host, runId: c.runId, target: c.target.name, tcBase: c.target.tcBase, count, concurrency: conc,
+      seatsPerRealm: seats, emailDomain: c.emailDomain, retries: num(o, "setup-retries", 2),
+      retryDelayMs: parseDuration(str(o, "setup-retry-delay", "5s")!), outPath: join(dir, "realms.json"), log,
+    });
+  } finally {
+    await host?.stop();
+  }
+  if (prodHit) log(`WARNING: a production host (${prodHit}) was requested and blocked`);
+  const ready = file.realms.filter((r) => r.ready).length;
+  log(`prepared ${ready}/${count} ready realm(s) = ${ready * seats} sign-up seats. Use: --realms-from ${c.runId}`);
+  console.log(`\n${cleanupChecklist(manifest.data, manifest.path)}`);
+  return ready > 0 ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
+// report / checklist
+// ---------------------------------------------------------------------------
+
+function cmdReport(o: Opts, onlyChecklist: boolean): number {
+  const id = str(o, "run");
+  if (!id) throw new Error("--run <runId> is required");
+  const dir = join(resolve(str(o, "out", "runs")!), id);
+  const manifest = readJson<Manifest>(join(dir, "manifest.json"));
+  if (onlyChecklist) {
+    console.log(cleanupChecklist(manifest, join(dir, "manifest.json")));
+    return 0;
+  }
+  const stepsPath = join(dir, "steps.jsonl");
+  if (!existsSync(stepsPath)) throw new Error(`no steps.jsonl in ${dir}`);
+  const steps = readFileSync(stepsPath, "utf8").split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const prev = existsSync(join(dir, "summary.json")) ? readJson<{ abortReason: string | null; stopReason: string | null; baselineP95: Record<string, number>; scenario: string; target: string }>(join(dir, "summary.json")) : null;
+  const rep = writeReport({
+    dir, runId: id, scenario: prev?.scenario ?? "?", target: prev?.target ?? manifest.target, promJob: "sork-env/ork", config: {},
+    result: { steps, abortReason: prev?.abortReason ?? null, stopReason: prev?.stopReason ?? null, baselineP95: prev?.baselineP95 ?? {} },
+    manifest,
+  });
+  console.log(`report: ${rep.md}`);
+  return 0;
+}
+
+const HELP = `staging incident simulator
+
+  run --scenario setup|signup|login|incident --target staging|local [options]
+  prepare-realms --count N --target staging|local [--seats-per-realm 5] [--concurrency 1]
+  report --run <runId>        rebuild summary.md from steps.jsonl
+  checklist --run <runId>     print the manual cleanup checklist
+
+Add --dry-run to any run or prepare-realms to print the plan without sending anything.
+Full options and examples: load-harness/README.md, "Staging incident simulator".`;
+
+async function main(): Promise<number> {
+  const { cmd, opts } = parseArgs(process.argv.slice(2));
+  if (cmd === "help" || opts.has("help")) { console.log(HELP); return 0; }
+  for (const k of opts.keys()) if (!KNOWN.has(k)) throw new Error(`unknown option --${k}`);
+  if (cmd === "run") return cmdRun(opts);
+  if (cmd === "plan") { opts.set("dry-run", true); return cmdRun(opts); }
+  if (cmd === "prepare-realms") return cmdPrepare(opts);
+  if (cmd === "report") return cmdReport(opts, false);
+  if (cmd === "checklist") return cmdReport(opts, true);
+  throw new Error(`unknown command "${cmd}"\n\n${HELP}`);
+}
+
+main().then((code) => process.exit(code), async (e) => {
+  console.error(`ERROR ${(e as Error)?.message ?? String(e)}`);
+  await sleep(10);
+  process.exit(1);
+});
