@@ -115,6 +115,21 @@ async function waitForCustomInputHost(
   return null;
 }
 
+// Visible-only variant: returns null when the host is absent OR present but hidden.
+async function waitForVisibleCustomInput(
+  page: Page,
+  hostSelector: string,
+  timeoutMs: number,
+): Promise<Locator | null> {
+  const host = page.locator(hostSelector).first();
+  try {
+    await host.waitFor({ state: "visible", timeout: timeoutMs });
+  } catch {
+    return null;
+  }
+  return waitForCustomInputHost(page, hostSelector, 5_000);
+}
+
 async function clickVisibleButton(
   page: Page,
   idSelector: string,
@@ -137,6 +152,9 @@ export interface SignUpResult {
   voucherDraws:  number;         // count observed via network listener
   cohortConvertCount: number;    // count of /Authentication/Auth/Convert
   durationMs:    number;
+  // Phase timings in ms: enclave_load, signup_form, email_step, keygen_wait, fbl_submit.
+  phases:        Record<string, number>;
+  emailStepShown?: boolean;
 }
 
 export interface SignUpFlowOpts {
@@ -151,6 +169,8 @@ export interface SignUpFlowOpts {
   totalTimeoutMs?:number;        // default 240_000
   /** Caller-supplied logger so we can prefix per-user. */
   log?: (msg: string) => void;
+  /** Reuse an open page instead of creating one (the caller owns closing it). */
+  page?:          Page;
 }
 
 const DEFAULT_NAV_TIMEOUT_MS   = 60_000;
@@ -168,8 +188,17 @@ export async function driveSignUpFlow(opts: SignUpFlowOpts): Promise<SignUpResul
   const totalTimeoutMs = opts.totalTimeoutMs ?? DEFAULT_TOTAL_TIMEOUT_MS;
   const startedAt = Date.now();
 
-  const page = await opts.context.newPage();
+  const ownPage = !opts.page;
+  const page = opts.page ?? await opts.context.newPage();
   page.setDefaultTimeout(navTimeoutMs);
+  const phases: Record<string, number> = {};
+  let mark = Date.now();
+  const lap = (name: string): void => {
+    const now = Date.now();
+    phases[name] = now - mark;
+    mark = now;
+  };
+  let emailStepShown: boolean | undefined;
   page.setDefaultNavigationTimeout(navTimeoutMs);
 
   // Network counters for visibility into voucher / cohort activity.
@@ -194,6 +223,7 @@ export async function driveSignUpFlow(opts: SignUpFlowOpts): Promise<SignUpResul
     const signInHost = await waitForCustomInputHost(page, SIGNUP_SELECTORS.signInUsernameHost, 30_000);
     if (!signInHost) throw new Error("sign-in screen never rendered");
     step = "sign-in-screen";
+    lap("enclave_load");
 
     // 2. Switch to sign-up.
     await page.locator(SIGNUP_SELECTORS.createAccountLink)
@@ -212,13 +242,21 @@ export async function driveSignUpFlow(opts: SignUpFlowOpts): Promise<SignUpResul
     await fillCustomInput(repeatHost, opts.user.password);
     await clickVisibleButton(page, SIGNUP_SELECTORS.step1ContinueButton, 10_000);
     step = "step1-submitted";
+    lap("signup_form");
 
-    // 4. Step 2 — email.
-    const emailHost = await waitForCustomInputHost(page, SIGNUP_SELECTORS.step2EmailHost, 30_000);
-    if (!emailHost) throw new Error("sign-up step 2 email host missing");
-    await fillCustomInput(emailHost, opts.email);
-    await clickVisibleButton(page, SIGNUP_SELECTORS.step2ContinueButton, 10_000);
-    step = "step2-submitted";
+    // 4. Step 2, email. Some enclave builds ship this markup hidden and collect the email on
+    //    the first-broker-login form instead, so only a VISIBLE host counts as the step.
+    const emailHost = await waitForVisibleCustomInput(page, SIGNUP_SELECTORS.step2EmailHost, 8_000);
+    emailStepShown = !!emailHost;
+    if (emailHost) {
+      await fillCustomInput(emailHost, opts.email);
+      await clickVisibleButton(page, SIGNUP_SELECTORS.step2ContinueButton, 10_000);
+      step = "step2-submitted";
+      lap("email_step");
+    } else {
+      // Keygen already started after step 1, so this wait is counted as keygen_wait.
+      step = "step2-skipped";
+    }
     log(`SWE bootstrap in progress (cohort+voucher+Convert)…`);
 
     // 5. First-broker-login Update Account Information page.
@@ -230,6 +268,7 @@ export async function driveSignUpFlow(opts: SignUpFlowOpts): Promise<SignUpResul
       throw new Error(`first-broker-login form did not appear: ${(e as Error).message}`);
     }
     step = "fbl-form-visible";
+    lap("keygen_wait");
 
     const setIfVisible = async (sel: string, val: string): Promise<void> => {
       const loc = page.locator(sel).first();
@@ -268,6 +307,7 @@ export async function driveSignUpFlow(opts: SignUpFlowOpts): Promise<SignUpResul
       { timeout: callbackDeadline, waitUntil: "domcontentloaded" },
     );
     step = "callback-reached";
+    lap("fbl_submit");
     const callbackUrl = page.url();
     return {
       ok: true,
@@ -276,6 +316,8 @@ export async function driveSignUpFlow(opts: SignUpFlowOpts): Promise<SignUpResul
       voucherDraws,
       cohortConvertCount,
       durationMs: Date.now() - startedAt,
+      phases,
+      emailStepShown,
     };
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e);
@@ -287,8 +329,10 @@ export async function driveSignUpFlow(opts: SignUpFlowOpts): Promise<SignUpResul
       voucherDraws,
       cohortConvertCount,
       durationMs: Date.now() - startedAt,
+      phases,
+      emailStepShown,
     };
   } finally {
-    await page.close().catch(() => undefined);
+    if (ownPage) await page.close().catch(() => undefined);
   }
 }

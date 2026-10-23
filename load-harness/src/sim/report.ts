@@ -1,6 +1,6 @@
 // Summary report (JSON + Markdown), the server-side queries for the run window, and the manual cleanup checklist.
 
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { EngineResult, StepSummary } from "./engine.js";
 import type { Manifest } from "./sink.js";
@@ -98,6 +98,21 @@ function stepTable(steps: StepSummary[]): string {
   return rows.join("\n");
 }
 
+// Token alg per op, read back from events.jsonl. RS256 means the token was signed locally, so no
+// Tide signing (PreSign) happened for it.
+export function algCounts(eventsPath: string): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  if (!existsSync(eventsPath)) return out;
+  for (const line of readFileSync(eventsPath, "utf8").split("\n")) {
+    if (!line) continue;
+    const e = JSON.parse(line) as { op: string; ok: boolean; extra?: { alg?: string } };
+    if (!e.ok || !e.extra?.alg) continue;
+    out[e.op] ??= {};
+    out[e.op][e.extra.alg] = (out[e.op][e.extra.alg] ?? 0) + 1;
+  }
+  return out;
+}
+
 export interface ReportInput {
   dir: string;
   runId: string;
@@ -124,7 +139,10 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
     for (const [k, v] of Object.entries(o.signatures)) sigTotals[k] = (sigTotals[k] ?? 0) + v;
     for (const [k, v] of Object.entries(o.codes)) codeTotals[k] = (codeTotals[k] ?? 0) + v;
   }
+  const algs = algCounts(join(r.dir, "events.jsonl"));
+  const localSigned = Object.values(algs).some((m) => Object.keys(m).some((a) => a !== "EdDSA"));
   const summary = {
+    algs,
     runId: r.runId, scenario: r.scenario, target: r.target, window: { start: winStart, end: winEnd },
     abortReason: r.result.abortReason, stopReason: r.result.stopReason, baselineP95: r.result.baselineP95,
     ceilings: ceil, signatures: sigTotals, codes: codeTotals, config: r.config, steps, watch: r.watch ?? null,
@@ -147,6 +165,11 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
     ...ceil.map((c) => `| ${c.op} | ${c.lastOk !== null ? fmtRate(c.lastOk) : "-"} | ${c.knee !== null ? fmtRate(c.knee) : "-"} | ${c.brk !== null ? fmtRate(c.brk) : "-"} | ${c.clientBound !== null ? fmtRate(c.clientBound) : "-"} |`),
     ``,
     `A client-bound step means the load machine, not staging, was the limit at that rate.`,
+    ``,
+    `## Token signing`,
+    ``,
+    ...(Object.keys(algs).length ? Object.entries(algs).map(([op, m]) => `- ${op}: ${Object.entries(m).map(([a, n]) => `${a} x${n}`).join(", ")}`) : ["- no tokens minted"]),
+    ...(localSigned ? [``, `WARNING: some tokens were not EdDSA. TideCloak only signs through the Tide network (Key.PreSign) on realms with IGA enabled and EdDSA as the default algorithm, so those logins did not exercise PreSign.`] : []),
     ``,
     `## Steps`,
     ``,

@@ -25,7 +25,8 @@ const ALLOW_STAGING: RegExp[] = [
   /^sork\d+\.tideprotocol\.com$/i,
 ];
 
-const ALLOW_LOCAL: RegExp[] = [/^localhost$/i, /^127\.0\.0\.1$/, /^host\.docker\.internal$/i];
+// hostgateway is how the local ORKs advertise each other to the browser.
+const ALLOW_LOCAL: RegExp[] = [/^localhost$/i, /^127\.0\.0\.1$/, /^host\.docker\.internal$/i, /^hostgateway$/i];
 
 export function isDeniedHost(host: string): boolean {
   return DENY.some((r) => r.test(host));
