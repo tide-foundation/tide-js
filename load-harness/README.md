@@ -250,7 +250,8 @@ Always look at the plan first: add `--dry-run` to any command. Nothing is sent.
 # Realm pool for S1/S2 (runs sequentially by default; this is setup load, logged to prepare.log)
 node dist/sim/cli.js prepare-realms --count 20 --target staging --confirm-stripe-test --dry-run
 node dist/sim/cli.js prepare-realms --count 20 --target staging --confirm-stripe-test
-#   -> runs/<poolRun>/realms.json  (only realms whose licence is active and whose sign-up screen renders)
+#   -> runs/<poolRun>/realms.json  (only realms that passed every check, with seats left per realm)
+#   --basic for the old IGA-off pool (RS256 tokens, no PreSign)
 
 # S3 workspace-setup surge
 node dist/sim/cli.js run --scenario setup --target staging --confirm-stripe-test \
@@ -276,6 +277,40 @@ node dist/sim/cli.js checklist --run <runId>    # manual cleanup list
 
 `--target local` points everything at the local stack (`http://localhost:8080`, ORKs on
 localhost / hostgateway) for a smoke test.
+
+### What `prepare-realms` does
+
+Default mode `--tide-full` gives the same realm a customer gets from the console setup wizard's
+keygen block, so Tide users' tokens are minted through the ORKs (EdDSA, Key.PreSign). Per realm,
+sequentially:
+
+1. `POST /admin/realms`, then registration on and verifyEmail off (before setup, so the first
+   signed IdP settings already carry RegOn).
+2. `POST /admin/realms/<r>/vendorResources/setUpTideRealm` (FreeTier, tagged email). Synchronous:
+   tide IdP, tide-vendor-key, VRK, wallet, Stripe test subscription.
+3. `GET .../vendorResources/getSubscriptionStatus` must be active ("upcoming renewal").
+4. Realm attribute `iga.attestor=tide` (without it IGA runs Tideless and users get quarantined).
+5. `link-tide-account-action` registered if missing (`POST .../authentication/register-required-action`).
+6. Harness client `tide-loadtest-harness` (public, PKCE S256, redirect `http://localhost:3000/callback`),
+   created while IGA is still off.
+7. `POST .../vendorResources/sign-idp-settings`.
+8. `POST .../tide-admin/toggle-iga` (form `isIGAEnabled=true`; it flips, so only called when IGA is off).
+   Synchronous: sets EdDSA and the tide attestor, runs the ADOPT scan and the firstAdmin
+   sign-defaults sweep.
+9. Approve every PENDING change request (`POST .../iga/change-requests/<id>/approve`) until none are
+   left. The realm stays in firstAdmin mode (no tide-realm-admin is granted), so each approval is
+   a plain admin call; nothing needs the enclave.
+10. `sign-idp-settings` again.
+11. Verify: IGA on, attestor tide, default algorithm EdDSA, the Tide sign-up screen renders, and a
+    probe sign-up plus a probe login both return an access token with header `alg` EdDSA.
+
+Only realms that pass every step are listed as ready. Per-step timings and failures go to
+`prepare.log`. `--basic` skips steps 4, 5, 8 to 10 and the probe (IGA off, RS256 tokens).
+
+**EdDSA check during load runs.** Users created on a `--tide-full` realm are marked in
+`users.secret.json`. If one of their sign-up, login or refresh tokens comes back RS256, the
+operation fails with `NOT_TIDE_SIGNED`, which counts as a break signature. For your own realms or
+users files, add `--expect-eddsa` to apply the same check.
 
 ### Ramp, knee, break, abort
 
@@ -327,12 +362,8 @@ localhost / hostgateway) for a smoke test.
 
 ### Known limits
 
-- **PreSign coverage.** TideCloak signs tokens through the Tide network (Key.PreSign,
-  TidecloakSessionStartTokenSign) only on realms with IGA enabled and EdDSA as the default
-  algorithm (`DefaultTokenManager`). Realms from `prepare-realms` have IGA off, so their tokens
-  are RS256 and S2 there measures the enclave login (Convert/Authenticate, vouchers) but not
-  PreSign. The report counts token algs and warns. To cover PreSign, point S2 at IGA-enabled
-  EdDSA realms (`--realms`/`--users-file`).
+- **Seat use.** A `--tide-full` realm spends one seat on its probe user, so 4 of 5 are left for
+  load; `realms.json` records the seats left per realm and S1 uses that.
 - `--engine node` (browserless cmkOnly login) is kept for higher rates later; it stops at the
   OIDC code and is untested in this simulator.
 - One Chromium per process. Past roughly 10 to 20 contexts the client CPU usually becomes the

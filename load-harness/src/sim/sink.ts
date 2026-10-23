@@ -107,6 +107,7 @@ export interface SecretUser {
   userId: string;
   realm: string;
   password: string;
+  tideFull?: boolean;
 }
 
 // Passwords for users the simulator created. Mode 0600, gitignored, never printed.

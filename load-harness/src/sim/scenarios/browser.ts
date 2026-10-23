@@ -65,13 +65,17 @@ async function pageText(page: Page): Promise<string> {
 // Realm pool (S1 seat spreading)
 // ---------------------------------------------------------------------------
 
+export interface PoolRealm { realm: string; seats: number; tideFull?: boolean }
+
 export class RealmPool {
   private seats: Map<string, number>;
+  private full: Set<string>;
   private order: string[];
   private i = 0;
-  constructor(realms: string[], seatsPerRealm: number) {
-    this.order = [...realms];
-    this.seats = new Map(realms.map((r) => [r, seatsPerRealm]));
+  constructor(realms: PoolRealm[]) {
+    this.order = realms.map((r) => r.realm);
+    this.seats = new Map(realms.map((r) => [r.realm, r.seats]));
+    this.full = new Set(realms.filter((r) => r.tideFull).map((r) => r.realm));
   }
   // Round-robin over realms that still have seats; null when none do.
   take(): string | null {
@@ -92,6 +96,10 @@ export class RealmPool {
   markFull(realm: string): void {
     this.seats.set(realm, 0);
   }
+  // Realms prepared with --tide-full must mint EdDSA (Tide-signed) tokens.
+  isTideFull(realm: string): boolean {
+    return this.full.has(realm);
+  }
   remaining(): number {
     let n = 0;
     for (const v of this.seats.values()) n += v;
@@ -100,11 +108,14 @@ export class RealmPool {
   size(): number { return this.order.length; }
 }
 
+const NOT_TIDE_SIGNED = (alg: string | undefined) =>
+  `token alg ${alg ?? "unknown"} on a realm that should be Tide-signed (EdDSA): mint did not go through the Tide network`;
+
 // ---------------------------------------------------------------------------
 // Login user pool (S2), spread across users to stay under the per-user throttle
 // ---------------------------------------------------------------------------
 
-export interface PoolUser { userId: string; realm: string; password: string }
+export interface PoolUser { userId: string; realm: string; password: string; tideFull?: boolean }
 
 export class LoginUserPool {
   private users: PoolUser[] = [];
@@ -122,14 +133,14 @@ export class LoginUserPool {
 
 // Refresh tokens kept in memory only, for the refresh op.
 export class RefreshStore {
-  private items: Array<{ realm: string; token: string }> = [];
+  private items: Array<{ realm: string; token: string; mustSign: boolean }> = [];
   private i = 0;
   constructor(private max = 500) {}
-  put(realm: string, token: string): void {
-    this.items.push({ realm, token });
+  put(realm: string, token: string, mustSign = false): void {
+    this.items.push({ realm, token, mustSign });
     if (this.items.length > this.max) this.items.shift();
   }
-  take(): { realm: string; token: string } | null {
+  take(): { realm: string; token: string; mustSign: boolean } | null {
     if (!this.items.length) return null;
     const it = this.items[this.i % this.items.length];
     this.i++;
@@ -137,7 +148,7 @@ export class RefreshStore {
   }
   replace(old: string, realm: string, token: string): void {
     const k = this.items.findIndex((x) => x.token === old);
-    if (k >= 0) this.items[k] = { realm, token };
+    if (k >= 0) this.items[k] = { ...this.items[k], realm, token };
   }
   size(): number { return this.items.length; }
 }
@@ -207,14 +218,16 @@ export function makeSignupOp(d: SignupDeps): (ctx: OpContext) => Promise<OpOutco
         d.manifest.upsertUser({ userId, realm, email, status: "failed", at: new Date().toISOString() });
         return { ok: false, code: "CALLBACK_ERROR", message: `${cb.searchParams.get("error")}: ${cb.searchParams.get("error_description") ?? ""}`, phases, extra };
       }
-      d.secret.add({ userId, realm, password: d.password });
+      const tideFull = d.realms.isTideFull(realm);
+      d.secret.add({ userId, realm, password: d.password, tideFull });
       d.manifest.upsertUser({ userId, realm, email, status: "created", at: new Date().toISOString() });
-      d.loginPool?.add({ userId, realm, password: d.password });
+      d.loginPool?.add({ userId, realm, password: d.password, tideFull });
       if (d.exchangeToken) {
         const tok = await exchangeCode(d.tcBase, realm, cb.searchParams.get("code") ?? "", pkce.verifier);
         phases.token_ms = tok.ms;
         if (!tok.ok) return { ok: false, code: "TOKEN_MINT_FAILED", status: tok.status, message: `account created, token mint failed: ${tok.error}`, phases, extra };
         extra.alg = tok.alg;
+        if (tideFull && tok.alg !== "EdDSA") return { ok: false, code: "NOT_TIDE_SIGNED", message: NOT_TIDE_SIGNED(tok.alg), phases, extra };
       }
       return { ok: true, phases, extra };
     } finally {
@@ -234,6 +247,7 @@ export interface LoginDeps {
   users: LoginUserPool;
   refresh?: RefreshStore;
   navTimeoutMs: number;
+  expectEddsa?: boolean;   // treat every login as Tide-signed, not just tideFull users
 }
 
 export function makeLoginOp(d: LoginDeps): (ctx: OpContext) => Promise<OpOutcome> {
@@ -270,7 +284,9 @@ export function makeLoginOp(d: LoginDeps): (ctx: OpContext) => Promise<OpOutcome
       phases.token_ms = tok.ms;
       if (!tok.ok) return { ok: false, code: "TOKEN_MINT_FAILED", status: tok.status, message: tok.error, phases, extra };
       extra.alg = tok.alg;
-      if (d.refresh && tok.refreshToken) d.refresh.put(user.realm, tok.refreshToken);
+      const mustSign = !!user.tideFull || !!d.expectEddsa;
+      if (d.refresh && tok.refreshToken) d.refresh.put(user.realm, tok.refreshToken, mustSign);
+      if (mustSign && tok.alg !== "EdDSA") return { ok: false, code: "NOT_TIDE_SIGNED", message: NOT_TIDE_SIGNED(tok.alg), phases, extra };
       return { ok: true, phases, extra };
     } catch (e) {
       const text = `${(e as Error).message} | ${errs.join(" | ")} | page: ${await pageText(page)}`;
@@ -289,6 +305,7 @@ export function makeRefreshOp(tcBase: string, store: RefreshStore): (ctx: OpCont
     if (!it) return { ok: false, code: "NO_REFRESH_TOKENS", expected: true, message: "no refresh tokens yet (needs successful logins first)" };
     const r = await refreshGrant(tcBase, it.realm, it.token);
     if (r.ok && r.refreshToken) store.replace(it.token, it.realm, r.refreshToken);
+    if (r.ok && it.mustSign && r.alg !== "EdDSA") return { ok: false, code: "NOT_TIDE_SIGNED", message: NOT_TIDE_SIGNED(r.alg), phases: { token_ms: r.ms } };
     return r.ok ? { ok: true, phases: { token_ms: r.ms }, extra: { realm: it.realm, alg: r.alg } } : { ok: false, code: "REFRESH_FAILED", status: r.status, message: r.error, phases: { token_ms: r.ms } };
   };
 }

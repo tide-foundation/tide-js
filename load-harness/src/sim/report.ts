@@ -169,7 +169,7 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
     `## Token signing`,
     ``,
     ...(Object.keys(algs).length ? Object.entries(algs).map(([op, m]) => `- ${op}: ${Object.entries(m).map(([a, n]) => `${a} x${n}`).join(", ")}`) : ["- no tokens minted"]),
-    ...(localSigned ? [``, `WARNING: some tokens were not EdDSA. TideCloak only signs through the Tide network (Key.PreSign) on realms with IGA enabled and EdDSA as the default algorithm, so those logins did not exercise PreSign.`] : []),
+    ...(localSigned ? [``, `WARNING: some tokens were not EdDSA, so those operations did not go through Tide signing (Key.PreSign). TideCloak only signs through the Tide network on realms with IGA on and EdDSA as the default algorithm; use prepare-realms (default --tide-full) realms, or check the realm if it should already be Tide-signed.`] : []),
     ``,
     `## Steps`,
     ``,

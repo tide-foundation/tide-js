@@ -10,6 +10,7 @@ export interface Signature {
 
 export const SIGNATURES: Signature[] = [
   { id: "SEAT_CAP", re: /exceeded its total user count/i, expected: true, note: "realm seat limit reached (expected, pool sizing)" },
+  { id: "NOT_TIDE_SIGNED", re: /NOT_TIDE_SIGNED|should be Tide-signed/i, note: "token minted locally (RS256) on a realm that must be Tide-signed" },
   { id: "SQLITE_LOCKED", re: /database is locked|SQLITE_BUSY|SqliteException/i, note: "ORK SQLite lock on Create/Commit" },
   { id: "VENDOR_ALREADY_CREATED", re: /VENDOR_ALREADY_CREATED/i, note: "payer refused vendor after partial VVK setup" },
   { id: "UID_NOT_FOUND", re: /could not find uid/i, note: "master SubmitUser lag" },

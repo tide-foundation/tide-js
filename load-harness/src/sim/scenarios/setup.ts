@@ -16,6 +16,9 @@ export interface SetupOpts {
   retryDelayMs: number;
   realmPrefix: string;    // "lt-ws" for S3, "lt-pool" for prepare-realms
   purpose: "pool" | "s3-setup";
+  // Runs between realm create and setUpTideRealm (prepare-realms opens registration here so the
+  // first IdP settings signature already carries RegOn).
+  beforeSetup?: (realm: string) => Promise<void>;
 }
 
 export function setupNames(o: Pick<SetupOpts, "runId" | "emailDomain" | "realmPrefix">, n: number): { realm: string; email: string } {
@@ -50,6 +53,17 @@ export async function setupOnce(o: SetupOpts, n: number): Promise<OpOutcome> {
   if (created.status !== 201) {
     o.manifest.upsertRealm({ realm, email, status: "setup-failed", purpose: o.purpose, createdAt: new Date().toISOString(), error: `create realm HTTP ${created.status}` });
     return { ok: false, code: `CREATE_REALM_${created.status}`, status: created.status, message: `create realm HTTP ${created.status}: ${created.text.slice(0, 300)}`, phases };
+  }
+
+  if (o.beforeSetup) {
+    const b0 = Date.now();
+    try {
+      await o.beforeSetup(realm);
+    } catch (e) {
+      o.manifest.upsertRealm({ realm, email, status: "setup-failed", purpose: o.purpose, createdAt: new Date().toISOString(), error: (e as Error).message });
+      return { ok: false, code: "PRE_SETUP_FAILED", message: (e as Error).message, phases, extra: { realm } };
+    }
+    phases.pre_setup_ms = Date.now() - b0;
   }
 
   let last: HttpResult | null = null;

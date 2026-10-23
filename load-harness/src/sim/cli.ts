@@ -19,7 +19,7 @@ import { writeReport, cleanupChecklist } from "./report.js";
 import { AdminClient } from "./admin.js";
 import { setupOnce } from "./scenarios/setup.js";
 import { prepareRealms, type RealmsFile } from "./scenarios/prepare.js";
-import { BrowserHost, RealmPool, LoginUserPool, RefreshStore, makeSignupOp, makeLoginOp, makeRefreshOp, newRunPassword } from "./scenarios/browser.js";
+import { BrowserHost, RealmPool, type PoolRealm, LoginUserPool, RefreshStore, makeSignupOp, makeLoginOp, makeRefreshOp, newRunPassword } from "./scenarios/browser.js";
 import { NodeCmkClient } from "../protocol/nodeCmkClient.js";
 
 // ---------------------------------------------------------------------------
@@ -69,7 +69,7 @@ const KNOWN = new Set([
   "break-error-rate", "knee-p95-mult", "knee-throughput", "client-cpu", "client-queue-wait", "realms", "realms-from",
   "seats-per-realm", "users-from", "users-file", "realm", "refresh-ratio", "engine", "headless", "email-domain",
   "setup-retries", "setup-retry-delay", "watch-restarts", "watch-prom", "prom-error-threshold", "ork-apps",
-  "confirm-stripe-test", "incident-ratios", "home-ork", "nav-timeout", "no-token", "count", "no-browser-check", "run", "help",
+  "confirm-stripe-test", "incident-ratios", "home-ork", "nav-timeout", "no-token", "count", "no-browser-check", "run", "help", "basic", "tide-full", "expect-eddsa",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -128,23 +128,31 @@ function makeLogger(path: string): (s: string) => void {
   };
 }
 
-function loadRealms(o: Opts, outBase: string): { realms: string[]; seats: number; source: string } {
-  const explicit = list(o, "realms");
+interface RealmInfo { realms: PoolRealm[]; seats: number; source: string; names: string[] }
+
+function loadRealms(o: Opts, outBase: string): RealmInfo {
+  const seats = num(o, "seats-per-realm", 5);
+  const explicitTide = flag(o, "expect-eddsa");
+  const byName = new Map<string, PoolRealm>();
+  for (const r of list(o, "realms")) byName.set(r, { realm: r, seats, tideFull: explicitTide });
+  let source = byName.size ? "--realms" : "";
   const from = str(o, "realms-from");
-  let seats = num(o, "seats-per-realm", 5);
-  const realms = [...explicit];
-  let source = explicit.length ? "--realms" : "";
   if (from) {
     for (const id of from.split(",")) {
       const p = join(outBase, id.trim(), "realms.json");
       if (!existsSync(p)) throw new Error(`no realm pool file at ${p}`);
       const f = readJson<RealmsFile>(p);
-      realms.push(...f.realms.filter((r) => r.ready).map((r) => r.realm));
-      if (!str(o, "seats-per-realm")) seats = f.seatsPerRealm;
+      for (const r of f.realms.filter((x) => x.ready)) {
+        // Older pool files have no per-realm seats or mode.
+        const left = str(o, "seats-per-realm") ? seats : (typeof r.seats === "number" ? r.seats : f.seatsPerRealm);
+        byName.set(r.realm, { realm: r.realm, seats: left, tideFull: !!r.tideFull });
+      }
     }
     source = source ? `${source} + ${from}` : `realms-from ${from}`;
   }
-  return { realms: [...new Set(realms)], seats, source };
+  const realms = [...byName.values()];
+  const avg = realms.length ? realms.reduce((a, r) => a + r.seats, 0) / realms.length : seats;
+  return { realms, seats: Math.max(1, Math.floor(avg)), source, names: realms.map((r) => r.realm) };
 }
 
 function loadUsers(o: Opts, outBase: string): { users: SecretUser[]; source: string } {
@@ -309,7 +317,7 @@ async function cmdRun(o: Opts): Promise<number> {
     } else if (r.op === "signup") {
       ops.push({ name: "signup", ratio: r.ratio, pool: browserSlots, maxQueue: maxQueue(browserSlots), run: makeSignupOp({
         host: host!, tcBase: c.target.tcBase, runId: c.runId, emailDomain: c.emailDomain, password,
-        realms: new RealmPool(realmInfo!.realms, realmInfo!.seats), manifest, secret,
+        realms: new RealmPool(realmInfo!.realms), manifest, secret,
         loginPool: scenario === "incident" ? loginPool : undefined, exchangeToken: !flag(o, "no-token"), log,
       }) });
     } else if (r.op === "login") {
@@ -328,7 +336,7 @@ async function cmdRun(o: Opts): Promise<number> {
           return res.ok ? { ok: true, phases } : { ok: false, code: "NODE_LOGIN_FAILED", message: res.message, phases };
         } });
       } else {
-        ops.push({ name: "login", ratio: r.ratio, pool: browserSlots, maxQueue: maxQueue(browserSlots), run: makeLoginOp({ host: host!, tcBase: c.target.tcBase, users: loginPool, refresh, navTimeoutMs }) });
+        ops.push({ name: "login", ratio: r.ratio, pool: browserSlots, maxQueue: maxQueue(browserSlots), run: makeLoginOp({ host: host!, tcBase: c.target.tcBase, users: loginPool, refresh, navTimeoutMs, expectEddsa: flag(o, "expect-eddsa") }) });
       }
     } else if (r.op === "refresh") {
       ops.push({ name: "refresh", ratio: r.ratio, pool: httpSlots, maxQueue: maxQueue(httpSlots), run: makeRefreshOp(c.target.tcBase, refresh!) });
@@ -393,9 +401,16 @@ async function cmdPrepare(o: Opts): Promise<number> {
   const seats = num(o, "seats-per-realm", 5);
   const conc = num(o, "concurrency", 1);
   console.log(`PLAN prepare-realms run=${c.runId} target=${c.target.name} tc=${c.target.tcBase}`);
-  console.log(`  ${count} realm(s) lt-pool-${c.runId}-1..${count}, concurrency ${conc}, ${seats} seats each = ${count * seats} sign-ups of capacity`);
-  console.log(`  per realm: create realm, setUpTideRealm (FreeTier, email lt-${c.runId}-pool<n>@${c.emailDomain}), registration on, verifyEmail off, client ${OIDC_CLIENT_ID}`);
-  console.log(`  ready check: licence active + ${flag(o, "no-browser-check") ? "(sign-up screen check skipped)" : "Tide sign-up screen renders"}`);
+  const tideFull = !flag(o, "basic");
+  if (tideFull && flag(o, "no-browser-check")) throw new Error("--tide-full verifies with a real sign-up and login, so it cannot skip the browser; use --basic for that");
+  const usable = tideFull ? seats - 1 : seats;
+  console.log(`  mode: ${tideFull ? "tide-full (IGA on, iga.attestor=tide, EdDSA, ORK-signed tokens)" : "basic (IGA off, RS256 tokens, no PreSign)"}`);
+  console.log(`  ${count} realm(s) lt-pool-${c.runId}-1..${count}, concurrency ${conc}, ${seats} seats each, ${usable} left for load after ${tideFull ? "the probe user" : "setup"} = ${count * usable} sign-ups of capacity`);
+  console.log(`  per realm: create realm, registration on + verifyEmail off, setUpTideRealm (FreeTier, email lt-${c.runId}-pool<n>@${c.emailDomain}), licence check,`);
+  console.log(tideFull
+    ? `    iga.attestor=tide, link-tide-account-action, client ${OIDC_CLIENT_ID}, sign IdP settings, toggle-iga, approve pending ADOPT CRs (firstAdmin), sign IdP settings`
+    : `    client ${OIDC_CLIENT_ID}, sign IdP settings`);
+  console.log(`  ready check: ${tideFull ? "IGA on + attestor tide + EdDSA, sign-up screen renders, probe sign-up + login both mint EdDSA tokens" : flag(o, "no-browser-check") ? "licence active (sign-up screen check skipped)" : "licence active + Tide sign-up screen renders"}`);
   console.log(`  this is workspace-setup load on the target; it is logged separately and not part of any S1 measurement`);
   console.log(`  output: ${join(c.outBase, c.runId)}/realms.json + manifest.json`);
   if (c.dryRun) {
@@ -408,8 +423,9 @@ async function cmdPrepare(o: Opts): Promise<number> {
   const log = makeLogger(join(dir, "prepare.log"));
   const manifest = new ManifestWriter(dir, {
     runId: c.runId, createdAt: new Date().toISOString(), target: c.target.name, tcBase: c.target.tcBase,
-    command: "prepare-realms", args: Object.fromEntries(o), emailPattern: `lt-${c.runId}-pool*@${c.emailDomain}`,
+    command: "prepare-realms", args: Object.fromEntries(o), emailPattern: `lt-${c.runId}-*@${c.emailDomain}`,
   });
+  const secret = new UsersSecret(dir);
   let prodHit: string | null = null;
   const host = flag(o, "no-browser-check") ? null : new BrowserHost(c.headless, c.target.name, (h) => { prodHit = h; }, log);
   const admin = new AdminClient(c.target.tcBase, creds);
@@ -418,8 +434,8 @@ async function cmdPrepare(o: Opts): Promise<number> {
     await host?.start();
     await admin.getToken();
     file = await prepareRealms({
-      admin, manifest, host, runId: c.runId, target: c.target.name, tcBase: c.target.tcBase, count, concurrency: conc,
-      seatsPerRealm: seats, emailDomain: c.emailDomain, retries: num(o, "setup-retries", 2),
+      admin, manifest, secret, host, runId: c.runId, target: c.target.name, tcBase: c.target.tcBase, count, concurrency: conc,
+      seatsPerRealm: seats, tideFull, emailDomain: c.emailDomain, retries: num(o, "setup-retries", 2),
       retryDelayMs: parseDuration(str(o, "setup-retry-delay", "5s")!), outPath: join(dir, "realms.json"), log,
     });
   } finally {
@@ -427,7 +443,8 @@ async function cmdPrepare(o: Opts): Promise<number> {
   }
   if (prodHit) log(`WARNING: a production host (${prodHit}) was requested and blocked`);
   const ready = file.realms.filter((r) => r.ready).length;
-  log(`prepared ${ready}/${count} ready realm(s) = ${ready * seats} sign-up seats. Use: --realms-from ${c.runId}`);
+  const seatTotal = file.realms.filter((r) => r.ready).reduce((a, r) => a + r.seats, 0);
+  log(`prepared ${ready}/${count} ready realm(s) = ${seatTotal} sign-up seats. Use: --realms-from ${c.runId}`);
   console.log(`\n${cleanupChecklist(manifest.data, manifest.path)}`);
   return ready > 0 ? 0 : 1;
 }

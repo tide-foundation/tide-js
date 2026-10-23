@@ -92,7 +92,9 @@ test("signatures", () => {
 });
 
 test("realm pool spreads round-robin and runs out", () => {
-  const p = new RealmPool(["a", "b"], 2);
+  const p = new RealmPool([{ realm: "a", seats: 2 }, { realm: "b", seats: 2, tideFull: true }]);
+  assert.equal(p.isTideFull("b"), true);
+  assert.equal(p.isTideFull("a"), false);
   assert.deepEqual([p.take(), p.take(), p.take()], ["a", "b", "a"]);
   p.markFull("b");
   assert.equal(p.take(), null);
