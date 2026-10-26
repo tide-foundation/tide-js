@@ -171,6 +171,8 @@ export interface SignUpFlowOpts {
   log?: (msg: string) => void;
   /** Reuse an open page instead of creating one (the caller owns closing it). */
   page?:          Page;
+  /** Callback caught by the context (sim guardedContext). Used instead of waiting for the page to load it. */
+  callback?:      Promise<URL>;
 }
 
 const DEFAULT_NAV_TIMEOUT_MS   = 60_000;
@@ -180,6 +182,29 @@ function redactPwd(s: string, password: string): string {
   if (!password || password.length < 3) return s;
   const enc = encodeURIComponent(password);
   return s.split(password).join("[REDACTED]").split(enc).join("[REDACTED]");
+}
+
+// Resolve on the callback URL. With a captured callback the page never has to load it: nothing
+// may listen on the callback port, and route handlers do not see redirect targets.
+export async function awaitCallback(
+  page: Pick<Page, "waitForURL" | "url">,
+  callbackOrigin: string,
+  timeoutMs: number,
+  captured?: Promise<URL>,
+): Promise<string> {
+  if (captured) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error(`callback not reached in ${timeoutMs}ms`)), timeoutMs); });
+    try { return (await Promise.race([captured, timeout])).href; } finally { clearTimeout(timer); }
+  }
+  await page.waitForURL(
+    (url) =>
+      url.origin === callbackOrigin &&
+      url.pathname === "/callback" &&
+      (url.searchParams.has("code") || url.searchParams.has("error")),
+    { timeout: timeoutMs, waitUntil: "domcontentloaded" },
+  );
+  return page.url();
 }
 
 export async function driveSignUpFlow(opts: SignUpFlowOpts): Promise<SignUpResult> {
@@ -299,16 +324,9 @@ export async function driveSignUpFlow(opts: SignUpFlowOpts): Promise<SignUpResul
 
     // 6. Wait for /callback?code=... or ?error=...
     const callbackDeadline = Math.max(60_000, totalTimeoutMs - (Date.now() - startedAt));
-    await page.waitForURL(
-      (url) =>
-        url.origin === opts.callbackOrigin &&
-        url.pathname === "/callback" &&
-        (url.searchParams.has("code") || url.searchParams.has("error")),
-      { timeout: callbackDeadline, waitUntil: "domcontentloaded" },
-    );
+    const callbackUrl = await awaitCallback(page, opts.callbackOrigin, callbackDeadline, opts.callback);
     step = "callback-reached";
     lap("fbl_submit");
-    const callbackUrl = page.url();
     return {
       ok: true,
       step,

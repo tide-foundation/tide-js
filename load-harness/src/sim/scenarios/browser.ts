@@ -248,6 +248,7 @@ export function makeSignupOp(d: SignupDeps): (ctx: OpContext) => Promise<OpOutco
         page,
         authUrl: authorizeUrl(d.tcBase, realm, pkce),
         callbackOrigin: new URL(CALLBACK_URL).origin,
+        callback: gc.callback,
         user: { userId, password: d.password },
         email,
       });

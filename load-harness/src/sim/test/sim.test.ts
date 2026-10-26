@@ -125,6 +125,17 @@ test("failure signatures merge client and server per step", async () => {
   assert.match(failureSignatureLines({ SQLITE_LOCKED: 2 }, server)[0], /^- client SQLITE_LOCKED: 2/);
 });
 
+test("sign-up resolves on the captured callback without the page loading it", async () => {
+  const { awaitCallback } = await import("../../admin/signupFlow.js");
+  const stuck = { waitForURL: () => new Promise<void>(() => undefined), url: () => "chrome-error://chromewebdata/" };
+  const cb = new URL("http://localhost:3000/callback?code=abc&state=s");
+  assert.equal(await awaitCallback(stuck as never, "http://localhost:3000", 1000, Promise.resolve(cb)), cb.href);
+  await assert.rejects(awaitCallback(stuck as never, "http://localhost:3000", 20, new Promise<URL>(() => undefined)), /callback not reached in 20ms/);
+  // Without a captured callback it still waits on the page (provision path with a real server).
+  const loaded = { waitForURL: async () => undefined, url: () => cb.href };
+  assert.equal(await awaitCallback(loaded as never, "http://localhost:3000", 1000), cb.href);
+});
+
 test("realm pool spreads round-robin and runs out", () => {
   const p = new RealmPool([{ realm: "a", seats: 2 }, { realm: "b", seats: 2, tideFull: true }]);
   assert.equal(p.isTideFull("b"), true);
