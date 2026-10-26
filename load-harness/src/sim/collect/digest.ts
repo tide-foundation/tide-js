@@ -12,9 +12,24 @@ export interface CauseInfo {
   action: string;
   weight: number;          // prior: how likely this is to break a run on its own
   noiseUnless?: string;    // noise unless this other signature also shows up
+  expected?: string;       // an expected test limit, not a staging failure; text for the result line
 }
 
 export const CAUSES: Record<string, CauseInfo> = {
+  licence_active_cap: {
+    title: "Test realm hit its licence active-user cap",
+    explain: "The payer refused new users once the realm reached its monthly active-user cap (MaxConcurrentAccountsPerMonth); ORKs pass the refusal back on Convert, so sign-ups stall. This is a limit of the test licence, not a staging failure.",
+    action: "Raise MaxConcurrentAccountsPerMonth on the load-test subscription (or spread users over more realms) and re-run.",
+    weight: 20,
+    expected: "stopped by licence cap",
+  },
+  seat_cap: {
+    title: "Test realm hit its seat cap",
+    explain: "The realm reached its total user count, so new users were refused. This is a pool sizing limit, not a staging failure.",
+    action: "Use more realms (prepare-realms) or raise the seat count, then re-run.",
+    weight: 20,
+    expected: "stopped by realm seat cap",
+  },
   oidc_param_too_long: {
     title: "TideCloak ignored an oversized refresh token",
     explain: "TideCloak drops OIDC parameters longer than 4000 characters, so the admin's refresh_token was ignored and the refresh failed. The token grows with every realm the admin manages, so this depends on how many realms exist, not on the request rate.",
@@ -107,10 +122,10 @@ export const CAUSES: Record<string, CauseInfo> = {
 const CLIENT_TO_CAUSE: Record<string, string> = {
   SQLITE_LOCKED: "sqlite_locked", STATEMENT_TIMEOUT: "stmt_timeout", UID_NOT_FOUND: "uid_missing",
   VENDOR_ALREADY_CREATED: "vendor_already_created", VENDOR_KEYGEN_FAILED: "vendor_keygen_failed",
-  UID_DUPLICATE: "uid_duplicate", PG_UNIQUE_VIOLATION: "pg_unique_violation", HEADER_TOO_LARGE: "header_too_large",
+  LICENCE_ACTIVE_CAP: "licence_active_cap", SEAT_CAP: "seat_cap", UID_DUPLICATE: "uid_duplicate", PG_UNIQUE_VIOLATION: "pg_unique_violation", HEADER_TOO_LARGE: "header_too_large",
 };
 
-export type CauseStatus = "likely cause" | "possible contributor" | "noise";
+export type CauseStatus = "expected limit" | "likely cause" | "possible contributor" | "noise";
 
 export interface Cause extends CauseInfo {
   id: string;
@@ -120,6 +135,7 @@ export interface Cause extends CauseInfo {
   steps: number[];
   firstSeen: string | null;
   score: number;
+  lead?: boolean;          // the one the At a glance block names
 }
 
 const stepRate = (s: StepSummary) => Math.max(0, ...s.ops.map((o) => o.targetRate));
@@ -163,11 +179,11 @@ export function rankCauses(steps: StepSummary[], server: StepServer[]): Cause[] 
     const info = CAUSES[id];
     const noise = !!info.noiseUnless && !acc.has(info.noiseUnless);
     const inFailing = [...a.steps].some((s) => failing.has(s));
-    const score = noise ? info.weight - 10 : info.weight + (inFailing ? 5 : 0) + (pers && a.steps.has(pers.step.step) ? 10 : 0);
-    return { id, ...info, status: noise ? "noise" : "possible contributor", count: a.count, apps: [...a.apps].sort(), steps: [...a.steps].sort((x, y) => x - y), firstSeen: a.first, score } as Cause;
+    const score = info.expected ? 100 + info.weight : noise ? info.weight - 10 : info.weight + (inFailing ? 5 : 0) + (pers && a.steps.has(pers.step.step) ? 10 : 0);
+    return { id, ...info, status: info.expected ? "expected limit" : noise ? "noise" : "possible contributor", count: a.count, apps: [...a.apps].sort(), steps: [...a.steps].sort((x, y) => x - y), firstSeen: a.first, score } as Cause;
   }).sort((x, y) => y.score - x.score || y.count - x.count);
   const top = out.find((c) => c.status !== "noise" && c.steps.some((s) => failing.has(s)));
-  if (top) top.status = "likely cause";
+  if (top) { top.lead = true; if (!top.expected) top.status = "likely cause"; }
   return out;
 }
 
@@ -204,11 +220,11 @@ export function atAGlance(d: DigestInput, causes: Cause[]): string[] {
   if (!steps.length) return [...lines, "- no load steps in this run (server-only run)", ""];
   const label = resultLabel(steps, d.abortReason);
   const brk = steps.find((s) => s.verdict === "break" || s.verdict === "aborted");
-  lines.push(`- **Result: ${label}**${brk ? ` at step ${brk.step} (${fmtRate(stepRate(brk))}): ${stepFailed(brk)} of ${stepOk(brk) + stepFailed(brk)} failed (${(stepErr(brk) * 100).toFixed(0)}%)` : ""}${d.abortReason ? `; abort: ${d.abortReason}` : ""}`);
+  const top = causes.find((c) => c.lead);
+  lines.push(`- **Result: ${label}${top?.expected ? `, ${top.expected} (an expected test limit, not a staging failure)` : ""}**${brk ? ` at step ${brk.step} (${fmtRate(stepRate(brk))}): ${stepFailed(brk)} of ${stepOk(brk) + stepFailed(brk)} failed (${(stepErr(brk) * 100).toFixed(0)}%)` : ""}${d.abortReason ? `; abort: ${d.abortReason}` : ""}`);
   const clean = steps.filter((s) => s.kind !== "confirm" && stepFailed(s) === 0 && stepOk(s) > 0);
   const best = clean.length ? clean.reduce((a, b) => (stepRate(b) > stepRate(a) ? b : a)) : null;
   lines.push(`- **Worked fully up to:** ${best ? `${fmtRate(stepRate(best))} (step ${best.step}, ${stepOk(best)} of ${stepOk(best)} ok)` : "no step completed without failures"}${brk ? `; broke at ${fmtRate(stepRate(brk))} (step ${brk.step})` : ""}`);
-  const top = causes.find((c) => c.status === "likely cause");
   lines.push(`- **Most likely cause:** ${top ? `${top.title} (${causeEvidence(top)}${placeInRun(top.firstSeen, d.realmTimes)})` : "none found in the server evidence"}`);
   const pers = persistentFailure(steps);
   if (pers) lines.push(`- **Failures continued after load dropped:** step ${pers.step.step} at ${fmtRate(stepRate(pers.step))} failed ${(stepErr(pers.step) * 100).toFixed(0)}% vs ${(stepErr(pers.breakStep) * 100).toFixed(0)}% at the break: likely a state or size problem, not throughput`);
@@ -233,10 +249,14 @@ export function clientLimit(steps: StepSummary[], browser?: BrowserUsage): strin
   const cpu = Math.max(0, ...steps.map((s) => s.client.cpuMax ?? 0));
   const dropped = steps.reduce((a, s) => a + s.ops.reduce((b, o) => b + o.dropped, 0), 0);
   const queue = Math.max(0, ...steps.flatMap((s) => s.ops.map((o) => o.queueWaitP95 ?? 0)));
-  const bound = steps.some((s) => s.flags.clientBound);
+  const bound = steps.filter((s) => s.flags.clientBound);
   const failedBrowsers = browser?.sessions.filter((s) => s.error).length ?? 0;
   const conn = browser && browser.endpoint !== "local" ? `, ${browser.sessions.length - failedBrowsers} of ${browser.sessions.length} remote browsers connected` : "";
-  return `${bound || failedBrowsers ? "YES" : "no"} (client CPU max ${cpu}%, ${dropped} dropped, queue wait p95 max ${queue}ms${conn})`;
+  const nums = `client CPU max ${cpu}%, ${dropped} dropped, queue wait p95 max ${queue}ms${conn}`;
+  // Failing operations hold their browser context until timeout, which grows the queue on its own.
+  const inflated = bound.length && !failedBrowsers && cpu < 80 && dropped === 0 && bound.every((s) => stepErr(s) >= 0.2);
+  if (inflated) return `no (queue wait inflated by failing ${[...new Set(bound.flatMap((s) => s.ops.filter((o) => o.failed).map((o) => o.op)))].join("/")} operations holding browser slots until timeout; ${nums})`;
+  return `${bound.length || failedBrowsers ? "YES" : "no"} (${nums})`;
 }
 
 export function stepsDigest(steps: StepSummary[], server: StepServer[], causes: Cause[]): string[] {

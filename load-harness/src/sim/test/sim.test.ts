@@ -196,6 +196,38 @@ test("digest: cause dictionary ranks the oversized token over caught master dupl
   assert.ok(glance.split("\n").filter((l) => l.startsWith("- ")).length <= 10);
 });
 
+test("header_too_large never matches a bare 431; licence cap is an expected limit", async () => {
+  const { LOG_SIGNATURES } = await import("../collect/collectors.js");
+  // Mirror the KQL "contains" conditions (case-insensitive substring) against sample lines.
+  const kqlMatch = (cond: string, line: string) => cond.split(" or ").some((c) => line.toLowerCase().includes(/contains "(.*)"/.exec(c)![1].toLowerCase()));
+  for (const t of ["Execution time for Create.Commit: 431 ms", "Execution time for Create.GenShard: 431 ms", "Execution time for Key.PreSign: 431 ms"]) {
+    assert.equal(kqlMatch(LOG_SIGNATURES.header_too_large, t), false, t);
+    assert.ok(!matchSignatures(t).some((s) => s.id === "HEADER_TOO_LARGE"), t);
+  }
+  assert.ok(kqlMatch(LOG_SIGNATURES.header_too_large, "HTTP 431 Request Header Fields Too Large"));
+  assert.ok(matchSignatures("request failed with status 431").some((s) => s.id === "HEADER_TOO_LARGE"));
+  const cap = "Tide error on /Payer/Subscription/Validate: This Subscription entry has exceeded its total concurrent active users of the last month";
+  assert.ok(kqlMatch(LOG_SIGNATURES.licence_active_cap, cap));
+  assert.ok(matchSignatures(cap).some((s) => s.id === "LICENCE_ACTIVE_CAP"));
+  assert.equal(isBreakSignature("LICENCE_ACTIVE_CAP"), false);
+});
+
+test("digest: licence cap outranks other causes and the queue is not blamed on the client", async () => {
+  const { rankCauses, atAGlance } = await import("../collect/digest.js");
+  const steps = [digestStep(1, "ramp", 8, 52, 0, "ok"), digestStep(2, "ramp", 16, 11, 20, "aborted")];
+  Object.assign(steps[1].ops[0], { queueWaitP95: 39225, codes: { SIGNUP_STEP2_SUBMITTED: 20 } });
+  Object.assign(steps[1].flags, { clientBound: true });
+  steps[1].client.cpuMax = 12;
+  const server = [digestServer(2, { sork3: { licence_active_cap: 40, stmt_timeout: 2 }, sork2: { uid_duplicate: 4 } })];
+  const c = rankCauses(steps, server);
+  assert.deepEqual(c.map((x) => [x.id, x.status]), [["licence_active_cap", "expected limit"], ["stmt_timeout", "possible contributor"], ["uid_duplicate", "noise"]]);
+  const glance = atAGlance({ steps, server, abortReason: "rolling 30s error rate 100% > 20% (5/5)" }, c).join("\n");
+  assert.match(glance, /Result: ABORT, stopped by licence cap \(an expected test limit, not a staging failure\)/);
+  assert.match(glance, /Most likely cause:\*\* Test realm hit its licence active-user cap/);
+  assert.match(glance, /Playwright the limit:\*\* no \(queue wait inflated by failing signup operations holding browser slots until timeout/);
+  assert.match(glance, /Next action:\*\* Raise MaxConcurrentAccountsPerMonth/);
+});
+
 test("realm pool spreads round-robin and runs out", () => {
   const p = new RealmPool([{ realm: "a", seats: 2 }, { realm: "b", seats: 2, tideFull: true }]);
   assert.equal(p.isTideFull("b"), true);

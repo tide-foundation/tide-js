@@ -29,6 +29,7 @@ export function kql(startIso: string, endIso: string, apps?: string[]): string {
     "            add_user_failed=countif(Log_s has \"Failed to add user\"),",
     "            oidc_param_too_long=countif(Log_s has \"OIDC parameter\" and Log_s has \"than allowed\"),",
     "            header_too_large=countif(Log_s has \"Request Header Fields Too Large\"),",
+    "            licence_active_cap=countif(Log_s has \"exceeded its total concurrent active users\"),",
     "            vendor_already=countif(Log_s has \"VENDOR_ALREADY_CREATED\"),",
     "            seat_cap=countif(Log_s has \"exceeded its total user count\"),",
     "            keygen_failed=countif(Log_s has \"VENDOR_KEYGEN_FAILED\")",

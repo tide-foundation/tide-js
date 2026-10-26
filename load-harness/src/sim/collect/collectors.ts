@@ -210,7 +210,9 @@ export const LOG_SIGNATURES: Record<string, string> = {
   add_user_failed: `Log_s contains "Failed to add user"`,
   // TideCloak drops an over-long refresh_token (4000 chars), so the refresh silently fails.
   oidc_param_too_long: `Log_s contains "OIDC parameter" and Log_s contains "longer" and Log_s contains "than allowed"`,
-  header_too_large: `Log_s contains "Request Header Fields Too Large" or Log_s contains " 431 "`,
+  // Only the real error or an HTTP status context: ORK timing lines carry bare numbers like "431 ms".
+  header_too_large: `Log_s contains "Request Header Fields Too Large" or Log_s contains "status 431" or Log_s contains "HTTP 431" or Log_s contains " 431 Request"`,
+  licence_active_cap: `Log_s contains "exceeded its total concurrent active users"`,
   vendor_already_created: `Log_s contains "VENDOR_ALREADY_CREATED"`,
   seat_cap: `Log_s contains "exceeded its total user count"`,
   vendor_keygen_failed: `Log_s contains "VENDOR_KEYGEN_FAILED"`,
@@ -291,7 +293,7 @@ ${kqlWindow(w)}
     } catch (e) { missing.push(`log signatures (${ws.env}): ${(e as Error).message}`); }
     try {
       const rows = await kql<{ app: string; msg: string; n: number }>(ws.customerId, `ContainerAppConsoleLogs_CL ${appFilter}
-| where ${LOG_SIGNATURES.error_lines} or ${LOG_SIGNATURES.oidc_param_too_long} or ${LOG_SIGNATURES.header_too_large}
+| where ${LOG_SIGNATURES.error_lines} or ${LOG_SIGNATURES.oidc_param_too_long} or ${LOG_SIGNATURES.header_too_large} or ${LOG_SIGNATURES.licence_active_cap}
 ${kqlWindow(w)}
 | extend m = tostring(parse_json(Log_s).message)
 | extend msg = replace_regex(substring(iff(isempty(m), Log_s, m), 0, 2000), @"\\(\\d+ms\\)", "(Nms)")

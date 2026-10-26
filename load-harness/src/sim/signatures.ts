@@ -22,7 +22,8 @@ export const SIGNATURES: Signature[] = [
   { id: "RESERVATION_CONFLICT", re: /GetReservers|already reserved|ReserveUserId.*409/i, note: "stale user-id reservation" },
   { id: "NOT_ENOUGH_ORKS", re: /Could not reach enough|NET_THRESHOLD_FAILURE|not enough ORKs/i, note: "ORK fan-out below threshold" },
   { id: "UID_THROTTLED", re: /throttl|too many requests|\b429\b/i, note: "per-user throttle (spread users wider)" },
-  { id: "HEADER_TOO_LARGE", re: /Request Header Fields Too Large|HTTP 431\b/i, note: "request headers over the server limit (oversized token)" },
+  { id: "LICENCE_ACTIVE_CAP", re: /exceeded its total concurrent active users/i, expected: true, note: "realm licence active-user cap reached (expected, raise MaxConcurrentAccountsPerMonth)" },
+  { id: "HEADER_TOO_LARGE", re: /Request Header Fields Too Large|\b(?:HTTP|status)[ :]+431\b| 431 Request/i, note: "request headers over the server limit (oversized token)" },
   { id: "GATEWAY", re: /HTTP 50[234]\b|Bad Gateway|Service Unavailable|Gateway Timeout/i, note: "ingress or upstream unavailable" },
 ];
 
