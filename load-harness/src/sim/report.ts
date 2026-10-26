@@ -7,32 +7,46 @@ import type { Manifest } from "./sink.js";
 import { fmtRate } from "./util.js";
 import { SIGNATURES } from "./signatures.js";
 import { AZURE_PRICE_PER_MIN, type BrowserUsage } from "./remote.js";
-import type { StepServer } from "./collect/collectors.js";
+import type { Inventory, StepServer } from "./collect/collectors.js";
 import type { ServerMeta } from "./collect/index.js";
 import { analyse, analysisMarkdown } from "./collect/analysis.js";
 import { metadataMarkdown, phaseMarkdown, serverMarkdown, serverSignatureLines } from "./collect/render.js";
+import { atAGlance, causesMarkdown, healthMarkdown, rankCauses, stepsDigest } from "./collect/digest.js";
 
-export function kql(startIso: string, endIso: string): string {
+export function kql(startIso: string, endIso: string, apps?: string[]): string {
+  const appWhere = apps?.length ? `| where ContainerAppName_s in (${apps.map((a) => `"${a}"`).join(", ")})` : `| where ContainerAppName_s startswith "sork" or ContainerAppName_s startswith "tidecloak"`;
+  const sysWhere = apps?.length ? appWhere : `| where ContainerAppName_s startswith "sork"`;
   return [
-    "// ORK and TideCloak failure signatures per minute (Tide-Staging Log Analytics)",
+    "// Failure signatures per minute",
     "ContainerAppConsoleLogs_CL",
     `| where TimeGenerated between (datetime(${startIso}) .. datetime(${endIso}))`,
-    `| where ContainerAppName_s startswith "sork" or ContainerAppName_s startswith "tidecloak"`,
+    appWhere,
     "| summarize sqlite_locked=countif(Log_s has \"database is locked\"),",
     "            submit_user=countif(Log_s has \"SubmitUser\"),",
     "            uid_missing=countif(Log_s has \"could not find uid\"),",
     "            stmt_timeout=countif(Log_s has \"statement timeout\"),",
     "            uid_duplicate=countif(Log_s has \"IX_UIDs_Id\"),",
+    "            add_user_failed=countif(Log_s has \"Failed to add user\"),",
+    "            oidc_param_too_long=countif(Log_s has \"OIDC parameter\" and Log_s has \"than allowed\"),",
+    "            header_too_large=countif(Log_s has \"Request Header Fields Too Large\"),",
     "            vendor_already=countif(Log_s has \"VENDOR_ALREADY_CREATED\"),",
     "            seat_cap=countif(Log_s has \"exceeded its total user count\"),",
     "            keygen_failed=countif(Log_s has \"VENDOR_KEYGEN_FAILED\")",
     "  by ContainerAppName_s, bin(TimeGenerated, 1m)",
     "| order by TimeGenerated asc",
     "",
-    "// ORK restarts and crashes",
+    "// Error and warning lines",
+    "ContainerAppConsoleLogs_CL",
+    `| where TimeGenerated between (datetime(${startIso}) .. datetime(${endIso}))`,
+    appWhere,
+    "| where Log_s has \"Error\" or Log_s has \"ERROR\" or Log_s has \"WARN\"",
+    "| project TimeGenerated, ContainerAppName_s, Log_s",
+    "| order by TimeGenerated asc",
+    "",
+    "// Restarts and crashes",
     "ContainerAppSystemLogs_CL",
     `| where TimeGenerated between (datetime(${startIso}) .. datetime(${endIso}))`,
-    `| where ContainerAppName_s startswith "sork"`,
+    sysWhere,
     "| where Reason_s in (\"BackOff\", \"ContainerTerminated\", \"ContainerCrashing\", \"ProbeFailed\") or Log_s has \"exit code\"",
     "| project TimeGenerated, ContainerAppName_s, Reason_s, Log_s",
   ].join("\n");
@@ -146,6 +160,23 @@ export function browserSection(u: BrowserUsage | undefined): string[] {
   ];
 }
 
+// Appendix sections sit one heading level down.
+const demote = (lines: string[]) => lines.map((l) => (l.startsWith("#") ? `#${l}` : l));
+
+// Run flags for the setup section; anything that looks like a secret is not printed.
+function flagsOf(args: Record<string, unknown>): string {
+  return Object.entries(args).map(([k, v]) => (/pass|secret|token|key/i.test(k) ? `--${k} [REDACTED]` : v === true ? `--${k}` : `--${k} ${v}`)).join(" ");
+}
+
+// One KQL block per Log Analytics workspace, filtered to the apps that log there.
+function digDeeper(inv: Inventory | null, start: string, end: string): string[] {
+  if (!inv?.workspaces.length) return ["Log Analytics workspace unknown (no inventory); this query runs against the ORK workspace:", "", "```kusto", kql(start, end), "```", ""];
+  return inv.workspaces.flatMap((w) => {
+    const apps = inv.apps.filter((a) => a.env === w.env).map((a) => a.name);
+    return [`Workspace ${w.customerId} (${w.env}: ${apps.join(", ") || "no apps"}):`, "", "```kusto", kql(start, end, apps), "```", ""];
+  });
+}
+
 // Client signatures (from error text) plus server log signatures per step.
 export function failureSignatureLines(sigTotals: Record<string, number>, server: StepServer[]): string[] {
   const client = Object.entries(sigTotals).map(([k, v]) => `- client ${k}: ${v} (${SIGNATURES.find((s) => s.id === k)?.note ?? ""})`);
@@ -185,68 +216,79 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
   const json = join(r.dir, "summary.json");
   writeFileSync(json, JSON.stringify(summary, null, 2));
 
+  const causes = rankCauses(steps, server);
   const md = [
     `# Staging incident sim: ${r.scenario} (${r.runId})`,
     ``,
-    `- target: ${r.target}`,
-    `- window (UTC, padded 1 min): ${winStart} to ${winEnd}`,
-    `- abort: ${r.result.abortReason ?? "none"}`,
-    `- stop: ${r.result.stopReason ?? "none"}`,
+    ...atAGlance({ steps, server, abortReason: r.result.abortReason, browser: r.browserUsage, realmTimes: r.manifest.realms.map((x) => x.createdAt).filter(Boolean) }, causes),
+    ...stepsDigest(steps, server, causes),
+    ...causesMarkdown(causes),
+    ...healthMarkdown(server, inv, causes),
+    `## Client side`,
     ``,
-    `## Ceilings (target rate per op)`,
-    ``,
-    `| op | last ok | knee | break | client-bound |`,
-    `|---|---|---|---|---|`,
-    ...ceil.map((c) => `| ${c.op} | ${c.lastOk !== null ? fmtRate(c.lastOk) : "-"} | ${c.knee !== null ? fmtRate(c.knee) : "-"} | ${c.brk !== null ? fmtRate(c.brk) : "-"} | ${c.clientBound !== null ? fmtRate(c.clientBound) : "-"} |`),
-    ``,
-    `A client-bound step means the load machine, not staging, was the limit at that rate.`,
-    ``,
-    ...analysisMarkdown(analysis),
-    `## Browsers`,
-    ``,
+    `- client CPU avg/max per step: ${steps.map((s) => `step ${s.step} ${s.client.cpuAvg ?? "-"}/${s.client.cpuMax ?? "-"}%`).join(", ") || "-"}`,
     ...browserSection(r.browserUsage),
-    ``,
-    `## Token signing`,
-    ``,
-    ...(Object.keys(algs).length ? Object.entries(algs).map(([op, m]) => `- ${op}: ${Object.entries(m).map(([a, n]) => `${a} x${n}`).join(", ")}`) : ["- no tokens minted"]),
+    ...(Object.keys(algs).length ? Object.entries(algs).map(([op, m]) => `- token signing ${op}: ${Object.entries(m).map(([a, n]) => `${a} x${n}`).join(", ")}`) : ["- no tokens minted"]),
     ...(localSigned ? [``, `WARNING: some tokens were not EdDSA, so those operations did not go through Tide signing (Key.PreSign). TideCloak only signs through the Tide network on realms with IGA on and EdDSA as the default algorithm; use prepare-realms (default --tide-full) realms, or check the realm if it should already be Tide-signed.`] : []),
     ``,
-    `## Steps`,
+    ...demote(phaseMarkdown(steps)),
+    `## Run setup and environment`,
     ``,
-    stepTable(steps),
+    `- command: \`sim ${r.manifest.command}\`${Object.keys(r.manifest.args ?? {}).length ? ` with ${flagsOf(r.manifest.args)}` : ""}`,
+    `- target: ${r.target} (${r.manifest.tcBase}), run started ${r.manifest.createdAt}`,
+    `- window (UTC, padded 1 min): ${winStart} to ${winEnd}`,
+    `- abort: ${r.result.abortReason ?? "none"}; stop: ${r.result.stopReason ?? "none"}`,
     ``,
-    ...phaseMarkdown(steps),
-    `## Step reasons`,
+    ...demote(metadataMarkdown(r.serverMeta ?? null)).slice(2),
+    `## Cost`,
     ``,
-    ...steps.map((s) => `- step ${s.step} (${s.startedAt} to ${s.endedAt}): ${s.verdict}${s.flags.reasons.length ? ": " + s.flags.reasons.join("; ") : ""}`),
-    ``,
-    `## Failure signatures seen`,
-    ``,
-    ...failureSignatureLines(sigTotals, server),
-    ``,
-    `## Error codes`,
-    ``,
-    ...(Object.keys(codeTotals).length ? Object.entries(codeTotals).map(([k, v]) => `- ${k}: ${v}`) : ["- none"]),
-    ``,
-    ...serverMarkdown(server, inv),
-    ...metadataMarkdown(r.serverMeta ?? null),
-    `## Server side, for this window`,
-    ``,
-    "```kusto",
-    kql(winStart, winEnd),
-    "```",
-    ``,
-    `Prometheus (job ${r.promJob}):`,
-    ``,
-    "```promql",
-    ...promql(r.promJob),
-    "```",
+    r.browserUsage && r.browserUsage.endpoint !== "local" ? `- remote browsers: ${r.browserUsage.browserMinutes.toFixed(2)} browser-minutes, est. $${r.browserUsage.estCostUsd.toFixed(3)} at $${AZURE_PRICE_PER_MIN}/min` : "- local browsers only, no browser cost",
     ``,
     `## Cleanup`,
     ``,
     "```",
     cleanupChecklist(r.manifest, join(r.dir, "manifest.json")),
     "```",
+    ``,
+    `## How to dig deeper`,
+    ``,
+    ...digDeeper(inv, winStart, winEnd),
+    `Prometheus (job ${r.promJob}):`,
+    ``,
+    "```promql",
+    ...promql(r.promJob),
+    "```",
+    ``,
+    `## Appendix: full detail`,
+    ``,
+    ...demote([
+      ...analysisMarkdown(analysis),
+      `## Ceilings (target rate per op)`,
+      ``,
+      `| op | last ok | knee | break | client-bound |`,
+      `|---|---|---|---|---|`,
+      ...ceil.map((c) => `| ${c.op} | ${c.lastOk !== null ? fmtRate(c.lastOk) : "-"} | ${c.knee !== null ? fmtRate(c.knee) : "-"} | ${c.brk !== null ? fmtRate(c.brk) : "-"} | ${c.clientBound !== null ? fmtRate(c.clientBound) : "-"} |`),
+      ``,
+      `A client-bound step means the load machine, not staging, was the limit at that rate.`,
+      ``,
+      `## Steps`,
+      ``,
+      stepTable(steps),
+      ``,
+      `## Step reasons`,
+      ``,
+      ...steps.map((s) => `- step ${s.step} (${s.startedAt} to ${s.endedAt}): ${s.verdict}${s.flags.reasons.length ? ": " + s.flags.reasons.join("; ") : ""}`),
+      ``,
+      `## Failure signatures seen`,
+      ``,
+      ...failureSignatureLines(sigTotals, server),
+      ``,
+      `## Error codes`,
+      ``,
+      ...(Object.keys(codeTotals).length ? Object.entries(codeTotals).map(([k, v]) => `- ${k}: ${v}`) : ["- none"]),
+      ``,
+      ...serverMarkdown(server, inv),
+    ]),
   ].join("\n");
   const mdPath = join(r.dir, "summary.md");
   writeFileSync(mdPath, md);

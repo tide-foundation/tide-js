@@ -3,7 +3,6 @@
 import type { StepSummary } from "../engine.js";
 import type { Inventory, StepServer } from "./collectors.js";
 import type { ServerMeta } from "./index.js";
-import { RULES } from "./analysis.js";
 
 const n = (v: number | null | undefined, unit = "") => (v === null || v === undefined ? "-" : `${v}${unit}`);
 
@@ -75,7 +74,7 @@ export function serverMarkdown(server: StepServer[], inv: Inventory | null): str
     lines.push("", `Log signatures: ${sigRows.length ? sigRows.map(([app, v]) => `${app} { ${v.map(([k, c]) => `${k}: ${c}`).join(", ")} }`).join("; ") : s.logs ? "none" : "not collected"}`);
     for (const [app, samples] of Object.entries(s.logs?.errorSamples ?? {})) {
       const errs = s.logs?.signatures[app]?.error_lines ?? 0;
-      if (errs >= RULES.errorLinesMin && samples.length) lines.push(`Top errors ${app} (${errs} error lines): ${samples.map((x) => `\`${x.msg.replace(/[|`]/g, "/")}\` x${x.n}`).join("; ")}`);
+      if (samples.length) lines.push(`Top errors ${app} (${errs} error lines): ${samples.map((x) => `\`${x.msg.replace(/[|`]/g, "/")}\` x${x.n}`).join("; ")}`);
     }
     const sys = (s.logs?.system ?? []).filter((e) => /Terminated|BackOff|Crashing|ProbeFailed|Started|Created|RevisionUpdate/i.test(e.reason));
     if (sys.length) lines.push(`Container events: ${sys.map((e) => `${e.app} ${e.reason} x${e.n}${e.exitCodes ? ` (exit ${e.exitCodes})` : ""}`).join("; ")}`);

@@ -206,6 +206,11 @@ export const LOG_SIGNATURES: Record<string, string> = {
   // Log_s is JSON, so the quotes around the constraint name arrive as \u0022; match the name alone.
   uid_duplicate: `Log_s contains "IX_UIDs_Id"`,
   pg_unique_violation: `Log_s contains "23505: " or Log_s contains "duplicate key value violates unique constraint"`,
+  // Master logs this when a SubmitUser insert really failed; without it the duplicates above were swallowed.
+  add_user_failed: `Log_s contains "Failed to add user"`,
+  // TideCloak drops an over-long refresh_token (4000 chars), so the refresh silently fails.
+  oidc_param_too_long: `Log_s contains "OIDC parameter" and Log_s contains "longer" and Log_s contains "than allowed"`,
+  header_too_large: `Log_s contains "Request Header Fields Too Large" or Log_s contains " 431 "`,
   vendor_already_created: `Log_s contains "VENDOR_ALREADY_CREATED"`,
   seat_cap: `Log_s contains "exceeded its total user count"`,
   vendor_keygen_failed: `Log_s contains "VENDOR_KEYGEN_FAILED"`,
@@ -236,11 +241,14 @@ export function errorSamples(rows: Array<{ app: string; msg: string; n: number }
     let line = (inner ?? lines.find((l) => /Exception/.test(l)) ?? lines[0] ?? "").replace(/^--->\s*/, "");
     // EF command failures: the SQL says which table, the parameter list says nothing.
     if (/^Failed executing DbCommand/.test(line) && lines[1]) line = `Failed executing DbCommand: ${lines[1]}`;
+    // TideCloak lines lead with a timestamp and thread; drop them and shorten the logger so repeats group.
+    line = line.replace(/^\d{4}-\d\d-\d\d[ T][\d:.,]+Z?\s*/, "").replace(/\s\((executor-thread|Timer|vert\.x[\w-]*)-?\d*\)/, "").replace(/\[(?:[\w$]+\.)+([\w$]+)\]/, "[$1]");
     const msg = redact(line)
       .replace(/\b(Host|Server|User ?Id|Username|Uid|Database|Data Source)\s*=\s*[^;\s]+/gi, "$1=[REDACTED]")
       .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]")
       .replace(/[A-Za-z0-9+/_=-]{32,}/g, "[REDACTED]")
       .replace(/\(\d+ms\)/g, "(Nms)")
+      .replace(/longer \(\d+\)/g, "longer (N)")
       .replace(/\s+/g, " ")
       .slice(0, 160);
     if (!msg) continue;
@@ -258,13 +266,14 @@ export interface LogsResult {
   exec: ExecRow[];
   system: Array<{ app: string; reason: string; n: number; exitCodes: string }>;
   errorSamples?: Record<string, Array<{ msg: string; n: number }>>; // absent in older runs
+  firstSeen?: Record<string, Record<string, string>>;                 // app -> signature -> first event time
 }
 
 export async function logs(inv: Inventory, cfg: CollectConfig, w: StepWindow, missing: string[]): Promise<LogsResult> {
-  const out: LogsResult = { signatures: {}, exec: [], system: [], errorSamples: {} };
+  const out: LogsResult = { signatures: {}, exec: [], system: [], errorSamples: {}, firstSeen: {} };
   const names = inv.apps.map((a) => a.name);
   const appFilter = `| where ContainerAppName_s in (${names.map((n) => `"${n}"`).join(",")})`;
-  const sigCols = Object.entries(LOG_SIGNATURES).map(([k, cond]) => `${k}=countif(${cond})`).join(", ");
+  const sigCols = Object.entries(LOG_SIGNATURES).map(([k, cond]) => `${k}=countif(${cond}), ${k}_t=minif(ts, ${cond})`).join(", ");
   for (const ws of inv.workspaces) {
     try {
       const rows = await kql<Record<string, string | number>>(ws.customerId, `ContainerAppConsoleLogs_CL ${appFilter}
@@ -273,12 +282,16 @@ ${kqlWindow(w)}
       for (const r of rows) {
         const app = String(r.app);
         out.signatures[app] = {};
-        for (const k of Object.keys(LOG_SIGNATURES)) out.signatures[app][k] = Number(r[k] ?? 0);
+        out.firstSeen![app] = {};
+        for (const k of Object.keys(LOG_SIGNATURES)) {
+          out.signatures[app][k] = Number(r[k] ?? 0);
+          if (out.signatures[app][k] && r[`${k}_t`]) out.firstSeen![app][k] = String(r[`${k}_t`]);
+        }
       }
     } catch (e) { missing.push(`log signatures (${ws.env}): ${(e as Error).message}`); }
     try {
       const rows = await kql<{ app: string; msg: string; n: number }>(ws.customerId, `ContainerAppConsoleLogs_CL ${appFilter}
-| where ${LOG_SIGNATURES.error_lines}
+| where ${LOG_SIGNATURES.error_lines} or ${LOG_SIGNATURES.oidc_param_too_long} or ${LOG_SIGNATURES.header_too_large}
 ${kqlWindow(w)}
 | extend m = tostring(parse_json(Log_s).message)
 | extend msg = replace_regex(substring(iff(isempty(m), Log_s, m), 0, 2000), @"\\(\\d+ms\\)", "(Nms)")

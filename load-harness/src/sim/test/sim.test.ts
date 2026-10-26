@@ -136,6 +136,66 @@ test("sign-up resolves on the captured callback without the page loading it", as
   assert.equal(await awaitCallback(loaded as never, "http://localhost:3000", 1000), cb.href);
 });
 
+test("new server signatures: oversized OIDC parameter, 431, failed add user", async () => {
+  const { LOG_SIGNATURES, errorSamples } = await import("../collect/collectors.js");
+  assert.match(LOG_SIGNATURES.oidc_param_too_long, /OIDC parameter.*longer.*than allowed/);
+  assert.match(LOG_SIGNATURES.header_too_large, /Request Header Fields Too Large/);
+  assert.match(LOG_SIGNATURES.add_user_failed, /Failed to add user/);
+  assert.ok(matchSignatures("HTTP 431 Request Header Fields Too Large").some((s) => s.id === "HEADER_TOO_LARGE"));
+  // TideCloak lines group once the timestamp, thread and token size are stripped.
+  const line = (t: string, th: number, n: number) => `2026-10-26 ${t} WARN  [org.keycloak.protocol.oidc.endpoints.TokenEndpoint] (executor-thread-${th}) The size of OIDC parameter 'refresh_token' is longer (${n}) than allowed (4000). Ignoring the parameter.`;
+  const s = errorSamples([{ app: "tc", msg: line("06:24:22,841", 47, 4012), n: 1 }, { app: "tc", msg: line("06:25:08,191", 46, 4094), n: 1 }]);
+  assert.deepEqual(s.tc, [{ msg: "WARN [TokenEndpoint] The size of OIDC parameter 'refresh_token' is longer (N) than allowed (4000). Ignoring the parameter.", n: 2 }]);
+});
+
+function digestStep(step: number, kind: string, rate: number, ok: number, failed: number, verdict: string) {
+  const s = fakeStep(step, verdict, 10_000);
+  Object.assign(s, { kind, startedAt: `2026-10-26T06:${10 + step * 10}:00Z`, endedAt: `2026-10-26T06:${17 + step * 10}:00Z` });
+  Object.assign(s.ops[0], { targetRate: rate, ok, failed, errorRate: failed / (ok + failed), codes: failed ? { SETUP_TIMEOUT: failed } : {} });
+  return s;
+}
+function digestServer(step: number, sigs: Record<string, Record<string, number>>, first: Record<string, Record<string, string>> = {}) {
+  return { step, kind: "ramp", window: { start: "", end: "" }, apps: {}, pg: null, logs: { signatures: sigs, exec: [], system: [], firstSeen: first }, prom: null, stub: null, missing: [] } as unknown as import("../collect/collectors.js").StepServer;
+}
+
+test("digest: persistent failure after load drops", async () => {
+  const { persistentFailure } = await import("../collect/digest.js");
+  const steps = [digestStep(1, "ramp", 1, 5, 0, "ok"), digestStep(2, "ramp", 2, 12, 3, "break"), digestStep(3, "confirm", 1, 0, 5, "break")];
+  assert.equal(persistentFailure(steps)?.step.step, 3);
+  assert.equal(persistentFailure(steps)?.breakStep.step, 2);
+  // A confirm step that recovers is a throughput problem, not a persistent one.
+  assert.equal(persistentFailure([steps[0], steps[1], digestStep(3, "confirm", 1, 5, 0, "ok")]), null);
+  assert.equal(persistentFailure([steps[0]]), null);
+});
+
+test("digest: cause dictionary ranks the oversized token over caught master duplicates", async () => {
+  const { rankCauses, CAUSES, atAGlance } = await import("../collect/digest.js");
+  for (const k of ["sqlite_locked", "uid_duplicate", "stmt_timeout", "oidc_param_too_long", "header_too_large", "restarts", "pg_unique_violation"]) assert.ok(CAUSES[k]?.explain && CAUSES[k]?.action, k);
+  const steps = [digestStep(1, "ramp", 1, 5, 0, "ok"), digestStep(2, "ramp", 2, 12, 3, "break"), digestStep(3, "confirm", 1, 0, 5, "break")];
+  const server = [
+    digestServer(1, { sork2: { uid_duplicate: 3, pg_unique_violation: 5, error_lines: 10 } }),
+    digestServer(2, { sork2: { uid_duplicate: 10, pg_unique_violation: 21, error_lines: 42 }, sork5: { stmt_timeout: 1 }, "tidecloak-staging": { oidc_param_too_long: 10 } }, { "tidecloak-staging": { oidc_param_too_long: "2026-10-26T06:24:24Z" } }),
+    digestServer(3, { "tidecloak-staging": { oidc_param_too_long: 15 } }),
+  ];
+  const c = rankCauses(steps, server);
+  assert.deepEqual(c.map((x) => [x.id, x.status]), [["oidc_param_too_long", "likely cause"], ["stmt_timeout", "possible contributor"], ["pg_unique_violation", "noise"], ["uid_duplicate", "noise"]]);
+  assert.equal(c[0].count, 25);
+  assert.equal(c[0].firstSeen, "2026-10-26T06:24:24Z");
+  // A real "Failed to add user" turns the duplicates back into suspects.
+  server[1].logs!.signatures.sork2.add_user_failed = 2;
+  assert.ok(rankCauses(steps, server).every((x) => x.status !== "noise"));
+  delete server[1].logs!.signatures.sork2.add_user_failed;
+  const glance = atAGlance({ steps, server, abortReason: null }, c).join("\n");
+  assert.match(glance, /Result: BREAK\*\* at step 2/);
+  assert.match(glance, /Worked fully up to:\*\* 1\.00\/min \(step 1/);
+  assert.match(glance, /Most likely cause:\*\* TideCloak ignored an oversized refresh token/);
+  assert.match(glance, /Failures continued after load dropped/);
+  assert.match(glance, /Load machine or Playwright the limit:\*\* no/);
+  assert.match(glance, /Noise, not the cause:\*\* pg_unique_violation x26/);
+  assert.match(glance, /Confidence:\*\* high/);
+  assert.ok(glance.split("\n").filter((l) => l.startsWith("- ")).length <= 10);
+});
+
 test("realm pool spreads round-robin and runs out", () => {
   const p = new RealmPool([{ realm: "a", seats: 2 }, { realm: "b", seats: 2, tideFull: true }]);
   assert.equal(p.isTideFull("b"), true);
