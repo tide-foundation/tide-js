@@ -14,6 +14,8 @@ export const SIGNATURES: Signature[] = [
   { id: "SQLITE_LOCKED", re: /database is locked|SQLITE_BUSY|SqliteException/i, note: "ORK SQLite lock on Create/Commit" },
   { id: "VENDOR_ALREADY_CREATED", re: /VENDOR_ALREADY_CREATED/i, note: "payer refused vendor after partial VVK setup" },
   { id: "UID_NOT_FOUND", re: /could not find uid/i, note: "master SubmitUser lag" },
+  { id: "UID_DUPLICATE", re: /IX_UIDs_Id/, note: "master SubmitUser concurrent UID insert (master-libs PR #30)" },
+  { id: "PG_UNIQUE_VIOLATION", re: /\b23505:|duplicate key value violates unique constraint/i, note: "Postgres unique constraint violation" },
   { id: "STATEMENT_TIMEOUT", re: /statement timeout|canceling statement due to statement timeout/i, note: "Postgres statement_timeout" },
   { id: "VENDOR_KEYGEN_FAILED", re: /VENDOR_KEYGEN_FAILED/i, note: "VVK setup failed after wallet commit" },
   { id: "VENDOR_SETUP_FAILED", re: /VENDOR_REALM_SETUP_FAILED|VENDOR_STRIPE_CHECKOUT_FAILED/i, note: "setUpTideRealm failed" },

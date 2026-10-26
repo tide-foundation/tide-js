@@ -10,7 +10,7 @@ import { AZURE_PRICE_PER_MIN, type BrowserUsage } from "./remote.js";
 import type { StepServer } from "./collect/collectors.js";
 import type { ServerMeta } from "./collect/index.js";
 import { analyse, analysisMarkdown } from "./collect/analysis.js";
-import { metadataMarkdown, phaseMarkdown, serverMarkdown } from "./collect/render.js";
+import { metadataMarkdown, phaseMarkdown, serverMarkdown, serverSignatureLines } from "./collect/render.js";
 
 export function kql(startIso: string, endIso: string): string {
   return [
@@ -22,6 +22,7 @@ export function kql(startIso: string, endIso: string): string {
     "            submit_user=countif(Log_s has \"SubmitUser\"),",
     "            uid_missing=countif(Log_s has \"could not find uid\"),",
     "            stmt_timeout=countif(Log_s has \"statement timeout\"),",
+    "            uid_duplicate=countif(Log_s has \"IX_UIDs_Id\"),",
     "            vendor_already=countif(Log_s has \"VENDOR_ALREADY_CREATED\"),",
     "            seat_cap=countif(Log_s has \"exceeded its total user count\"),",
     "            keygen_failed=countif(Log_s has \"VENDOR_KEYGEN_FAILED\")",
@@ -145,6 +146,13 @@ export function browserSection(u: BrowserUsage | undefined): string[] {
   ];
 }
 
+// Client signatures (from error text) plus server log signatures per step.
+export function failureSignatureLines(sigTotals: Record<string, number>, server: StepServer[]): string[] {
+  const client = Object.entries(sigTotals).map(([k, v]) => `- client ${k}: ${v} (${SIGNATURES.find((s) => s.id === k)?.note ?? ""})`);
+  const all = [...client, ...serverSignatureLines(server)];
+  return all.length ? all : ["- none"];
+}
+
 export function writeReport(r: ReportInput): { json: string; md: string } {
   const steps = r.result.steps;
   const start = steps[0]?.startedAt ?? r.window?.start ?? new Date().toISOString();
@@ -214,7 +222,7 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
     ``,
     `## Failure signatures seen`,
     ``,
-    ...(Object.keys(sigTotals).length ? Object.entries(sigTotals).map(([k, v]) => `- ${k}: ${v} (${SIGNATURES.find((s) => s.id === k)?.note ?? ""})`) : ["- none"]),
+    ...failureSignatureLines(sigTotals, server),
     ``,
     `## Error codes`,
     ``,

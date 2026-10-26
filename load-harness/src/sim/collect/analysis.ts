@@ -60,6 +60,8 @@ const SIG_COMPONENT: Record<string, (app: string) => string> = {
   uid_missing: (a) => `master ORK / Postgres (${a})`,
   stmt_timeout: (a) => `master ORK / Postgres (${a})`,
   npgsql_timeout: (a) => `master ORK / Postgres (${a})`,
+  uid_duplicate: (a) => `master ORK SubmitUser concurrent UID insert (${a}, see master-libs PR #30)`,
+  pg_unique_violation: (a) => `Postgres unique violation (${a})`,
   vendor_already_created: (a) => `payer (${a})`,
   vendor_keygen_failed: (a) => `payer (${a})`,
   unhandled_exception: (a) => a,

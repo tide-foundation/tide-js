@@ -89,6 +89,40 @@ test("signatures", () => {
   assert.ok(matchSignatures("TIDE-ORK-VOUCHER-VENDOR_ALREADY_CREATED").some((s) => s.id === "VENDOR_ALREADY_CREATED"));
   assert.equal(isBreakSignature("SEAT_CAP"), false);
   assert.equal(isBreakSignature("SQLITE_LOCKED"), true);
+  const dup = matchSignatures('Npgsql.PostgresException (0x80004005): 23505: duplicate key value violates unique constraint "IX_UIDs_Id"').map((s) => s.id);
+  assert.deepEqual(dup, ["UID_DUPLICATE", "PG_UNIQUE_VIOLATION"]);
+  assert.ok(isBreakSignature("UID_DUPLICATE") && isBreakSignature("PG_UNIQUE_VIOLATION"));
+});
+
+test("server log signatures: uid_duplicate and pg_unique_violation", async () => {
+  const { LOG_SIGNATURES, errorSamples } = await import("../collect/collectors.js");
+  assert.match(LOG_SIGNATURES.uid_duplicate, /IX_UIDs_Id/);
+  assert.match(LOG_SIGNATURES.pg_unique_violation, /23505/);
+  // Log_s escapes the quotes, so the condition must not depend on them.
+  assert.doesNotMatch(LOG_SIGNATURES.uid_duplicate, /\\"/);
+  const ef = "An exception occurred in the database while saving changes for context type 'Ork.Shared.Helpers.NetworkDataContext'.\nMicrosoft.EntityFrameworkCore.DbUpdateException: An error occurred.\n ---> Npgsql.PostgresException (0x80004005): 23505: duplicate key value violates unique constraint \"IX_UIDs_Id\"\n\nDETAIL: Detail redacted";
+  const s = errorSamples([
+    { app: "sork2", msg: ef, n: 20 },
+    { app: "sork2", msg: ef.replace("An error occurred.", "Other wrapper."), n: 1 },
+    { app: "sork2", msg: "Failed executing DbCommand (Nms) [Parameters=[@p0='?']]\nINSERT INTO \"UIDs\"", n: 21 },
+    { app: "sork2", msg: "Npgsql timeout Host=pg.example;Username=ork;Password=hunter2 token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc", n: 2 },
+    { app: "sork2", msg: "rare", n: 1 },
+  ]);
+  assert.equal(s.sork2.length, 3);
+  assert.deepEqual(s.sork2[0], { msg: 'Npgsql.PostgresException (0x80004005): 23505: duplicate key value violates unique constraint "IX_UIDs_Id"', n: 21 });
+  assert.deepEqual(s.sork2[1], { msg: 'Failed executing DbCommand: INSERT INTO "UIDs"', n: 21 });
+  assert.ok(s.sork2.every((x) => x.msg.length <= 160));
+  const red = errorSamples([{ app: "a", msg: "Npgsql timeout Host=pg.example;Username=ork;Password=hunter2 eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc " + "k".repeat(40), n: 1 }]).a[0].msg;
+  assert.doesNotMatch(red, /hunter2|pg\.example|eyJ|kkkk/);
+});
+
+test("failure signatures merge client and server per step", async () => {
+  const { failureSignatureLines } = await import("../report.js");
+  const sv = (step: number, sigs: Record<string, Record<string, number>>) => ({ step, logs: { signatures: sigs, exec: [], system: [] } }) as unknown as import("../collect/collectors.js").StepServer;
+  const server = [sv(1, { sork2: { error_lines: 10 } }), sv(2, { sork2: { uid_duplicate: 21, error_lines: 42 }, sork5: { stmt_timeout: 1 } })];
+  assert.deepEqual(failureSignatureLines({}, server), ["- server step 2: sork2 uid_duplicate x21, sork5 stmt_timeout x1"]);
+  assert.deepEqual(failureSignatureLines({}, []), ["- none"]);
+  assert.match(failureSignatureLines({ SQLITE_LOCKED: 2 }, server)[0], /^- client SQLITE_LOCKED: 2/);
 });
 
 test("realm pool spreads round-robin and runs out", () => {
@@ -278,7 +312,7 @@ function fakeServer(step: number, o: { sorkCpu?: number; submitP95?: number; sql
     step, kind: "ramp", window: { start: "", end: "" },
     apps: { sork1: { cpuPctAvg: 10, cpuPctMax: o.sorkCpu ?? 20, memPctAvg: 30, memPctMax: 30, cpuCoresMax: 0.1, limitCores: 0.5, replicasMax: 1, restarts: 0, requests: 10, respMsAvg: 10, respMsMax: 20 } },
     pg: { cpuPctAvg: 10, cpuPctMax: 15, memPctMax: 60, activeConnMax: o.pgConn ?? 20, maxConnections: 100, connPctMax: o.pgConn ?? 20, iopsPctMax: 1, cpuCreditsMin: 200, connectionsFailed: 0 },
-    logs: { signatures: { sork3: { sqlite_locked: o.sqlite ?? 0, seat_cap: 2, error_lines: 0 } }, exec: [{ app: "sork1", op: "Master.SubmitUser", n: 10, p50: 20, p95: o.submitP95 ?? 40, max: 60 }], system: [] },
+    logs: { signatures: { sork3: { sqlite_locked: o.sqlite ?? 0, uid_duplicate: o.sqlite ? 5 : 0, seat_cap: 2, error_lines: 0 } }, exec: [{ app: "sork1", op: "Master.SubmitUser", n: 10, p50: 20, p95: o.submitP95 ?? 40, max: 60 }], system: [] },
     prom: null, stub: null, missing: [],
   } as unknown as import("../collect/collectors.js").StepServer;
 }
@@ -294,6 +328,7 @@ test("analysis: server crossing first gives server-bound with ranked evidence", 
   assert.equal(a.first?.component, "master ORK SubmitUser (sork1)");
   assert.equal(a.first?.step, 2);
   assert.ok(a.ranked.some((s) => s.component === "SQLite store (sork3)" && s.value === 3));
+  assert.ok(a.ranked.some((s) => s.component === "master ORK SubmitUser concurrent UID insert (sork3, see master-libs PR #30)" && s.value === 5));
   assert.ok(!a.ranked.some((s) => s.metric === "log seat_cap"), "seat cap is expected, not a suspect");
   assert.ok(a.ranked.some((s) => s.component.startsWith("phase signup.keygen_wait")));
   assert.match(a.slowestOrk ?? "", /sork1 \(Master.SubmitUser p95 900ms/);

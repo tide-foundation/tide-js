@@ -4,7 +4,7 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { az, azToken, redactDeep } from "./az.js";
+import { az, azToken, redact, redactDeep } from "./az.js";
 
 const run = promisify(execFile);
 
@@ -203,6 +203,9 @@ export const LOG_SIGNATURES: Record<string, string> = {
   sqlite_malformed: `Log_s contains "SQLite Error 11" or Log_s contains "malformed"`,
   uid_missing: `Log_s contains "could not find uid"`,
   stmt_timeout: `Log_s contains "statement timeout" or Log_s contains "57014"`,
+  // Log_s is JSON, so the quotes around the constraint name arrive as \u0022; match the name alone.
+  uid_duplicate: `Log_s contains "IX_UIDs_Id"`,
+  pg_unique_violation: `Log_s contains "23505: " or Log_s contains "duplicate key value violates unique constraint"`,
   vendor_already_created: `Log_s contains "VENDOR_ALREADY_CREATED"`,
   seat_cap: `Log_s contains "exceeded its total user count"`,
   vendor_keygen_failed: `Log_s contains "VENDOR_KEYGEN_FAILED"`,
@@ -223,15 +226,42 @@ async function kql<T>(workspace: string, query: string): Promise<T[]> {
   return rows.map((r) => { const x = { ...r }; delete (x as { TableName?: string }).TableName; return x; });
 }
 
+// Top distinct error messages per app, short and redacted. Durations are blanked so repeats group.
+export function errorSamples(rows: Array<{ app: string; msg: string; n: number }>, top = 3): Record<string, Array<{ msg: string; n: number }>> {
+  const by: Record<string, Map<string, number>> = {};
+  for (const r of rows) {
+    const lines = String(r.msg ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+    // The innermost exception ("---> ...") says more than the EF wrapper line.
+    const inner = lines.filter((l) => l.startsWith("--->")).pop();
+    let line = (inner ?? lines.find((l) => /Exception/.test(l)) ?? lines[0] ?? "").replace(/^--->\s*/, "");
+    // EF command failures: the SQL says which table, the parameter list says nothing.
+    if (/^Failed executing DbCommand/.test(line) && lines[1]) line = `Failed executing DbCommand: ${lines[1]}`;
+    const msg = redact(line)
+      .replace(/\b(Host|Server|User ?Id|Username|Uid|Database|Data Source)\s*=\s*[^;\s]+/gi, "$1=[REDACTED]")
+      .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]")
+      .replace(/[A-Za-z0-9+/_=-]{32,}/g, "[REDACTED]")
+      .replace(/\(\d+ms\)/g, "(Nms)")
+      .replace(/\s+/g, " ")
+      .slice(0, 160);
+    if (!msg) continue;
+    const m = (by[r.app] ??= new Map());
+    m.set(msg, (m.get(msg) ?? 0) + Number(r.n));
+  }
+  const out: Record<string, Array<{ msg: string; n: number }>> = {};
+  for (const [app, m] of Object.entries(by)) out[app] = [...m].map(([msg, n]) => ({ msg, n })).sort((a, b) => b.n - a.n || Number(/Exception/.test(b.msg)) - Number(/Exception/.test(a.msg))).slice(0, top);
+  return out;
+}
+
 export interface ExecRow { app: string; op: string; n: number; p50: number; p95: number; max: number }
 export interface LogsResult {
   signatures: Record<string, Record<string, number>>;
   exec: ExecRow[];
   system: Array<{ app: string; reason: string; n: number; exitCodes: string }>;
+  errorSamples?: Record<string, Array<{ msg: string; n: number }>>; // absent in older runs
 }
 
 export async function logs(inv: Inventory, cfg: CollectConfig, w: StepWindow, missing: string[]): Promise<LogsResult> {
-  const out: LogsResult = { signatures: {}, exec: [], system: [] };
+  const out: LogsResult = { signatures: {}, exec: [], system: [], errorSamples: {} };
   const names = inv.apps.map((a) => a.name);
   const appFilter = `| where ContainerAppName_s in (${names.map((n) => `"${n}"`).join(",")})`;
   const sigCols = Object.entries(LOG_SIGNATURES).map(([k, cond]) => `${k}=countif(${cond})`).join(", ");
@@ -246,6 +276,17 @@ ${kqlWindow(w)}
         for (const k of Object.keys(LOG_SIGNATURES)) out.signatures[app][k] = Number(r[k] ?? 0);
       }
     } catch (e) { missing.push(`log signatures (${ws.env}): ${(e as Error).message}`); }
+    try {
+      const rows = await kql<{ app: string; msg: string; n: number }>(ws.customerId, `ContainerAppConsoleLogs_CL ${appFilter}
+| where ${LOG_SIGNATURES.error_lines}
+${kqlWindow(w)}
+| extend m = tostring(parse_json(Log_s).message)
+| extend msg = replace_regex(substring(iff(isempty(m), Log_s, m), 0, 2000), @"\\(\\d+ms\\)", "(Nms)")
+| summarize n=count() by app=ContainerAppName_s, msg
+| order by n desc
+| take 200`);
+      Object.assign(out.errorSamples!, errorSamples(rows));
+    } catch (e) { missing.push(`error samples (${ws.env}): ${(e as Error).message}`); }
     try {
       const rows = await kql<{ app: string; op: string; n: number; p50: number; p95: number; mx: number }>(ws.customerId, `ContainerAppConsoleLogs_CL ${appFilter}
 | where Log_s contains "Execution time for"

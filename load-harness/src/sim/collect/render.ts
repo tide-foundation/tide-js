@@ -3,6 +3,7 @@
 import type { StepSummary } from "../engine.js";
 import type { Inventory, StepServer } from "./collectors.js";
 import type { ServerMeta } from "./index.js";
+import { RULES } from "./analysis.js";
 
 const n = (v: number | null | undefined, unit = "") => (v === null || v === undefined ? "-" : `${v}${unit}`);
 
@@ -46,6 +47,16 @@ export function phaseMarkdown(steps: StepSummary[]): string[] {
   return lines;
 }
 
+// Server log signatures per step for "Failure signatures seen"; error_lines is a count, not a signature.
+export function serverSignatureLines(server: StepServer[]): string[] {
+  const out: string[] = [];
+  for (const s of server) {
+    const hits = Object.entries(s.logs?.signatures ?? {}).flatMap(([app, sig]) => Object.entries(sig).filter(([k, v]) => v > 0 && k !== "error_lines").map(([k, v]) => `${app} ${k} x${v}`));
+    if (hits.length) out.push(`- server step ${s.step}: ${hits.join(", ")}`);
+  }
+  return out;
+}
+
 export function serverMarkdown(server: StepServer[], inv: Inventory | null): string[] {
   const lines = ["## Server evidence per step", ""];
   if (!server.length) return [...lines, "- not collected (use --collect auto, or report --run <id> --recollect)", ""];
@@ -62,6 +73,10 @@ export function serverMarkdown(server: StepServer[], inv: Inventory | null): str
     }
     const sigRows = Object.entries(s.logs?.signatures ?? {}).map(([app, sig]) => [app, Object.entries(sig).filter(([, v]) => v > 0)] as const).filter(([, v]) => v.length);
     lines.push("", `Log signatures: ${sigRows.length ? sigRows.map(([app, v]) => `${app} { ${v.map(([k, c]) => `${k}: ${c}`).join(", ")} }`).join("; ") : s.logs ? "none" : "not collected"}`);
+    for (const [app, samples] of Object.entries(s.logs?.errorSamples ?? {})) {
+      const errs = s.logs?.signatures[app]?.error_lines ?? 0;
+      if (errs >= RULES.errorLinesMin && samples.length) lines.push(`Top errors ${app} (${errs} error lines): ${samples.map((x) => `\`${x.msg.replace(/[|`]/g, "/")}\` x${x.n}`).join("; ")}`);
+    }
     const sys = (s.logs?.system ?? []).filter((e) => /Terminated|BackOff|Crashing|ProbeFailed|Started|Created|RevisionUpdate/i.test(e.reason));
     if (sys.length) lines.push(`Container events: ${sys.map((e) => `${e.app} ${e.reason} x${e.n}${e.exitCodes ? ` (exit ${e.exitCodes})` : ""}`).join("; ")}`);
     const ex = (s.logs?.exec ?? []).filter((r) => KEY_OPS.test(r.op)).sort((a, b) => a.op.localeCompare(b.op) || a.app.localeCompare(b.app));
