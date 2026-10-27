@@ -380,6 +380,10 @@ node dist/sim/cli.js prepare-realms --count 5 --target staging --confirm-stripe-
   locked, VENDOR_ALREADY_CREATED, could not find uid, keygen failed, not enough ORKs). Soft ones
   (gateway errors, statement timeout) only show as warnings and break through the error rate;
   `--strict-signatures` makes them break the step again. One confirmation step at the last good rate follows, then the run stops.
+- **Lost browsers**: a remote browser that disconnects is replaced in its slot (3 tries), and each
+  is kept busy every 25 s so cooldown does not leave it idle. Ops that die with their browser
+  (`DRIVER_CRASH`, or a failure on a browser lost mid-op) are client-side: they are left out of the
+  error rate and the abort window, and reported separately. Over 25% lost in a step is client-bound.
 - **Client-bound**: client CPU above 85% (`--client-cpu`, machine-wide, Chromium included), queue
   wait p95 above 2 s (`--client-queue-wait`), or arrivals dropped because the queue is full
   (`--max-queue`, default 4x the pool). The run stops and says the load machine is the limit.

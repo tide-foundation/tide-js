@@ -134,6 +134,19 @@ export function algCounts(eventsPath: string): Record<string, Record<string, num
   return out;
 }
 
+// Ops lost to the load machine per step: rows marked client-side, plus DRIVER_CRASH from runs
+// recorded before that marking existed.
+export function clientLostCounts(eventsPath: string): Record<number, number> {
+  const out: Record<number, number> = {};
+  if (!existsSync(eventsPath)) return out;
+  for (const line of readFileSync(eventsPath, "utf8").split("\n")) {
+    if (!line) continue;
+    const e = JSON.parse(line) as { step: number; ok: boolean; code?: string | null; clientSide?: boolean; expected?: boolean };
+    if (!e.ok && !e.expected && (e.clientSide || e.code === "DRIVER_CRASH")) out[e.step] = (out[e.step] ?? 0) + 1;
+  }
+  return out;
+}
+
 export interface ReportInput {
   dir: string;
   runId: string;
@@ -152,8 +165,10 @@ export interface ReportInput {
 
 export function browserSection(u: BrowserUsage | undefined): string[] {
   if (!u) return ["- no browsers used"];
-  if (u.endpoint === "local") return ["- endpoint: local Chromium"];
+  const lost = (u.lost ?? []).map((l) => `- browser slot ${l.index} lost at ${l.at}: ${l.reconnectMs !== null ? `reconnected in ${l.reconnectMs}ms` : `reconnect failed (${l.error ?? "?"})`}`);
+  if (u.endpoint === "local") return ["- endpoint: local Chromium", ...lost];
   return [
+    ...lost,
     `- endpoint: Azure Playwright workspace`,
     `- remote browsers: ${u.remoteBrowsers} (${u.contextsPerBrowser ?? "-"} contexts each)`,
     `- remote browser-minutes: ${u.browserMinutes.toFixed(2)} (est. $${u.estCostUsd.toFixed(3)} at $${AZURE_PRICE_PER_MIN}/min)`,
@@ -200,6 +215,7 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
     for (const [k, v] of Object.entries(o.codes)) codeTotals[k] = (codeTotals[k] ?? 0) + v;
   }
   const algs = algCounts(join(r.dir, "events.jsonl"));
+  const clientLost = clientLostCounts(join(r.dir, "events.jsonl"));
   const server = r.server ?? [];
   const inv = r.serverMeta?.start ?? r.serverMeta?.end ?? null;
   const analysis = analyse(steps, server, inv);
@@ -221,8 +237,8 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
   const md = [
     `# Staging incident sim: ${r.scenario} (${r.runId})`,
     ``,
-    ...atAGlance({ steps, server, abortReason: r.result.abortReason, browser: r.browserUsage, realmTimes: r.manifest.realms.map((x) => x.createdAt).filter(Boolean) }, causes),
-    ...stepsDigest(steps, server, causes),
+    ...atAGlance({ steps, server, abortReason: r.result.abortReason, browser: r.browserUsage, clientLost, realmTimes: r.manifest.realms.map((x) => x.createdAt).filter(Boolean) }, causes),
+    ...stepsDigest(steps, server, causes, clientLost),
     ...causesMarkdown(causes),
     ...healthMarkdown(server, inv, causes),
     `## Client side`,

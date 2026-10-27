@@ -60,6 +60,7 @@ export interface BrowserUsage {
   sessions: Session[];
   browserMinutes: number;
   estCostUsd: number;
+  lost?: Array<{ index: number; at: string; reconnectMs: number | null; error?: string }>; // browsers that died mid-run
 }
 
 // Sum of open time across sessions, in minutes. A session still open counts up to `now`.

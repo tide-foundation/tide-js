@@ -115,7 +115,7 @@ export function makeConsoleSetupOp(d: ConsoleSetupDeps): (ctx: OpContext) => Pro
   const navTimeoutMs = 60_000;
   const setupTimeoutMs = 180_000;
   const base = `${d.tcBase.replace(/\/+$/, "")}/realms/master/tide-console/tide/setup`;
-  return async () => {
+  return async (ctx) => {
     const seq = ++n;
     // The console slugifies the project name to the realm name, so name the project the realm.
     const { realm, email } = setupNames({ runId: d.runId, emailDomain: d.emailDomain, realmPrefix: "lt-ws" }, seq);
@@ -123,6 +123,7 @@ export function makeConsoleSetupOp(d: ConsoleSetupDeps): (ctx: OpContext) => Pro
     const phases: Record<string, number> = {};
     const trail: string[] = [];
     const gc = await d.host.context();
+    ctx.onBrowser?.(gc.lease);
     const page = await gc.context.newPage();
     page.setDefaultTimeout(navTimeoutMs);
     const w = watchSetup(page);

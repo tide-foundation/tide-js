@@ -25,52 +25,130 @@ export interface BrowserHostOpts {
   endpoint?: BrowserEndpoint;      // default local
   remoteBrowsers?: number;         // azure only
   contextsPerBrowser?: number;     // azure only, for the usage record
+  // Opens one replacement browser; tests inject a fake. Default: local launch or one Azure connect.
+  reconnect?: () => Promise<{ browser: Browser; session?: Session }>;
+  reconnectRetries?: number;       // default 3
+  keepAliveMs?: number;            // default 25s; 0 turns it off
 }
 
+interface Slot { browser: Browser; session?: Session; lost: number; reconnecting?: Promise<void> }
+
+// What an op learns about the browser it ran on: its slot, and whether that browser died meanwhile.
+export interface BrowserLease { index: number; lost: () => boolean }
+
+const CLOSED = /has been closed|Browser has been disconnected|Target closed/i;
+
 // One local Chromium, or N remote browsers in an Azure Playwright workspace. Each operation gets a
-// fresh context on the least-busy browser.
+// fresh context on the least-busy browser. A browser that disconnects is replaced in its slot.
 export class BrowserHost {
-  private browsers: Browser[] = [];
+  private slots: Slot[] = [];
   private active = new Map<Browser, number>();
   private sessions: Session[] = [];
   private stopped = false;
+  private keepAlive: NodeJS.Timeout | null = null;
   readonly endpoint: BrowserEndpoint;
+  readonly lostLog: Array<{ index: number; at: string; reconnectMs: number | null; error?: string }> = [];
 
   constructor(private o: BrowserHostOpts) {
     this.endpoint = o.endpoint ?? "local";
   }
 
   async start(): Promise<void> {
-    if (this.endpoint === "local") {
-      this.browsers = [await chromium.launch({ headless: this.o.headless })];
+    if (this.o.reconnect) {
+      const n = this.endpoint === "local" ? 1 : this.o.remoteBrowsers ?? 1;
+      for (let i = 0; i < n; i++) this.slots.push({ ...(await this.o.reconnect()), lost: 0 });
+    } else if (this.endpoint === "local") {
+      this.slots = [{ browser: await chromium.launch({ headless: this.o.headless }), lost: 0 }];
     } else {
       const r = await connectAzureBrowsers(this.o.remoteBrowsers ?? 1, this.o.log);
-      this.browsers = r.browsers;
       this.sessions = r.sessions;
-      if (!this.browsers.length) throw new Error("no remote browser could be connected (see the log for the reason)");
+      const ok = r.sessions.filter((x) => !x.error);
+      this.slots = r.browsers.map((b, i) => ({ browser: b, session: ok[i], lost: 0 }));
+      if (!this.slots.length) throw new Error("no remote browser could be connected (see the log for the reason)");
     }
-    for (const b of this.browsers) this.active.set(b, 0);
+    this.slots.forEach((s, i) => this.watch(i));
+    // An idle remote browser (e.g. during cooldown) can be dropped by the service; a cheap
+    // context open and close keeps each one busy.
+    const every = this.o.keepAliveMs ?? 25_000;
+    if (every > 0) {
+      this.keepAlive = setInterval(() => {
+        for (const [i, s] of this.slots.entries()) {
+          if (s.browser.isConnected()) void s.browser.newContext().then((c) => c.close()).catch((e) => { if (CLOSED.test(String(e))) void this.replace(i); });
+        }
+      }, every);
+      this.keepAlive.unref();
+    }
+  }
+
+  private watch(i: number): void {
+    const b = this.slots[i].browser;
+    this.active.set(b, this.active.get(b) ?? 0);
+    b.on("disconnected", () => { if (this.slots[i]?.browser === b) void this.replace(i); });
+  }
+
+  // Replaces a lost browser in slot i, with bounded retries. Concurrent callers share one attempt.
+  replace(i: number): Promise<void> {
+    const slot = this.slots[i];
+    if (this.stopped || !slot) return Promise.resolve();
+    if (slot.reconnecting) return slot.reconnecting;
+    slot.lost++;
+    if (slot.session && slot.session.closedAt === null) slot.session.closedAt = Date.now();
+    const t0 = Date.now();
+    const at = new Date(t0).toISOString();
+    slot.reconnecting = (async () => {
+      const tries = this.o.reconnectRetries ?? 3;
+      let err = "";
+      for (let k = 0; k < tries && !this.stopped; k++) {
+        try {
+          const r = await (this.o.reconnect ?? (() => this.openOne()))();
+          if (this.stopped) { await r.browser.close().catch(() => undefined); return; }
+          if (r.session) this.sessions.push(r.session);
+          slot.browser = r.browser;
+          slot.session = r.session;
+          this.watch(i);
+          this.lostLog.push({ index: i, at, reconnectMs: Date.now() - t0 });
+          this.o.log(`remote browser ${i} lost, reconnected in ${Date.now() - t0}ms`);
+          return;
+        } catch (e) {
+          err = (e as Error).message?.split("\n")[0] ?? String(e);
+        }
+      }
+      this.lostLog.push({ index: i, at, reconnectMs: null, error: err });
+      this.o.log(`remote browser ${i} lost, reconnect failed after ${tries} tries: ${err}`);
+    })().finally(() => { slot.reconnecting = undefined; });
+    return slot.reconnecting;
+  }
+
+  private async openOne(): Promise<{ browser: Browser; session?: Session }> {
+    if (this.endpoint === "local") return { browser: await chromium.launch({ headless: this.o.headless }) };
+    const r = await connectAzureBrowsers(1, () => undefined);
+    if (!r.browsers.length) throw new Error(r.sessions[0]?.error ?? "connect failed");
+    return { browser: r.browsers[0], session: { ...r.sessions[0], index: this.sessions.length } };
   }
 
   // Closes every browser; safe to call more than once. Remote sessions stop billing here.
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
-    await Promise.all(this.browsers.map(async (b, i) => {
-      await b.close().catch(() => undefined);
-      const s = this.sessions[i];
-      if (s && s.closedAt === null && s.openedAt !== null) s.closedAt = Date.now();
+    if (this.keepAlive) clearInterval(this.keepAlive);
+    await Promise.all(this.slots.map(async (s) => {
+      await s.browser.close().catch(() => undefined);
+      if (s.session && s.session.closedAt === null && s.session.openedAt !== null) s.session.closedAt = Date.now();
     }));
   }
 
   usage(): BrowserUsage {
-    return usageOf(this.endpoint, this.sessions, this.endpoint === "azure" ? this.o.contextsPerBrowser ?? null : null);
+    const u = usageOf(this.endpoint, this.sessions, this.endpoint === "azure" ? this.o.contextsPerBrowser ?? null : null);
+    return this.lostLog.length ? { ...u, lost: this.lostLog } : u;
   }
 
   async context() {
-    const alive = this.browsers.filter((b) => b.isConnected());
+    const alive = this.slots.map((s, i) => ({ s, i })).filter((x) => x.s.browser.isConnected() && !x.s.reconnecting);
     if (!alive.length) throw new Error(this.stopped ? "browser host stopped" : "no connected browser");
-    const b = alive.reduce((x, y) => ((this.active.get(y) ?? 0) < (this.active.get(x) ?? 0) ? y : x));
+    const { s: slot, i } = alive.reduce((x, y) => ((this.active.get(y.s.browser) ?? 0) < (this.active.get(x.s.browser) ?? 0) ? y : x));
+    const b = slot.browser;
+    const lostAt = slot.lost;
+    const lease: BrowserLease = { index: i, lost: () => slot.lost !== lostAt || slot.browser !== b };
     this.active.set(b, (this.active.get(b) ?? 0) + 1);
     let gc;
     try {
@@ -80,11 +158,12 @@ export class BrowserHost {
       });
     } catch (e) {
       this.active.set(b, (this.active.get(b) ?? 1) - 1);
+      if (CLOSED.test(String(e))) void this.replace(i);
       throw e;
     }
     const close = gc.close;
     let done = false;
-    return { ...gc, close: async () => { await close(); if (!done) { done = true; this.active.set(b, (this.active.get(b) ?? 1) - 1); } } };
+    return { ...gc, lease, close: async () => { await close(); if (!done) { done = true; this.active.set(b, (this.active.get(b) ?? 1) - 1); } } };
   }
 }
 
@@ -237,6 +316,7 @@ export function makeSignupOp(d: SignupDeps): (ctx: OpContext) => Promise<OpOutco
 
     const pkce = makePkce();
     const gc = await d.host.context();
+    ctx.onBrowser?.(gc.lease);
     const page = await gc.context.newPage();
     // The enclave just spins on a seat-cap refusal, so close the page to fail fast.
     const errs = watchErrors(page, (body) => {
@@ -304,11 +384,12 @@ export interface LoginDeps {
 }
 
 export function makeLoginOp(d: LoginDeps): (ctx: OpContext) => Promise<OpOutcome> {
-  return async () => {
+  return async (ctx) => {
     const user = d.users.next();
     if (!user) return { ok: false, code: "NO_LOGIN_USERS", expected: true, message: "login pool empty (no users yet)" };
     const pkce = makePkce();
     const gc = await d.host.context();
+    ctx.onBrowser?.(gc.lease);
     const page = await gc.context.newPage();
     page.setDefaultTimeout(d.navTimeoutMs);
     const errs = watchErrors(page);

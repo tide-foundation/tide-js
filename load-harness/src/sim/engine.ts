@@ -50,6 +50,8 @@ export interface OpOutcome {
   extra?: Record<string, unknown>;
   // An outcome that is neither a pass nor a staging failure (seat cap, empty user pool).
   expected?: boolean;
+  // A failure caused by the load machine (its browser died), not by staging.
+  clientSide?: boolean;
 }
 
 export interface OpContext {
@@ -57,6 +59,8 @@ export interface OpContext {
   step: number;
   stop: (reason: string) => void;
   aborted: () => boolean;
+  // Browser ops report the browser slot they run on, so a failure on a lost browser is client-side.
+  onBrowser?: (lease: { index: number; lost: () => boolean }) => void;
 }
 
 export interface OpSpec {
@@ -68,7 +72,8 @@ export interface OpSpec {
 }
 
 export interface EventRow {
-  ts: string;
+  ts: string;              // arrival time; the step is the one the op arrived in
+  endTs?: string;          // completion time (ts + queueWaitMs + latencyMs)
   runId: string;
   scenario: string;
   op: string;
@@ -88,6 +93,8 @@ export interface EventRow {
   status?: number;
   message?: string;
   extra?: Record<string, unknown>;
+  clientSide?: boolean;    // failed because the load machine's browser died; not a staging error
+  browser?: number;        // browser slot the op ran on
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +141,7 @@ export interface OpStepStats {
   p95: number | null;
   p99: number | null;
   queueWaitP95: number | null;
+  clientLost?: number;     // failures from lost browsers, excluded from the counts above
   codes: Record<string, number>;
   signatures: Record<string, number>;
   phaseP95: Record<string, number | null>;
@@ -164,7 +172,8 @@ export function summariseOp(rows: EventRow[], op: string, targetRate: number, st
   const dropped = mine.filter((r) => r.dropped).length;
   const done = mine.filter((r) => !r.dropped);
   const expected = done.filter((r) => r.expected).length;
-  const counted = done.filter((r) => !r.expected);
+  const clientLost = done.filter((r) => r.clientSide && !r.expected).length;
+  const counted = done.filter((r) => !r.expected && !r.clientSide);
   const ok = counted.filter((r) => r.ok);
   const failed = counted.length - ok.length;
   const late = ok.filter((r) => r.late).length;
@@ -179,7 +188,7 @@ export function summariseOp(rows: EventRow[], op: string, targetRate: number, st
   ok.forEach((r) => Object.keys(r.phases).forEach((k) => phaseNames.add(k)));
   const phaseP95: Record<string, number | null> = {};
   for (const p of phaseNames) phaseP95[p] = percentile(ok.map((r) => r.phases[p]).filter((v) => typeof v === "number"), 95);
-  const arrivals = mine.length - expected;
+  const arrivals = mine.length - expected - clientLost;
   return {
     op,
     targetRate,
@@ -197,6 +206,7 @@ export function summariseOp(rows: EventRow[], op: string, targetRate: number, st
     p95: percentile(lat, 95),
     p99: percentile(lat, 99),
     queueWaitP95: percentile(done.map((r) => r.queueWaitMs), 95),
+    ...(clientLost ? { clientLost } : {}),
     codes,
     signatures: sigs,
     phaseP95,
@@ -236,6 +246,12 @@ export function judgeStep(
       if (isSoftSignature(s) && !t.strictSignatures) { warnings[s] = (warnings[s] ?? 0) + n; continue; }
       brk = true;
       if (!breakSignatures.includes(s)) breakSignatures.push(s);
+    }
+    // Losing many browsers in one step means the load machine, not staging, set the limit.
+    const lost = o.clientLost ?? 0;
+    if (lost && lost / (o.arrivals - o.expected) > 0.25) {
+      clientBound = true;
+      reasons.push(`${o.op}: ${lost} of ${o.arrivals - o.expected} lost to browser crashes (> 25%)`);
     }
     if (o.dropped > 0) {
       clientBound = true;
@@ -325,7 +341,7 @@ export class Engine {
   }
 
   private trackAbort(row: EventRow): void {
-    if (row.dropped || row.expected) return;
+    if (row.dropped || row.expected || row.clientSide) return;
     const now = Date.now();
     this.recent.push({ t: now, bad: !row.ok });
     const cutoff = now - this.o.thresholds.abortWindowMs;
@@ -363,9 +379,10 @@ export class Engine {
     const queueWaitMs = Date.now() - q0;
     const t0 = Date.now();
     let out: OpOutcome;
+    let lease: { index: number; lost: () => boolean } | undefined;
     try {
       if (this.abortReason) out = { ok: false, code: "SKIPPED_ABORT", expected: true };
-      else out = await op.run({ seq, step: step.index, stop: (r) => this.stop(r), aborted: () => !!this.abortReason });
+      else out = await op.run({ seq, step: step.index, stop: (r) => this.stop(r), aborted: () => !!this.abortReason, onBrowser: (l) => { lease = l; } });
     } catch (e) {
       out = { ok: false, code: "DRIVER_CRASH", message: (e as Error)?.message ?? String(e) };
     } finally {
@@ -376,6 +393,8 @@ export class Engine {
     const message = out.message ? truncate(scrub(out.message, secrets), 600) : undefined;
     const sigs = out.ok ? [] : matchSignatures(`${out.code ?? ""} ${message ?? ""}`).map((s) => s.id);
     const expected = !!out.expected || (sigs.length > 0 && sigs.every((s) => isExpectedSignature(s)));
+    // A harness exception or a failure on a browser that died mid-op is the load machine's fault.
+    const clientSide = !out.ok && (!!out.clientSide || out.code === "DRIVER_CRASH" || (!!out.code && out.code !== "SKIPPED_ABORT" && !!lease?.lost()));
     const row: EventRow = {
       ...base,
       ok: out.ok,
@@ -390,6 +409,9 @@ export class Engine {
       status: out.status,
       message,
       extra: out.extra,
+      endTs: new Date().toISOString(),
+      ...(clientSide ? { clientSide } : {}),
+      ...(lease ? { browser: lease.index } : {}),
     };
     rows.push(row);
     this.o.events.write(row);

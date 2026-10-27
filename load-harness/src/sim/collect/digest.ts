@@ -250,6 +250,7 @@ export interface DigestInput {
   abortReason: string | null;
   browser?: BrowserUsage;
   realmTimes?: string[];   // createdAt of every run realm, to place a first-seen time in the run
+  clientLost?: Record<number, number>; // per step: ops lost to remote browser crashes
 }
 
 export function atAGlance(d: DigestInput, causes: Cause[]): string[] {
@@ -268,6 +269,8 @@ export function atAGlance(d: DigestInput, causes: Cause[]): string[] {
   const pers = persistentFailure(steps);
   if (pers) lines.push(`- **Failures continued after load dropped:** step ${pers.step.step} at ${fmtRate(stepRate(pers.step))} failed ${(stepErr(pers.step) * 100).toFixed(0)}% vs ${(stepErr(pers.breakStep) * 100).toFixed(0)}% at the break: likely a state or size problem, not throughput`);
   lines.push(`- **Load machine or Playwright the limit:** ${clientLimit(steps, d.browser)}`);
+  const lost = Object.entries(d.clientLost ?? {});
+  if (lost.length) lines.push(`- **${lost.reduce((a, [, n]) => a + n, 0)} operations lost to remote browser crashes** (client-side, excluded from staging error rate): ${lost.map(([st, n]) => `step ${st} x${n}`).join(", ")}${d.browser?.lost?.length ? `; ${d.browser.lost.length} browser(s) replaced` : ""}`);
   const noise = causes.filter((c) => c.status === "noise");
   if (noise.length) lines.push(`- **Noise, not the cause:** ${noise.map((c) => `${c.id} x${c.count} (${c.apps.join(", ")})`).join(", ")}${noise.some((c) => c.noiseUnless) ? ": caught by the code, no add_user_failed lines" : ""}`);
   lines.push(`- **Confidence:** ${!top && sigOnly ? "low (a signature-only break at a low error rate is not enough evidence for a cause)" : confidence(top, steps, pers)}`);
@@ -298,13 +301,13 @@ export function clientLimit(steps: StepSummary[], browser?: BrowserUsage): strin
   return `${bound.length || failedBrowsers ? "YES" : "no"} (${nums})`;
 }
 
-export function stepsDigest(steps: StepSummary[], server: StepServer[], causes: Cause[]): string[] {
+export function stepsDigest(steps: StepSummary[], server: StepServer[], causes: Cause[], clientLost: Record<number, number> = {}): string[] {
   const lines = ["## What happened, step by step", ""];
   if (!steps.length) return [...lines, "- no load steps", ""];
-  lines.push("| step | kind | rate | started | ok | failed | p95 s | verdict |", "|---|---|---|---|---|---|---|---|");
+  lines.push("| step | kind | rate | started | ok | failed | lost (client) | p95 s | verdict |", "|---|---|---|---|---|---|---|---|---|");
   for (const s of steps) {
     const p95 = Math.max(0, ...s.ops.map((o) => o.p95 ?? 0));
-    lines.push(`| ${s.step} | ${s.kind} | ${fmtRate(stepRate(s))} | ${hhmmss(s.startedAt)} | ${stepOk(s)} | ${stepFailed(s)} | ${p95 ? (p95 / 1000).toFixed(1) : "-"} | ${verdictText(s).replace(/^\w+/, (v) => v.toUpperCase())} |`);
+    lines.push(`| ${s.step} | ${s.kind} | ${fmtRate(stepRate(s))} | ${hhmmss(s.startedAt)} | ${stepOk(s)} | ${stepFailed(s)} | ${clientLost[s.step] ?? 0} | ${p95 ? (p95 / 1000).toFixed(1) : "-"} | ${verdictText(s).replace(/^\w+/, (v) => v.toUpperCase())} |`);
   }
   lines.push("");
   const noise = new Set(causes.filter((c) => c.status === "noise").map((c) => c.id));
@@ -313,8 +316,8 @@ export function stepsDigest(steps: StepSummary[], server: StepServer[], causes: 
     const codes = Object.entries(s.ops.reduce((a, o) => { for (const [k, v] of Object.entries(o.codes)) a[k] = (a[k] ?? 0) + v; return a; }, {} as Record<string, number>));
     const sv = server.find((x) => x.step === s.step);
     const sigs = Object.entries(sv?.logs?.signatures ?? {}).flatMap(([app, m]) => Object.entries(m).filter(([k, v]) => v > 0 && CAUSES[k] && !noise.has(k)).map(([k, v]) => `${app} ${k} x${v}${sv?.logs?.firstSeen?.[app]?.[k] ? ` from ${hhmmss(sv.logs.firstSeen[app][k])}` : ""}`));
-    const why = s.flags.reasons.length ? ` because ${s.flags.reasons.join("; ")}` : "";
-    lines.push(`- **Step ${s.step}** (${s.kind}, ${fmtRate(stepRate(s))}): ${stepOk(s)} ok, ${stepFailed(s)} failed${codes.length ? ` (${codes.map(([k, v]) => `${k} x${v}`).join(", ")})` : ""}. ${s.verdict.toUpperCase()}${why}. Server: ${sigs.length ? sigs.join(", ") : "no failure signatures"}.${pers?.step.step === s.step ? " Load was lower than at the break, yet it failed as much or more." : ""}`);
+    const why = s.flags.reasons.length ? `${s.verdict === "ok" ? " with" : " because"} ${s.flags.reasons.join("; ")}` : "";
+    lines.push(`- **Step ${s.step}** (${s.kind}, ${fmtRate(stepRate(s))}): ${stepOk(s)} ok, ${stepFailed(s)} failed${clientLost[s.step] ? `, ${clientLost[s.step]} lost to remote browser crashes (client-side)` : ""}${codes.length ? ` (${codes.map(([k, v]) => `${k} x${v}`).join(", ")})` : ""}. ${s.verdict.toUpperCase()}${why}. Server: ${sigs.length ? sigs.join(", ") : "no failure signatures"}.${pers?.step.step === s.step ? " Load was lower than at the break, yet it failed as much or more." : ""}`);
   }
   if (pers) {
     const from = pers.breakStep.startedAt;

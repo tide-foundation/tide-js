@@ -2,7 +2,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseRate, parseDuration, scrub } from "../util.js";
@@ -337,6 +337,96 @@ test("engine: break triggers one confirm step at the last good rate", async () =
   const c = ceilings(res.steps);
   assert.equal(c[0].lastOk, 600);
   assert.equal(c[0].brk, 1200);
+});
+
+test("engine: ops lost with their browser are client-side, outside abort and break, and keep arrival steps", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sim-"));
+  let n = 0;
+  // Every third op dies with its browser; the rest fail at a normal staging rate of zero.
+  const op: OpSpec = { name: "x", ratio: 1, pool: new Pool("p", 50), maxQueue: 100, run: async (ctx) => {
+    const lost = ++n % 3 === 0;
+    ctx.onBrowser?.({ index: lost ? 1 : 0, lost: () => lost });
+    await new Promise((r) => setTimeout(r, 5));
+    return lost ? { ok: false, code: "SIGNUP_STEP2_SUBMITTED", message: "first-broker-login form did not appear" } : { ok: true };
+  } };
+  const res = await engineFor(dir, [op], [1200]).run();
+  assert.equal(res.abortReason, null, "client-side failures never trip the rolling abort");
+  const st = res.steps[0];
+  assert.equal(st.ops[0].failed, 0);
+  assert.equal(st.ops[0].errorRate, 0);
+  assert.ok((st.ops[0].clientLost ?? 0) > 0);
+  assert.equal(st.flags.break, false);
+  assert.equal(st.flags.clientBound, true, "a third of the ops lost is over 25%");
+  const rows = readFileSync(join(dir, "e.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  const lostRows = rows.filter((r) => r.clientSide);
+  assert.ok(lostRows.length && lostRows.every((r) => r.browser === 1 && r.code === "SIGNUP_STEP2_SUBMITTED"));
+  // ts is the arrival time inside the step; endTs is completion.
+  for (const r of rows) {
+    assert.ok(Date.parse(r.ts) >= st.startMs && Date.parse(r.ts) <= st.startMs + 1200, "arrival inside the step window");
+    assert.ok(Date.parse(r.endTs) >= Date.parse(r.ts) + r.latencyMs - 5);
+  }
+  // A harness exception is client-side too.
+  const crash: OpSpec = { name: "x", ratio: 1, pool: new Pool("p", 50), maxQueue: 100, run: async () => { throw new Error("browser.newContext: Target page, context or browser has been closed"); } };
+  const r2 = await engineFor(mkdtempSync(join(tmpdir(), "sim-")), [crash], [1200]).run();
+  assert.equal(r2.abortReason, null);
+  assert.equal(r2.steps[0].verdict, "client-bound");
+});
+
+test("browser host replaces a disconnected remote browser and flags in-flight ops", async () => {
+  const { BrowserHost } = await import("../scenarios/browser.js");
+  type Fake = { connected: boolean; h: Record<string, () => void>; kill: () => void };
+  const fakes: Fake[] = [];
+  let failReconnect = false;
+  const mk = () => {
+    const b = {
+      connected: true, h: {} as Record<string, () => void>,
+      on(e: string, f: () => void) { b.h[e] = f; },
+      isConnected: () => b.connected,
+      newContext: async () => { if (!b.connected) throw new Error("browser.newContext: Target page, context or browser has been closed"); return { route: async () => undefined, on: () => undefined, close: async () => undefined }; },
+      close: async () => undefined,
+      kill() { b.connected = false; b.h.disconnected?.(); },
+    };
+    fakes.push(b);
+    return b;
+  };
+  const logs: string[] = [];
+  const tick = () => new Promise((r) => setTimeout(r, 20));
+  const host = new BrowserHost({
+    headless: true, target: "staging", onProdHit: () => undefined, log: (s) => logs.push(s), endpoint: "azure", remoteBrowsers: 2, keepAliveMs: 0,
+    reconnect: async () => { if (failReconnect && fakes.length >= 3) throw new Error("service busy"); return { browser: mk() as never }; },
+  });
+  await host.start();
+  const gc = await host.context();
+  assert.equal(gc.lease.lost(), false);
+  fakes[gc.lease.index].kill();
+  await tick();
+  assert.equal(gc.lease.lost(), true, "the op's browser died while it ran");
+  assert.equal(fakes.length, 3, "one replacement opened");
+  assert.match(logs.join("\n"), new RegExp(`remote browser ${gc.lease.index} lost, reconnected in \\d+ms`));
+  const gc2 = await host.context();
+  assert.equal(gc2.lease.lost(), false);
+  failReconnect = true;
+  fakes[2].kill();
+  await tick();
+  assert.match(logs.join("\n"), /lost, reconnect failed after 3 tries: service busy/);
+  assert.equal(host.usage().lost?.length, 2);
+  await host.stop();
+});
+
+test("report: client-side losses per step and the At a glance line", async () => {
+  const { clientLostCounts } = await import("../report.js");
+  const { atAGlance, stepsDigest } = await import("../collect/digest.js");
+  const dir = mkdtempSync(join(tmpdir(), "sim-"));
+  const ev = [{ step: 2, ok: false, code: "DRIVER_CRASH" }, { step: 2, ok: false, code: "X", clientSide: true }, { step: 2, ok: false, code: "Y" }, { step: 1, ok: true }];
+  writeFileSync(join(dir, "events.jsonl"), ev.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const lost = clientLostCounts(join(dir, "events.jsonl"));
+  assert.deepEqual(lost, { 2: 2 });
+  const steps = [digestStep(1, "ramp", 32, 50, 0, "ok"), digestStep(2, "ramp", 64, 20, 1, "ok")];
+  const glance = atAGlance({ steps, server: [], abortReason: null, clientLost: lost }, []).join("\n");
+  assert.match(glance, /2 operations lost to remote browser crashes\*\* \(client-side, excluded from staging error rate\): step 2 x2/);
+  const table = stepsDigest(steps, [], [], lost).join("\n");
+  assert.match(table, /\| 2 \| ramp \| [^|]+ \| [^|]+ \| 20 \| 1 \| 2 \|/);
+  assert.match(table, /2 lost to remote browser crashes \(client-side\)/);
 });
 
 test("engine: hard abort on rolling error rate", async () => {
