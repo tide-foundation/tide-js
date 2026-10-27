@@ -228,6 +228,43 @@ test("digest: licence cap outranks other causes and the queue is not blamed on t
   assert.match(glance, /Next action:\*\* Raise MaxConcurrentAccountsPerMonth/);
 });
 
+test("break rule: soft signatures warn, hard ones break, --strict-signatures restores the old rule", () => {
+  const client = { cpuAvg: 10, cpuMax: 10, loopLagP95: 1, maxQueue: {}, poolBusyAvg: {} };
+  const ops = (sig: string, failed: number, ok: number) => [{ op: "signup", arrivals: ok + failed, ok, failed, errorRate: failed / (ok + failed), onTimeRatio: 1, p95: 100, dropped: 0, queueWaitP95: 0, signatures: { [sig]: failed } }] as never;
+  const soft = judgeStep(ops("GATEWAY", 1, 147), client, { signup: 100 }, DEFAULT_THRESHOLDS);
+  assert.equal(soft.break, false);
+  assert.deepEqual(soft.warnings, { GATEWAY: 1 });
+  assert.ok(soft.reasons.includes("warnings: GATEWAY x1"));
+  assert.equal(judgeStep(ops("GATEWAY", 1, 147), client, { signup: 100 }, { ...DEFAULT_THRESHOLDS, strictSignatures: true }).break, true);
+  assert.equal(judgeStep(ops("GATEWAY", 10, 90), client, { signup: 100 }, DEFAULT_THRESHOLDS).break, true, "error rate still breaks");
+  assert.equal(judgeStep(ops("STATEMENT_TIMEOUT", 1, 147), client, { signup: 100 }, DEFAULT_THRESHOLDS).break, false);
+  assert.deepEqual(judgeStep(ops("SQLITE_LOCKED", 1, 147), client, { signup: 100 }, DEFAULT_THRESHOLDS).breakSignatures, ["SQLITE_LOCKED"]);
+  assert.ok(matchSignatures("token HTTP 400: temporarily_unavailable").some((s) => s.id === "GATEWAY"));
+});
+
+test("digest: signature-only break names its trigger and soft causes stay contributors", async () => {
+  const { rankCauses, atAGlance, verdictText, signatureOnlyBreak } = await import("../collect/digest.js");
+  const steps = [digestStep(1, "ramp", 16, 82, 0, "ok"), digestStep(2, "ramp", 32, 147, 1, "break")];
+  Object.assign(steps[1].ops[0], { signatures: { GATEWAY: 1 }, codes: { TOKEN_MINT_FAILED: 1 } });
+  Object.assign(steps[1].flags, { break: true, breakSignatures: ["GATEWAY"], reasons: ["server failure signatures: GATEWAY"] });
+  const server = [digestServer(2, { sork5: { stmt_timeout: 9 } })];
+  (server[0] as { apps: Record<string, unknown> }).apps = { sork1: { cpuPctMax: 92 } };
+  const c = rankCauses(steps, server);
+  assert.ok(c.every((x) => x.status !== "likely cause"), JSON.stringify(c.map((x) => [x.id, x.status])));
+  assert.ok(c.some((x) => x.id === "high_cpu" && x.apps[0] === "sork1 92%" && x.status === "possible contributor"));
+  assert.ok(c.some((x) => x.id === "gateway"));
+  assert.equal(signatureOnlyBreak(steps[1]), "broke on 1 gateway error (1%) under strict rules; the current rule only warns on it");
+  const glance = atAGlance({ steps, server, abortReason: null }, c).join("\n");
+  assert.match(glance, /trigger: server failure signatures: GATEWAY; broke on 1 gateway error \(1%\) under strict rules/);
+  assert.match(glance, /Most likely cause:\*\* none stands out/);
+  // The same soft signature at a high error rate can lead.
+  const hot = [digestStep(1, "ramp", 16, 82, 0, "ok"), digestStep(2, "ramp", 32, 80, 20, "break")];
+  assert.equal(rankCauses(hot, server).find((x) => x.lead)?.id, "stmt_timeout");
+  const w = digestStep(3, "ramp", 32, 147, 1, "ok");
+  w.flags.warnings = { GATEWAY: 1 };
+  assert.equal(verdictText(w), "ok (warnings: GATEWAY x1)");
+});
+
 test("realm pool spreads round-robin and runs out", () => {
   const p = new RealmPool([{ realm: "a", seats: 2 }, { realm: "b", seats: 2, tideFull: true }]);
   assert.equal(p.isTideFull("b"), true);

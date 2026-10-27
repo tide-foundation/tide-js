@@ -11,7 +11,7 @@ import type { Inventory, StepServer } from "./collect/collectors.js";
 import type { ServerMeta } from "./collect/index.js";
 import { analyse, analysisMarkdown } from "./collect/analysis.js";
 import { metadataMarkdown, phaseMarkdown, serverMarkdown, serverSignatureLines } from "./collect/render.js";
-import { atAGlance, causesMarkdown, healthMarkdown, rankCauses, stepsDigest } from "./collect/digest.js";
+import { atAGlance, causesMarkdown, healthMarkdown, rankCauses, stepsDigest, verdictText } from "./collect/digest.js";
 
 export function kql(startIso: string, endIso: string, apps?: string[]): string {
   const appWhere = apps?.length ? `| where ContainerAppName_s in (${apps.map((a) => `"${a}"`).join(", ")})` : `| where ContainerAppName_s startswith "sork" or ContainerAppName_s startswith "tidecloak"`;
@@ -113,7 +113,7 @@ function stepTable(steps: StepSummary[]): string {
   const rows = ["| step | kind | op | target | arrivals | ok | fail | expected | dropped | err% | on-time% | p50 ms | p95 ms | queue p95 ms | cpu avg | verdict |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"];
   for (const s of steps) {
     for (const o of s.ops) {
-      rows.push(`| ${s.step} | ${s.kind} | ${o.op} | ${fmtRate(o.targetRate)} | ${o.arrivals} | ${o.ok} | ${o.failed} | ${o.expected} | ${o.dropped} | ${(o.errorRate * 100).toFixed(1)} | ${(o.onTimeRatio * 100).toFixed(0)} | ${o.p50 ?? "-"} | ${o.p95 ?? "-"} | ${o.queueWaitP95 ?? "-"} | ${s.client.cpuAvg ?? "-"} | ${s.verdict} |`);
+      rows.push(`| ${s.step} | ${s.kind} | ${o.op} | ${fmtRate(o.targetRate)} | ${o.arrivals} | ${o.ok} | ${o.failed} | ${o.expected} | ${o.dropped} | ${(o.errorRate * 100).toFixed(1)} | ${(o.onTimeRatio * 100).toFixed(0)} | ${o.p50 ?? "-"} | ${o.p95 ?? "-"} | ${o.queueWaitP95 ?? "-"} | ${s.client.cpuAvg ?? "-"} | ${verdictText(s)} |`);
     }
   }
   return rows.join("\n");

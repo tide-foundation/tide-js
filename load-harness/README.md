@@ -376,14 +376,15 @@ node dist/sim/cli.js prepare-realms --count 5 --target staging --confirm-stripe-
   up to `--max-steps 8` / `--max-rate`. In-flight work drains (`--drain 5m`) before a step is judged.
 - **Knee**: p95 above 2x the first step's p95 (`--knee-p95-mult`), or fewer than 90% of arrivals
   finished inside the step (`--knee-throughput`). The ramp continues.
-- **Break**: error rate above 5% (`--break-error-rate`) or any server failure signature (SQLite
-  locked, VENDOR_ALREADY_CREATED, could not find uid, statement timeout, keygen failed, gateway
-  errors, not enough ORKs). One confirmation step at the last good rate follows, then the run stops.
+- **Break**: error rate above 5% (`--break-error-rate`) or a hard server failure signature (SQLite
+  locked, VENDOR_ALREADY_CREATED, could not find uid, keygen failed, not enough ORKs). Soft ones
+  (gateway errors, statement timeout) only show as warnings and break through the error rate;
+  `--strict-signatures` makes them break the step again. One confirmation step at the last good rate follows, then the run stops.
 - **Client-bound**: client CPU above 85% (`--client-cpu`, machine-wide, Chromium included), queue
   wait p95 above 2 s (`--client-queue-wait`), or arrivals dropped because the queue is full
   (`--max-queue`, default 4x the pool). The run stops and says the load machine is the limit.
 - **Hard abort**: rolling 30 s error rate above 20% (`--abort-error-rate`); any ORK restart with
-  `--watch-restarts` (read-only `az containerapp replica list` every 60 s); ORK outbound error rate
+  `--watch-restarts` (read-only `az containerapp replica list` every 60 s, on every `sork*` app); ORK outbound error rate
   above `--prom-error-threshold` (default 0.5/s) with `--watch-prom`; any browser request to a
   production host; Ctrl-C. Expected outcomes (seat cap, empty pools) never count as errors.
 

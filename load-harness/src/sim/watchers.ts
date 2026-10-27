@@ -27,6 +27,14 @@ export async function restartCounts(rg: string, apps: string[]): Promise<Record<
   return out;
 }
 
+// All ORK container apps in the resource group (sork1, sork2, ...).
+export async function orkApps(rg: string): Promise<string[]> {
+  const names = JSON.parse((await az(["containerapp", "list", "-g", rg, "--query", "[].name", "-o", "json"])) || "[]") as string[];
+  const orks = names.filter((n) => /^sork\d+$/.test(n)).sort((a, b) => parseInt(a.slice(4)) - parseInt(b.slice(4)));
+  if (!orks.length) throw new Error("no sork apps found");
+  return orks;
+}
+
 export async function promErrorRate(job: string): Promise<number> {
   const token = await az(["account", "get-access-token", "--resource", "https://prometheus.monitor.azure.com", "--query", "accessToken", "-o", "tsv"]);
   const q = `sum(rate(tide_ork_outbound_duration_seconds_count{job="${job}",status="error"}[2m]))`;
@@ -63,6 +71,7 @@ export class ServerWatch {
   async start(): Promise<void> {
     if (!this.o.restarts && !this.o.prom) return;
     if (this.o.restarts) {
+      if (!this.o.apps.length) this.o.apps = await orkApps(this.o.rg).catch(() => ["sork1", "sork2", "sork3", "sork4", "sork5"]);
       this.baseline = await restartCounts(this.o.rg, this.o.apps);
       this.restartLog.push({ t: new Date().toISOString(), counts: this.baseline });
       this.o.log(`restart baseline ${JSON.stringify(this.baseline)}`);

@@ -4,7 +4,7 @@
 import { Pool } from "./pool.js";
 import { ClientMonitor } from "./monitor.js";
 import { Jsonl } from "./sink.js";
-import { matchSignatures, isBreakSignature, isExpectedSignature } from "./signatures.js";
+import { matchSignatures, isBreakSignature, isExpectedSignature, isSoftSignature } from "./signatures.js";
 import { percentile, sleep, utcStamp, fmtRate, scrub, truncate } from "./util.js";
 
 // ---------------------------------------------------------------------------
@@ -103,6 +103,7 @@ export interface Thresholds {
   abortMinSamples: number;
   clientCpuPct: number;       // client bound when average CPU above this
   clientQueueWaitMs: number;  // client bound when queue wait p95 above this
+  strictSignatures?: boolean; // break on soft signatures too (old rule)
 }
 
 export const DEFAULT_THRESHOLDS: Thresholds = {
@@ -150,7 +151,7 @@ export interface StepSummary {
   endMs: number;
   ops: OpStepStats[];
   client: { cpuAvg: number | null; cpuMax: number | null; loopLagP95: number | null; maxQueue: Record<string, number>; poolBusyAvg: Record<string, number> };
-  flags: { knee: boolean; break: boolean; clientBound: boolean; breakSignatures: string[]; reasons: string[] };
+  flags: { knee: boolean; break: boolean; clientBound: boolean; breakSignatures: string[]; reasons: string[]; warnings?: Record<string, number> };
   verdict: Verdict;
 }
 
@@ -214,6 +215,7 @@ export function judgeStep(
   let brk = false;
   let clientBound = false;
   const breakSignatures: string[] = [];
+  const warnings: Record<string, number> = {};
   for (const o of ops) {
     if (o.arrivals === 0) continue;
     const base = baselineP95[o.op];
@@ -229,11 +231,11 @@ export function judgeStep(
       brk = true;
       reasons.push(`${o.op}: error rate ${(o.errorRate * 100).toFixed(1)}% > ${t.breakErrorRate * 100}%`);
     }
-    for (const s of Object.keys(o.signatures)) {
-      if (isBreakSignature(s)) {
-        brk = true;
-        if (!breakSignatures.includes(s)) breakSignatures.push(s);
-      }
+    for (const [s, n] of Object.entries(o.signatures)) {
+      if (!isBreakSignature(s)) continue;
+      if (isSoftSignature(s) && !t.strictSignatures) { warnings[s] = (warnings[s] ?? 0) + n; continue; }
+      brk = true;
+      if (!breakSignatures.includes(s)) breakSignatures.push(s);
     }
     if (o.dropped > 0) {
       clientBound = true;
@@ -245,11 +247,12 @@ export function judgeStep(
     }
   }
   if (breakSignatures.length) reasons.push(`server failure signatures: ${breakSignatures.join(",")}`);
+  if (Object.keys(warnings).length) reasons.push(`warnings: ${Object.entries(warnings).map(([k, n]) => `${k} x${n}`).join(", ")}`);
   if (client.cpuAvg !== null && client.cpuAvg > t.clientCpuPct) {
     clientBound = true;
     reasons.push(`client CPU avg ${client.cpuAvg}% > ${t.clientCpuPct}%`);
   }
-  return { knee, break: brk, clientBound, breakSignatures, reasons };
+  return { knee, break: brk, clientBound, breakSignatures, reasons, ...(Object.keys(warnings).length ? { warnings } : {}) };
 }
 
 export function verdictOf(f: StepSummary["flags"]): Verdict {

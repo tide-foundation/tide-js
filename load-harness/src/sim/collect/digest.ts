@@ -5,6 +5,8 @@ import type { StepSummary } from "../engine.js";
 import type { BrowserUsage } from "../remote.js";
 import type { Inventory, StepServer } from "./collectors.js";
 import { fmtRate } from "../util.js";
+import { DEFAULT_THRESHOLDS } from "../engine.js";
+import { isSoftSignature } from "../signatures.js";
 
 export interface CauseInfo {
   title: string;
@@ -102,6 +104,18 @@ export const CAUSES: Record<string, CauseInfo> = {
     action: "Read the stack trace in the logs (see How to dig deeper).",
     weight: 4,
   },
+  gateway: {
+    title: "Gateway or upstream error (502/503/504)",
+    explain: "A request got a gateway error, e.g. the Tide signing network could not complete it. Usually transient; it only matters when it repeats.",
+    action: "Check whether it repeats across steps; read TideCloak and ORK logs at that time.",
+    weight: 5,
+  },
+  high_cpu: {
+    title: "Container CPU at or above 90%",
+    explain: "A component ran at or above 90% of its CPU limit in a failing step, so it was close to saturated.",
+    action: "Give it more CPU or replicas, or spread the load, then re-run.",
+    weight: 4,
+  },
   uid_duplicate: {
     title: "Master ORK concurrent UID insert",
     explain: "Concurrent SubmitUser calls insert the same UID on the master; the code catches the duplicate (master-libs PR #30). Usually harmless.",
@@ -122,7 +136,7 @@ export const CAUSES: Record<string, CauseInfo> = {
 const CLIENT_TO_CAUSE: Record<string, string> = {
   SQLITE_LOCKED: "sqlite_locked", STATEMENT_TIMEOUT: "stmt_timeout", UID_NOT_FOUND: "uid_missing",
   VENDOR_ALREADY_CREATED: "vendor_already_created", VENDOR_KEYGEN_FAILED: "vendor_keygen_failed",
-  LICENCE_ACTIVE_CAP: "licence_active_cap", SEAT_CAP: "seat_cap", UID_DUPLICATE: "uid_duplicate", PG_UNIQUE_VIOLATION: "pg_unique_violation", HEADER_TOO_LARGE: "header_too_large",
+  LICENCE_ACTIVE_CAP: "licence_active_cap", SEAT_CAP: "seat_cap", GATEWAY: "gateway", UID_DUPLICATE: "uid_duplicate", PG_UNIQUE_VIOLATION: "pg_unique_violation", HEADER_TOO_LARGE: "header_too_large",
 };
 
 export type CauseStatus = "expected limit" | "likely cause" | "possible contributor" | "noise";
@@ -173,8 +187,15 @@ export function rankCauses(steps: StepSummary[], server: StepServer[]): Cause[] 
   }
   for (const s of steps) for (const o of s.ops) for (const [k, n] of Object.entries(o.signatures)) if (CLIENT_TO_CAUSE[k]) hit(CLIENT_TO_CAUSE[k], n, "client", s.step, null);
 
+  // A component at 90%+ CPU in a failing step is a contributor.
   const failing = new Set(steps.filter((s) => stepFailed(s) > 0).map((s) => s.step));
+  for (const sv of server.filter((x) => failing.has(x.step))) {
+    for (const [app, m] of Object.entries(sv.apps)) if ((m.cpuPctMax ?? 0) >= 90) hit("high_cpu", 1, `${app} ${m.cpuPctMax}%`, sv.step, null);
+    if ((sv.pg?.cpuPctMax ?? 0) >= 90) hit("high_cpu", 1, `Postgres ${sv.pg!.cpuPctMax}%`, sv.step, null);
+  }
   const pers = persistentFailure(steps);
+  // At a low error rate a soft signature or busy CPU explains little, so it stays a contributor.
+  const lowErr = lowErrorRate(steps);
   const out: Cause[] = [...acc].map(([id, a]) => {
     const info = CAUSES[id];
     const noise = !!info.noiseUnless && !acc.has(info.noiseUnless);
@@ -182,9 +203,26 @@ export function rankCauses(steps: StepSummary[], server: StepServer[]): Cause[] 
     const score = info.expected ? 100 + info.weight : noise ? info.weight - 10 : info.weight + (inFailing ? 5 : 0) + (pers && a.steps.has(pers.step.step) ? 10 : 0);
     return { id, ...info, status: info.expected ? "expected limit" : noise ? "noise" : "possible contributor", count: a.count, apps: [...a.apps].sort(), steps: [...a.steps].sort((x, y) => x - y), firstSeen: a.first, score } as Cause;
   }).sort((x, y) => y.score - x.score || y.count - x.count);
-  const top = out.find((c) => c.status !== "noise" && c.steps.some((s) => failing.has(s)));
+  const top = out.find((c) => c.status !== "noise" && c.steps.some((s) => failing.has(s)) && c.id !== "high_cpu" && !(lowErr && isSoftSignature(c.id)));
   if (top) { top.lead = true; if (!top.expected) top.status = "likely cause"; }
   return out;
+}
+
+const lowErrorRate = (steps: StepSummary[]) => steps.filter((s) => stepFailed(s) > 0).every((s) => stepErr(s) <= DEFAULT_THRESHOLDS.breakErrorRate);
+
+// Verdict with soft-signature warnings, e.g. "ok (warnings: GATEWAY x1)".
+export function verdictText(s: StepSummary): string {
+  const w = Object.entries(s.flags.warnings ?? {});
+  return `${s.verdict}${w.length ? ` (warnings: ${w.map(([k, n]) => `${k} x${n}`).join(", ")})` : ""}`;
+}
+
+// A break caused only by failure signatures while the error rate stayed under the threshold.
+export function signatureOnlyBreak(s: StepSummary): string | null {
+  if (!s.flags.breakSignatures.length || stepErr(s) > DEFAULT_THRESHOLDS.breakErrorRate) return null;
+  const n = s.ops.reduce((a, o) => a + s.flags.breakSignatures.reduce((b, k) => b + (o.signatures[k] ?? 0), 0), 0);
+  const what = s.flags.breakSignatures.map((k) => k.toLowerCase().replace(/_/g, " ")).join("/");
+  const soft = s.flags.breakSignatures.every(isSoftSignature);
+  return `broke on ${n} ${what} error${n === 1 ? "" : "s"} (${(stepErr(s) * 100).toFixed(0)}%)${soft ? " under strict rules; the current rule only warns on it" : ", a hard signature"}`;
 }
 
 export function resultLabel(steps: StepSummary[], abortReason: string | null): string {
@@ -220,19 +258,20 @@ export function atAGlance(d: DigestInput, causes: Cause[]): string[] {
   if (!steps.length) return [...lines, "- no load steps in this run (server-only run)", ""];
   const label = resultLabel(steps, d.abortReason);
   const brk = steps.find((s) => s.verdict === "break" || s.verdict === "aborted");
+  const sigOnly = brk ? signatureOnlyBreak(brk) : null;
   const top = causes.find((c) => c.lead);
-  lines.push(`- **Result: ${label}${top?.expected ? `, ${top.expected} (an expected test limit, not a staging failure)` : ""}**${brk ? ` at step ${brk.step} (${fmtRate(stepRate(brk))}): ${stepFailed(brk)} of ${stepOk(brk) + stepFailed(brk)} failed (${(stepErr(brk) * 100).toFixed(0)}%)` : ""}${d.abortReason ? `; abort: ${d.abortReason}` : ""}`);
+  lines.push(`- **Result: ${label}${top?.expected ? `, ${top.expected} (an expected test limit, not a staging failure)` : ""}**${brk ? ` at step ${brk.step} (${fmtRate(stepRate(brk))}): ${stepFailed(brk)} of ${stepOk(brk) + stepFailed(brk)} failed (${(stepErr(brk) * 100).toFixed(0)}%)` : ""}${brk?.flags.reasons.length ? `; trigger: ${brk.flags.reasons.join("; ")}` : ""}${d.abortReason ? `; abort: ${d.abortReason}` : ""}${sigOnly ? `; ${sigOnly}` : ""}`);
   const clean = steps.filter((s) => s.kind !== "confirm" && stepFailed(s) === 0 && stepOk(s) > 0);
   const best = clean.length ? clean.reduce((a, b) => (stepRate(b) > stepRate(a) ? b : a)) : null;
   lines.push(`- **Worked fully up to:** ${best ? `${fmtRate(stepRate(best))} (step ${best.step}, ${stepOk(best)} of ${stepOk(best)} ok)` : "no step completed without failures"}${brk ? `; broke at ${fmtRate(stepRate(brk))} (step ${brk.step})` : ""}`);
-  lines.push(`- **Most likely cause:** ${top ? `${top.title} (${causeEvidence(top)}${placeInRun(top.firstSeen, d.realmTimes)})` : "none found in the server evidence"}`);
+  lines.push(`- **Most likely cause:** ${top ? `${top.title} (${causeEvidence(top)}${placeInRun(top.firstSeen, d.realmTimes)})` : sigOnly ? "none stands out; the break was signature-only at a low error rate, contributors are under Likely causes" : "none found in the server evidence"}`);
   const pers = persistentFailure(steps);
   if (pers) lines.push(`- **Failures continued after load dropped:** step ${pers.step.step} at ${fmtRate(stepRate(pers.step))} failed ${(stepErr(pers.step) * 100).toFixed(0)}% vs ${(stepErr(pers.breakStep) * 100).toFixed(0)}% at the break: likely a state or size problem, not throughput`);
   lines.push(`- **Load machine or Playwright the limit:** ${clientLimit(steps, d.browser)}`);
   const noise = causes.filter((c) => c.status === "noise");
   if (noise.length) lines.push(`- **Noise, not the cause:** ${noise.map((c) => `${c.id} x${c.count} (${c.apps.join(", ")})`).join(", ")}${noise.some((c) => c.noiseUnless) ? ": caught by the code, no add_user_failed lines" : ""}`);
-  lines.push(`- **Confidence:** ${confidence(top, steps, pers)}`);
-  lines.push(`- **Next action:** ${top ? top.action : label === "PASS" ? "raise --max-steps or the start rate to find the knee" : "read the Appendix tables and the logs (How to dig deeper); no known signature explains this"}`);
+  lines.push(`- **Confidence:** ${!top && sigOnly ? "low (a signature-only break at a low error rate is not enough evidence for a cause)" : confidence(top, steps, pers)}`);
+  lines.push(`- **Next action:** ${top ? top.action : sigOnly ? "re-run with the default (non-strict) signature rule so soft errors only warn and the ramp continues" : label === "PASS" ? "raise --max-steps or the start rate to find the knee" : "read the Appendix tables and the logs (How to dig deeper); no known signature explains this"}`);
   const missing = d.server.reduce((a, s) => a + s.missing.length, 0);
   if (missing) lines.push(`- **Missing server data:** ${missing} item(s), listed per step in the Appendix`);
   lines.push("");
@@ -265,7 +304,7 @@ export function stepsDigest(steps: StepSummary[], server: StepServer[], causes: 
   lines.push("| step | kind | rate | started | ok | failed | p95 s | verdict |", "|---|---|---|---|---|---|---|---|");
   for (const s of steps) {
     const p95 = Math.max(0, ...s.ops.map((o) => o.p95 ?? 0));
-    lines.push(`| ${s.step} | ${s.kind} | ${fmtRate(stepRate(s))} | ${hhmmss(s.startedAt)} | ${stepOk(s)} | ${stepFailed(s)} | ${p95 ? (p95 / 1000).toFixed(1) : "-"} | ${s.verdict.toUpperCase()} |`);
+    lines.push(`| ${s.step} | ${s.kind} | ${fmtRate(stepRate(s))} | ${hhmmss(s.startedAt)} | ${stepOk(s)} | ${stepFailed(s)} | ${p95 ? (p95 / 1000).toFixed(1) : "-"} | ${verdictText(s).replace(/^\w+/, (v) => v.toUpperCase())} |`);
   }
   lines.push("");
   const noise = new Set(causes.filter((c) => c.status === "noise").map((c) => c.id));

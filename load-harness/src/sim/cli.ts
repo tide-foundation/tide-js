@@ -97,7 +97,7 @@ const KNOWN = new Set([
   "break-error-rate", "knee-p95-mult", "knee-throughput", "client-cpu", "client-queue-wait", "realms", "realms-from",
   "seats-per-realm", "users-from", "users-file", "realm", "refresh-ratio", "engine", "headless", "email-domain",
   "setup-retries", "setup-retry-delay", "watch-restarts", "watch-prom", "prom-error-threshold", "ork-apps",
-  "confirm-stripe-test", "incident-ratios", "home-ork", "nav-timeout", "no-token", "count", "no-browser-check", "run", "help", "basic", "tide-full", "expect-eddsa", "browser-endpoint", "remote-browsers", "contexts-per-browser", "collect", "collect-wait", "stripe-stub-url", "recollect",
+  "confirm-stripe-test", "incident-ratios", "home-ork", "nav-timeout", "no-token", "count", "no-browser-check", "run", "help", "basic", "tide-full", "expect-eddsa", "browser-endpoint", "remote-browsers", "contexts-per-browser", "collect", "collect-wait", "stripe-stub-url", "recollect", "strict-signatures",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -225,6 +225,7 @@ function thresholds(o: Opts): Thresholds {
     kneeThroughput: num(o, "knee-throughput", DEFAULT_THRESHOLDS.kneeThroughput),
     clientCpuPct: num(o, "client-cpu", DEFAULT_THRESHOLDS.clientCpuPct),
     clientQueueWaitMs: num(o, "client-queue-wait", DEFAULT_THRESHOLDS.clientQueueWaitMs),
+    strictSignatures: flag(o, "strict-signatures"),
   };
 }
 
@@ -297,7 +298,7 @@ async function cmdRun(o: Opts): Promise<number> {
     const realmsNote = cumSignups > 0 ? `  [realms to finish this step: ~${Math.ceil(cumSignups / (realmInfo?.seats ?? num(o, "seats-per-realm", 5)))}]` : "";
     console.log(`  step ${s.index}: ` + opRatios.map((r) => `${r.op} ${fmtRate(s.baseRate * r.ratio)} (~${(s.baseRate * r.ratio * stepMin).toFixed(1)}/step)`).join(", ") + realmsNote);
   }
-  console.log(`  knee: p95 > ${th.kneeP95Mult}x baseline or on-time < ${th.kneeThroughput * 100}%; break: errors > ${th.breakErrorRate * 100}% or a server failure signature`);
+  console.log(`  knee: p95 > ${th.kneeP95Mult}x baseline or on-time < ${th.kneeThroughput * 100}%; break: errors > ${th.breakErrorRate * 100}% or a hard server failure signature${th.strictSignatures ? " (strict: soft ones too)" : "; soft ones (gateway, statement timeout) only warn"}`);
   console.log(`  abort: rolling ${th.abortWindowMs / 1000}s errors > ${th.abortErrorRate * 100}%${flag(o, "watch-restarts") ? ", any ORK restart" : ""}${flag(o, "watch-prom") ? `, ORK error rate > ${num(o, "prom-error-threshold", 0.5)}/s` : ""}`);
   console.log(`  client-bound: CPU avg > ${th.clientCpuPct}%, queue wait p95 > ${th.clientQueueWaitMs}ms, or dropped arrivals`);
   if (signupRatio > 0) {
@@ -409,7 +410,9 @@ async function cmdRun(o: Opts): Promise<number> {
 
   const watch = new ServerWatch({
     restarts: flag(o, "watch-restarts"), prom: flag(o, "watch-prom"), promErrorThreshold: num(o, "prom-error-threshold", 0.5),
-    rg: c.target.resourceGroup, apps: c.target.orkApps, promJob: c.target.promJob, intervalMs: 60_000,
+    // Every sork* app the inventory found, unless --ork-apps names them; empty means discover at start.
+    rg: c.target.resourceGroup, apps: list(o, "ork-apps").length ? c.target.orkApps : (collector?.meta.start?.apps ?? []).map((a) => a.name).filter((n) => /^sork\d+$/.test(n)),
+    promJob: c.target.promJob, intervalMs: 60_000,
     onAbort: (r) => engine?.abort(r), log,
   });
 

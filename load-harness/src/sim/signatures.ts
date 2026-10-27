@@ -24,7 +24,7 @@ export const SIGNATURES: Signature[] = [
   { id: "UID_THROTTLED", re: /throttl|too many requests|\b429\b/i, note: "per-user throttle (spread users wider)" },
   { id: "LICENCE_ACTIVE_CAP", re: /exceeded its total concurrent active users/i, expected: true, note: "realm licence active-user cap reached (expected, raise MaxConcurrentAccountsPerMonth)" },
   { id: "HEADER_TOO_LARGE", re: /Request Header Fields Too Large|\b(?:HTTP|status)[ :]+431\b| 431 Request/i, note: "request headers over the server limit (oversized token)" },
-  { id: "GATEWAY", re: /HTTP 50[234]\b|Bad Gateway|Service Unavailable|Gateway Timeout/i, note: "ingress or upstream unavailable" },
+  { id: "GATEWAY", re: /HTTP 50[234]\b|Bad Gateway|Service Unavailable|Gateway Timeout|temporarily_unavailable/i, note: "ingress or upstream unavailable" },
 ];
 
 export function matchSignatures(text: string): Signature[] {
@@ -36,6 +36,14 @@ export function matchSignatures(text: string): Signature[] {
 export function isBreakSignature(id: string): boolean {
   const s = SIGNATURES.find((x) => x.id === id);
   return !!s && !s.expected && id !== "UID_THROTTLED";
+}
+
+// Soft (transient) signatures: client ids and server log ids. They only warn; a step breaks on them
+// through the error-rate rule, unless --strict-signatures is set. Everything else is hard.
+const SOFT = new Set(["GATEWAY", "STATEMENT_TIMEOUT", "gateway", "stmt_timeout", "npgsql_timeout"]);
+
+export function isSoftSignature(id: string): boolean {
+  return SOFT.has(id);
 }
 
 export function isExpectedSignature(id: string): boolean {
