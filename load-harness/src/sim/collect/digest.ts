@@ -3,7 +3,7 @@
 
 import type { StepSummary } from "../engine.js";
 import type { BrowserUsage } from "../remote.js";
-import type { Inventory, StepServer } from "./collectors.js";
+import { isBurstable, type AppMetrics, type Inventory, type StepServer } from "./collectors.js";
 import { fmtRate } from "../util.js";
 import { DEFAULT_THRESHOLDS } from "../engine.js";
 import { isSoftSignature } from "../signatures.js";
@@ -116,6 +116,12 @@ export const CAUSES: Record<string, CauseInfo> = {
     action: "Give it more CPU or replicas, or spread the load, then re-run.",
     weight: 4,
   },
+  burstable_credits_low: {
+    title: "Burstable VM running out of CPU credits",
+    explain: "The ORK runs on a B-series VM, which only gets its full CPU while it has credits. It ran above its baseline long enough to burn credits; once they run out Azure caps it at the baseline and every request on it slows down.",
+    action: "Move that ORK to a non-burstable size (or a larger B size), or let credits refill before the next run.",
+    weight: 4,
+  },
   uid_duplicate: {
     title: "Master ORK concurrent UID insert",
     explain: "Concurrent SubmitUser calls insert the same UID on the master; the code catches the duplicate (master-libs PR #30). Usually harmless.",
@@ -193,6 +199,9 @@ export function rankCauses(steps: StepSummary[], server: StepServer[]): Cause[] 
     for (const [app, m] of Object.entries(sv.apps)) if ((m.cpuPctMax ?? 0) >= 90) hit("high_cpu", 1, `${app} ${m.cpuPctMax}%`, sv.step, null);
     if ((sv.pg?.cpuPctMax ?? 0) >= 90) hit("high_cpu", 1, `Postgres ${sv.pg!.cpuPctMax}%`, sv.step, null);
   }
+  for (const sv of server) {
+    for (const [app, m] of Object.entries(sv.apps)) { const why = burstableFlag(m); if (why) hit("burstable_credits_low", 1, `${app} (${why})`, sv.step, null); }
+  }
   const pers = persistentFailure(steps);
   // At a low error rate a soft signature or busy CPU explains little, so it stays a contributor.
   const lowErr = lowErrorRate(steps);
@@ -203,9 +212,22 @@ export function rankCauses(steps: StepSummary[], server: StepServer[]): Cause[] 
     const score = info.expected ? 100 + info.weight : noise ? info.weight - 10 : info.weight + (inFailing ? 5 : 0) + (pers && a.steps.has(pers.step.step) ? 10 : 0);
     return { id, ...info, status: info.expected ? "expected limit" : noise ? "noise" : "possible contributor", count: a.count, apps: [...a.apps].sort(), steps: [...a.steps].sort((x, y) => x - y), firstSeen: a.first, score } as Cause;
   }).sort((x, y) => y.score - x.score || y.count - x.count);
-  const top = out.find((c) => c.status !== "noise" && c.steps.some((s) => failing.has(s)) && c.id !== "high_cpu" && !(lowErr && isSoftSignature(c.id)));
+  const top = out.find((c) => c.status !== "noise" && c.steps.some((s) => failing.has(s)) && c.id !== "high_cpu" && c.id !== "burstable_credits_low" && !(lowErr && isSoftSignature(c.id)));
   if (top) { top.lead = true; if (!top.expected) top.status = "likely cause"; }
   return out;
+}
+
+export const BURST = { creditsMin: 20, minutesOverBaseline: 3 };
+
+// Why a burstable VM is short of CPU credits in this step, or null when it is fine.
+export function burstableFlag(m: AppMetrics): string | null {
+  const v = m.vm;
+  if (!v || !isBurstable(v.size)) return null;
+  const why: string[] = [];
+  if (v.creditsMin !== null && v.creditsMin < BURST.creditsMin) why.push(`credits min ${v.creditsMin}`);
+  else if (v.creditsMin !== null && v.creditsStart && v.creditsMin < v.creditsStart / 2) why.push(`credits fell from ${v.creditsStart} to ${v.creditsMin}`);
+  if ((v.minutesOverBaseline ?? 0) >= BURST.minutesOverBaseline) why.push(`${v.minutesOverBaseline} min above the ${v.baselinePct}% baseline`);
+  return why.length ? `${v.size}: ${why.join(", ")}` : null;
 }
 
 const lowErrorRate = (steps: StepSummary[]) => steps.filter((s) => stepFailed(s) > 0).every((s) => stepErr(s) <= DEFAULT_THRESHOLDS.breakErrorRate);
@@ -352,7 +374,10 @@ export function healthMarkdown(server: StepServer[], inv: Inventory | null, caus
       const sig = s.logs?.signatures[app] ?? {};
       const top = Object.entries(sig).filter(([k, v]) => k !== "error_lines" && v > 0).sort((a, b) => b[1] - a[1])[0];
       const role = inv?.apps.find((a) => a.name === app)?.role;
-      lines.push(`- ${app}${role ? ` (${role})` : ""}: CPU max ${m.cpuPctMax ?? "-"}%, memory max ${m.memPctMax ?? "-"}%, restarts ${m.restarts ?? "-"}, error lines ${sig.error_lines ?? (s.logs ? 0 : "-")}, top signature ${top ? `${top[0]} x${top[1]}${noise.has(top[0]) ? " (noise)" : ""}` : "none"}`);
+      const v = m.vm;
+      const vm = v ? `, ${v.size ?? "VM"} credits min ${v.creditsMin ?? "-"} (start ${v.creditsStart ?? "-"}), available memory min ${v.availMemGbMin ?? "-"} GB` : "";
+      const burst = burstableFlag(m);
+      lines.push(`- ${app}${role ? ` (${role})` : ""}: CPU max ${m.cpuPctMax ?? "-"}%, memory max ${m.memPctMax ?? "-"}%${vm}, restarts ${m.restarts ?? "-"}, error lines ${sig.error_lines ?? (s.logs ? 0 : "-")}, top signature ${top ? `${top[0]} x${top[1]}${noise.has(top[0]) ? " (noise)" : ""}` : "none"}${burst ? `, burstable_credits_low (${burst})` : ""}`);
     }
     const p = s.pg;
     lines.push(`- Postgres: ${p ? `CPU max ${p.cpuPctMax ?? "-"}%, memory max ${p.memPctMax ?? "-"}%, connections max ${p.activeConnMax ?? "-"} of ${p.maxConnections ?? "-"}, IOPS max ${p.iopsPctMax ?? "-"}%, credits min ${p.cpuCreditsMin ?? "-"}, failed connections ${p.connectionsFailed ?? "-"}` : "not collected"}`);

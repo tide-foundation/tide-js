@@ -1,4 +1,4 @@
-// Server-side evidence per step window, all read-only: Container Apps metrics, Postgres metrics,
+// Server-side evidence per step window, all read-only: Container Apps and ORK VM metrics, Postgres metrics,
 // Log Analytics (ORK signatures, execution times, restarts), Prometheus, and the Stripe stub.
 // Every collector is best effort: a failure becomes a "missing" note, never an exception.
 
@@ -22,15 +22,19 @@ export interface AppInfo {
   env: string | null;
   stripeApiBase: string | null; // host only, from the payer's launch args
   role: string;
+  runningStatus?: string | null;
+  kind?: "vm";                  // absent for container apps
+  vmSize?: string | null;
 }
 
 export interface Inventory {
   at: string;
   apps: AppInfo[];
   pg: { id: string; name: string; sku: string | null; tier: string | null; maxConnections: number | null } | null;
-  workspaces: Array<{ env: string; customerId: string }>;
+  workspaces: Array<{ env: string; customerId: string; vm?: boolean }>;
   harnessCommit: string | null;
   missing: string[];
+  notes?: string[];
 }
 
 export interface CollectConfig {
@@ -40,7 +44,12 @@ export interface CollectConfig {
   promBase: string;
   promJob: string;
   stubUrl: string | null;
+  vmFilter: RegExp;
+  vmLogWorkspace: string | null;   // Log Analytics workspace the VM docker logs ship to
 }
+
+// VM ORKs ship docker json logs here; aliased so the Container Apps queries run unchanged.
+export const VM_LOG_SOURCE = "ORKContainerLogs_CL | extend ContainerAppName_s = Computer, Log_s = RawData";
 
 export const STAGING_COLLECT: CollectConfig = {
   rg: "Tide-Staging",
@@ -49,6 +58,8 @@ export const STAGING_COLLECT: CollectConfig = {
   promBase: "https://ork-prometheus-adehanchbsf2ctfn.australiaeast.prometheus.monitor.azure.com/api/v1",
   promJob: "sork-env/ork",
   stubUrl: "https://stripe-stub.happybeach-4249617c.australiaeast.azurecontainerapps.io",
+  vmFilter: /^sork\d+$/,
+  vmLogWorkspace: "law-tide-stg-ork",
 };
 
 const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d+Z$/, "Z");
@@ -72,7 +83,7 @@ export async function inventory(cfg: CollectConfig, harnessDir: string): Promise
     inv.harnessCommit = stdout.trim() + dirty;
   } catch { missing.push("harness git commit"); }
   try {
-    type Raw = { name: string; id: string; properties: { latestRevisionName?: string; managedEnvironmentId?: string; template?: { containers?: Array<{ image?: string; args?: string[]; command?: string[]; resources?: { cpu?: number; memory?: string } }>; scale?: { minReplicas?: number; maxReplicas?: number } } } };
+    type Raw = { name: string; id: string; properties: { latestRevisionName?: string; runningStatus?: string; managedEnvironmentId?: string; template?: { containers?: Array<{ image?: string; args?: string[]; command?: string[]; resources?: { cpu?: number; memory?: string } }>; scale?: { minReplicas?: number; maxReplicas?: number } } } };
     const raw = await az<Raw[]>(["containerapp", "list", "-g", cfg.rg]);
     for (const a of raw.filter((x) => cfg.appFilter.test(x.name))) {
       const c = a.properties.template?.containers?.[0];
@@ -87,6 +98,7 @@ export async function inventory(cfg: CollectConfig, harnessDir: string): Promise
         env: a.properties.managedEnvironmentId?.split("/").pop() ?? null,
         stripeApiBase: m ? new URL(m[1]).host : null,
         role: /tidecloak/.test(a.name) ? "tidecloak" : /stripe-stub/.test(a.name) ? "stripe-stub" : /master/.test(image ?? "") ? "master ORK" : m ? "ORK + payer" : "ORK",
+        runningStatus: a.properties.runningStatus ?? null,
       });
     }
   } catch (e) { missing.push(`container apps: ${(e as Error).message}`); }
@@ -107,29 +119,68 @@ export async function inventory(cfg: CollectConfig, harnessDir: string): Promise
     } catch (e) { missing.push(`postgres max_connections: ${(e as Error).message}`); }
     inv.pg = { id: pg.id, name: pg.name, sku: pg.sku?.name ?? null, tier: pg.sku?.tier ?? null, maxConnections };
   } catch (e) { missing.push(`postgres: ${(e as Error).message}`); }
+  await addVms(cfg, inv);
   return inv;
+}
+
+// ORKs that run on a VM (docker + Azure Monitor agent) instead of Container Apps. A VM replaces a
+// same-named Container App only when that app is stopped or scaled to 0.
+export async function addVms(cfg: CollectConfig, inv: Inventory): Promise<void> {
+  const notes = (inv.notes ??= []);
+  type RawVm = { name: string; id: string; location: string; hardwareProfile?: { vmSize?: string } };
+  let vms: RawVm[];
+  try { vms = (await az<RawVm[]>(["vm", "list", "-g", cfg.rg])).filter((v) => cfg.vmFilter.test(v.name)); } catch (e) { inv.missing.push(`vms: ${(e as Error).message}`); return; }
+  const sizes = new Map<string, { cores: number; memMb: number }>();
+  for (const loc of new Set(vms.map((v) => v.location))) {
+    try {
+      for (const s of await az<Array<{ name: string; numberOfCores: number; memoryInMB: number }>>(["vm", "list-sizes", "-l", loc])) sizes.set(s.name, { cores: s.numberOfCores, memMb: s.memoryInMB });
+    } catch (e) { inv.missing.push(`vm sizes (${loc}): ${(e as Error).message}`); }
+  }
+  for (const v of vms) {
+    if (inv.apps.some((a) => a.name === v.name && a.kind === "vm")) continue;
+    const i = inv.apps.findIndex((a) => a.name === v.name);
+    if (i >= 0) {
+      const ca = inv.apps[i];
+      const status = ca.runningStatus ?? (await az<string>(["containerapp", "show", "-g", cfg.rg, "-n", ca.name, "--query", "properties.runningStatus"]).catch(() => null));
+      if (status !== "Stopped" && ca.maxReplicas !== 0) { notes.push(`${v.name}: Container App used (it is running); VM ${v.name} ignored`); continue; }
+      inv.apps.splice(i, 1);
+      notes.push(`${v.name}: VM used (Container App ${v.name} is ${status === "Stopped" ? "stopped" : "scaled to 0"})`);
+    }
+    const size = v.hardwareProfile?.vmSize ?? null;
+    const sz = size ? sizes.get(size) : undefined;
+    inv.apps.push({
+      name: v.name, id: v.id, image: null, revision: null, cpu: sz?.cores ?? null, memoryGi: sz ? Math.round((sz.memMb / 1024) * 10) / 10 : null,
+      minReplicas: null, maxReplicas: null, env: cfg.vmLogWorkspace, stripeApiBase: null, role: "ORK (VM)", kind: "vm", vmSize: size,
+    });
+  }
+  if (cfg.vmLogWorkspace && inv.apps.some((a) => a.kind === "vm") && !inv.workspaces.some((w) => w.vm)) {
+    try {
+      const id = await az<string>(["monitor", "log-analytics", "workspace", "show", "-g", cfg.rg, "-n", cfg.vmLogWorkspace, "--query", "customerId"]);
+      inv.workspaces.push({ env: cfg.vmLogWorkspace, customerId: id, vm: true });
+    } catch (e) { inv.missing.push(`vm log workspace ${cfg.vmLogWorkspace}: ${(e as Error).message}`); }
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Azure Monitor metrics
 // ---------------------------------------------------------------------------
 
-type Point = { timeStamp: string; average?: number | null; maximum?: number | null; total?: number | null };
+type Point = { timeStamp: string; average?: number | null; maximum?: number | null; minimum?: number | null; total?: number | null };
 type MetricsRaw = { value: Array<{ name: { value: string }; timeseries: Array<{ data: Point[] }> }> };
 
-function agg(points: Point[], f: "average" | "maximum" | "total"): number[] {
+function agg(points: Point[], f: "average" | "maximum" | "minimum" | "total"): number[] {
   return points.map((p) => p[f]).filter((v): v is number => typeof v === "number");
 }
 const avgOf = (xs: number[]) => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10 : null);
 const maxOf = (xs: number[]) => (xs.length ? Math.round(Math.max(...xs) * 10) / 10 : null);
 const sumOf = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) : null);
 
-async function metrics(resourceId: string, names: string[], w: StepWindow): Promise<Record<string, Point[]>> {
+async function metrics(resourceId: string, names: string[], w: StepWindow, aggs = ["Average", "Maximum", "Total"]): Promise<Record<string, Point[]>> {
   // Metrics land on minute boundaries; widen to whole minutes.
   const start = Math.floor(w.startMs / 60_000) * 60_000;
   const end = Math.ceil(w.endMs / 60_000) * 60_000;
   const raw = await az<MetricsRaw>(["monitor", "metrics", "list", "--resource", resourceId, "--metrics", ...names,
-    "--start-time", iso(start), "--end-time", iso(end), "--interval", "PT1M", "--aggregation", "Average", "Maximum", "Total"]);
+    "--start-time", iso(start), "--end-time", iso(end), "--interval", "PT1M", "--aggregation", ...aggs]);
   const out: Record<string, Point[]> = {};
   for (const v of raw.value ?? []) out[v.name.value] = v.timeseries?.[0]?.data ?? [];
   return out;
@@ -141,9 +192,47 @@ export interface AppMetrics {
   cpuCoresMax: number | null; limitCores: number | null;
   replicasMax: number | null; restarts: number | null;
   requests: number | null; respMsAvg: number | null; respMsMax: number | null;
+  vm?: VmMetrics;
+}
+
+export interface VmMetrics {
+  size: string | null;
+  creditsMin: number | null; creditsStart: number | null;
+  availMemGbMin: number | null;
+  baselinePct: number | null;          // B-series baseline, as a share of the whole VM
+  minutesOverBaseline: number | null;  // minutes whose average CPU was above the baseline
+}
+
+// B-series baseline CPU as a share of the whole VM, which is what "Percentage CPU" reports.
+const B_BASELINE: Record<string, number> = { Standard_B1ls: 5, Standard_B1s: 10, Standard_B1ms: 20, Standard_B2s: 20, Standard_B2ms: 30, Standard_B4ms: 22.5, Standard_B8ms: 16.9 };
+export const isBurstable = (size: string | null | undefined) => !!size && /^Standard_B\d/i.test(size);
+
+async function vmMetrics(app: AppInfo, w: StepWindow): Promise<AppMetrics> {
+  const m = await metrics(app.id, ["Percentage CPU", "CPU Credits Remaining", "Available Memory Bytes"], w, ["Average", "Maximum", "Minimum"]);
+  const cpu = m["Percentage CPU"] ?? [];
+  const cpuPctMax = maxOf(agg(cpu, "maximum"));
+  const credits = agg(m["CPU Credits Remaining"] ?? [], "minimum");
+  const avail = agg(m["Available Memory Bytes"] ?? [], "minimum");
+  const availMin = avail.length ? Math.min(...avail) : null;
+  const totalB = app.memoryGi ? app.memoryGi * 1024 ** 3 : null;
+  const base = app.vmSize ? B_BASELINE[app.vmSize] ?? null : null;
+  return {
+    cpuPctAvg: avgOf(agg(cpu, "average")), cpuPctMax,
+    memPctAvg: null, memPctMax: availMin !== null && totalB ? Math.round((1 - availMin / totalB) * 1000) / 10 : null,
+    cpuCoresMax: cpuPctMax !== null && app.cpu ? Math.round((cpuPctMax / 100) * app.cpu * 1000) / 1000 : null, limitCores: app.cpu,
+    replicasMax: null, restarts: null, requests: null, respMsAvg: null, respMsMax: null,
+    vm: {
+      size: app.vmSize ?? null,
+      creditsMin: credits.length ? Math.round(Math.min(...credits) * 10) / 10 : null, creditsStart: credits.length ? Math.round(credits[0] * 10) / 10 : null,
+      availMemGbMin: availMin !== null ? Math.round((availMin / 1e9) * 100) / 100 : null,
+      baselinePct: base,
+      minutesOverBaseline: base !== null ? agg(cpu, "average").filter((x) => x > base).length : null,
+    },
+  };
 }
 
 export async function appMetrics(app: AppInfo, w: StepWindow): Promise<AppMetrics> {
+  if (app.kind === "vm") return vmMetrics(app, w);
   const m = await metrics(app.id, ["CpuPercentage", "MemoryPercentage", "UsageNanoCores", "Replicas", "RestartCount", "Requests", "ResponseTime"], w);
   const cores = agg(m.UsageNanoCores ?? [], "maximum").map((n) => n / 1e9);
   const coresMax = cores.length ? Math.max(...cores) : null;
@@ -273,12 +362,14 @@ export interface LogsResult {
 
 export async function logs(inv: Inventory, cfg: CollectConfig, w: StepWindow, missing: string[]): Promise<LogsResult> {
   const out: LogsResult = { signatures: {}, exec: [], system: [], errorSamples: {}, firstSeen: {} };
-  const names = inv.apps.map((a) => a.name);
-  const appFilter = `| where ContainerAppName_s in (${names.map((n) => `"${n}"`).join(",")})`;
   const sigCols = Object.entries(LOG_SIGNATURES).map(([k, cond]) => `${k}=countif(${cond}), ${k}_t=minif(ts, ${cond})`).join(", ");
   for (const ws of inv.workspaces) {
+    // A VM can share its name with a stopped Container App, so each workspace only asks for its own kind.
+    const names = inv.apps.filter((a) => (a.kind === "vm") === !!ws.vm).map((a) => a.name);
+    const appFilter = `| where ContainerAppName_s in (${names.map((n) => `"${n}"`).join(",")})`;
+    const src = ws.vm ? VM_LOG_SOURCE : "ContainerAppConsoleLogs_CL";
     try {
-      const rows = await kql<Record<string, string | number>>(ws.customerId, `ContainerAppConsoleLogs_CL ${appFilter}
+      const rows = await kql<Record<string, string | number>>(ws.customerId, `${src} ${appFilter}
 ${kqlWindow(w)}
 | summarize ${sigCols} by app=ContainerAppName_s`);
       for (const r of rows) {
@@ -292,7 +383,7 @@ ${kqlWindow(w)}
       }
     } catch (e) { missing.push(`log signatures (${ws.env}): ${(e as Error).message}`); }
     try {
-      const rows = await kql<{ app: string; msg: string; n: number }>(ws.customerId, `ContainerAppConsoleLogs_CL ${appFilter}
+      const rows = await kql<{ app: string; msg: string; n: number }>(ws.customerId, `${src} ${appFilter}
 | where ${LOG_SIGNATURES.error_lines} or ${LOG_SIGNATURES.oidc_param_too_long} or ${LOG_SIGNATURES.header_too_large} or ${LOG_SIGNATURES.licence_active_cap}
 ${kqlWindow(w)}
 | extend m = tostring(parse_json(Log_s).message)
@@ -303,7 +394,7 @@ ${kqlWindow(w)}
       Object.assign(out.errorSamples!, errorSamples(rows));
     } catch (e) { missing.push(`error samples (${ws.env}): ${(e as Error).message}`); }
     try {
-      const rows = await kql<{ app: string; op: string; n: number; p50: number; p95: number; mx: number }>(ws.customerId, `ContainerAppConsoleLogs_CL ${appFilter}
+      const rows = await kql<{ app: string; op: string; n: number; p50: number; p95: number; mx: number }>(ws.customerId, `${src} ${appFilter}
 | where Log_s contains "Execution time for"
 ${kqlWindow(w)}
 | extend op = extract("Execution time for ([A-Za-z0-9_.]+): ", 1, Log_s), ms = toint(extract("Execution time for [A-Za-z0-9_.]+: ([0-9]+) ms", 1, Log_s))
@@ -311,6 +402,7 @@ ${kqlWindow(w)}
 | summarize n=count(), p50=percentile(ms, 50), p95=percentile(ms, 95), mx=max(ms) by app=ContainerAppName_s, op`);
       for (const r of rows) out.exec.push({ app: r.app, op: r.op, n: Number(r.n), p50: Number(r.p50), p95: Number(r.p95), max: Number(r.mx) });
     } catch (e) { missing.push(`ORK execution times (${ws.env}): ${(e as Error).message}`); }
+    if (ws.vm) continue; // no container system logs for a VM
     try {
       const rows = await kql<{ app: string; reason: string; n: number; codes: string }>(ws.customerId, `ContainerAppSystemLogs_CL ${appFilter}
 | where TimeGenerated between (datetime(${iso(w.startMs)}) .. datetime(${iso(w.endMs + 60_000)}))

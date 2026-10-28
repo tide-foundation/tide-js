@@ -196,6 +196,16 @@ test("digest: cause dictionary ranks the oversized token over caught master dupl
   assert.ok(glance.split("\n").filter((l) => l.startsWith("- ")).length <= 10);
 });
 
+test("burstable VM flag: low credits, halved credits or sustained time above baseline", async () => {
+  const { burstableFlag } = await import("../collect/digest.js");
+  const vm = (v: Partial<NonNullable<import("../collect/collectors.js").AppMetrics["vm"]>>) => ({ vm: { size: "Standard_B1ms", creditsMin: 75, creditsStart: 75, availMemGbMin: 1, baselinePct: 20, minutesOverBaseline: 2, ...v } }) as unknown as import("../collect/collectors.js").AppMetrics;
+  assert.equal(burstableFlag(vm({})), null);
+  assert.match(burstableFlag(vm({ creditsMin: 12 }))!, /credits min 12/);
+  assert.match(burstableFlag(vm({ creditsStart: 80, creditsMin: 30 }))!, /credits fell from 80 to 30/);
+  assert.match(burstableFlag(vm({ minutesOverBaseline: 3 }))!, /3 min above the 20% baseline/);
+  assert.equal(burstableFlag(vm({ size: "Standard_D2s_v5", creditsMin: 0 })), null);
+});
+
 test("header_too_large never matches a bare 431; licence cap is an expected limit", async () => {
   const { LOG_SIGNATURES } = await import("../collect/collectors.js");
   // Mirror the KQL "contains" conditions (case-insensitive substring) against sample lines.

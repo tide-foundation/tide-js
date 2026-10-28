@@ -24,7 +24,7 @@ import { NodeCmkClient } from "../protocol/nodeCmkClient.js";
 import { makeConsoleSetupOp } from "./scenarios/consoleSetup.js";
 import { resolveBrowserOpts, AZURE_PRICE_PER_MIN, type BrowserOpts, type BrowserUsage } from "./remote.js";
 import { RunCollector, collectAll, readMeta, readSnaps, type ServerMeta } from "./collect/index.js";
-import { STAGING_COLLECT, inventory, type CollectConfig, type StepWindow, type StepServer } from "./collect/collectors.js";
+import { STAGING_COLLECT, addVms, inventory, type CollectConfig, type StepWindow, type StepServer } from "./collect/collectors.js";
 import { azLoggedIn } from "./collect/az.js";
 import { dirname as pathDirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -411,7 +411,7 @@ async function cmdRun(o: Opts): Promise<number> {
   const watch = new ServerWatch({
     restarts: flag(o, "watch-restarts"), prom: flag(o, "watch-prom"), promErrorThreshold: num(o, "prom-error-threshold", 0.5),
     // Every sork* app the inventory found, unless --ork-apps names them; empty means discover at start.
-    rg: c.target.resourceGroup, apps: list(o, "ork-apps").length ? c.target.orkApps : (collector?.meta.start?.apps ?? []).map((a) => a.name).filter((n) => /^sork\d+$/.test(n)),
+    rg: c.target.resourceGroup, apps: list(o, "ork-apps").length ? c.target.orkApps : (collector?.meta.start?.apps ?? []).filter((a) => a.kind !== "vm").map((a) => a.name).filter((n) => /^sork\d+$/.test(n)),
     promJob: c.target.promJob, intervalMs: 60_000,
     onAbort: (r) => engine?.abort(r), log,
   });
@@ -594,6 +594,13 @@ async function cmdReport(o: Opts, onlyChecklist: boolean): Promise<number> {
       meta = { collect: "auto", config: { rg: cfg.rg, pgName: cfg.pgName, promJob: cfg.promJob, stubUrl: cfg.stubUrl }, start: null, end: inv, notes: [`no inventory was taken during the run; app list and revisions are from recollect time ${inv.at}`] };
       writeFileSync(join(dir, "server-meta.json"), JSON.stringify(meta, null, 2));
     }
+    // Runs from before VM ORKs were inventoried: add them now and say so.
+    for (const inv of [meta.start, meta.end]) {
+      if (!inv || inv.apps.some((a) => a.kind === "vm")) continue;
+      await addVms(cfg, inv);
+      if (inv.apps.some((a) => a.kind === "vm")) (inv.notes ??= []).push(`VM ORKs added at recollect time ${new Date().toISOString()}`);
+    }
+    writeFileSync(join(dir, "server-meta.json"), JSON.stringify(meta, null, 2));
     server = await collectAll(cfg, dir, meta.start ?? meta.end, windows, readSnaps(dir), log);
   }
   const w = windows.length ? { start: new Date(windows[0].startMs).toISOString(), end: new Date(windows[windows.length - 1].endMs).toISOString() } : undefined;

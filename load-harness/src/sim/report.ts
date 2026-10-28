@@ -7,18 +7,19 @@ import type { Manifest } from "./sink.js";
 import { fmtRate } from "./util.js";
 import { SIGNATURES } from "./signatures.js";
 import { AZURE_PRICE_PER_MIN, type BrowserUsage } from "./remote.js";
-import type { Inventory, StepServer } from "./collect/collectors.js";
+import { VM_LOG_SOURCE, type Inventory, type StepServer } from "./collect/collectors.js";
 import type { ServerMeta } from "./collect/index.js";
 import { analyse, analysisMarkdown } from "./collect/analysis.js";
 import { metadataMarkdown, phaseMarkdown, serverMarkdown, serverSignatureLines } from "./collect/render.js";
 import { atAGlance, causesMarkdown, healthMarkdown, rankCauses, stepsDigest, verdictText } from "./collect/digest.js";
 
-export function kql(startIso: string, endIso: string, apps?: string[]): string {
+export function kql(startIso: string, endIso: string, apps?: string[], vm = false): string {
+  const src = vm ? VM_LOG_SOURCE : "ContainerAppConsoleLogs_CL";
   const appWhere = apps?.length ? `| where ContainerAppName_s in (${apps.map((a) => `"${a}"`).join(", ")})` : `| where ContainerAppName_s startswith "sork" or ContainerAppName_s startswith "tidecloak"`;
   const sysWhere = apps?.length ? appWhere : `| where ContainerAppName_s startswith "sork"`;
   return [
     "// Failure signatures per minute",
-    "ContainerAppConsoleLogs_CL",
+    src,
     `| where TimeGenerated between (datetime(${startIso}) .. datetime(${endIso}))`,
     appWhere,
     "| summarize sqlite_locked=countif(Log_s has \"database is locked\"),",
@@ -37,19 +38,22 @@ export function kql(startIso: string, endIso: string, apps?: string[]): string {
     "| order by TimeGenerated asc",
     "",
     "// Error and warning lines",
-    "ContainerAppConsoleLogs_CL",
+    src,
     `| where TimeGenerated between (datetime(${startIso}) .. datetime(${endIso}))`,
     appWhere,
     "| where Log_s has \"Error\" or Log_s has \"ERROR\" or Log_s has \"WARN\"",
     "| project TimeGenerated, ContainerAppName_s, Log_s",
     "| order by TimeGenerated asc",
-    "",
-    "// Restarts and crashes",
-    "ContainerAppSystemLogs_CL",
-    `| where TimeGenerated between (datetime(${startIso}) .. datetime(${endIso}))`,
-    sysWhere,
-    "| where Reason_s in (\"BackOff\", \"ContainerTerminated\", \"ContainerCrashing\", \"ProbeFailed\") or Log_s has \"exit code\"",
-    "| project TimeGenerated, ContainerAppName_s, Reason_s, Log_s",
+    // A VM has no container system logs.
+    ...(vm ? [] : [
+      "",
+      "// Restarts and crashes",
+      "ContainerAppSystemLogs_CL",
+      `| where TimeGenerated between (datetime(${startIso}) .. datetime(${endIso}))`,
+      sysWhere,
+      "| where Reason_s in (\"BackOff\", \"ContainerTerminated\", \"ContainerCrashing\", \"ProbeFailed\") or Log_s has \"exit code\"",
+      "| project TimeGenerated, ContainerAppName_s, Reason_s, Log_s",
+    ]),
   ].join("\n");
 }
 
@@ -188,8 +192,8 @@ function flagsOf(args: Record<string, unknown>): string {
 function digDeeper(inv: Inventory | null, start: string, end: string): string[] {
   if (!inv?.workspaces.length) return ["Log Analytics workspace unknown (no inventory); this query runs against the ORK workspace:", "", "```kusto", kql(start, end), "```", ""];
   return inv.workspaces.flatMap((w) => {
-    const apps = inv.apps.filter((a) => a.env === w.env).map((a) => a.name);
-    return [`Workspace ${w.customerId} (${w.env}: ${apps.join(", ") || "no apps"}):`, "", "```kusto", kql(start, end, apps), "```", ""];
+    const apps = inv.apps.filter((a) => a.env === w.env && (a.kind === "vm") === !!w.vm).map((a) => a.name);
+    return [`Workspace ${w.customerId} (${w.env}${w.vm ? ", VM docker logs" : ""}: ${apps.join(", ") || "no apps"}):`, "", "```kusto", kql(start, end, apps, w.vm), "```", ""];
   });
 }
 

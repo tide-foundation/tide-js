@@ -22,8 +22,13 @@ export function metadataMarkdown(meta: ServerMeta | null): string[] {
   for (const a of (s ?? e)!.apps) {
     const b = e?.apps.find((x) => x.name === a.name);
     const changed = b && (b.revision !== a.revision || b.image !== a.image);
+    if (a.kind === "vm") {
+      lines.push(`| ${a.name} | ${a.role} | - | - | - | ${a.vmSize ?? "-"} (${n(a.cpu)} vCPU) | ${n(a.memoryGi, "Gi")} | VM |`);
+      continue;
+    }
     lines.push(`| ${a.name} | ${a.role} | ${a.image ?? "-"} | ${a.revision ?? "-"} | ${b ? `${b.revision}${changed ? " **CHANGED**" : ""}` : "-"} | ${n(a.cpu)} | ${n(a.memoryGi, "Gi")} | ${n(a.minReplicas)}-${n(a.maxReplicas)} |`);
   }
+  for (const note of (s ?? e)!.notes ?? []) lines.push(`- inventory: ${note}`);
   if (e && s && e.apps.some((b) => { const a = s.apps.find((x) => x.name === b.name); return a && (a.revision !== b.revision || a.image !== b.image); })) {
     lines.push("", "WARNING: an app changed revision or image during the run (deploy or restart); results across that point are not comparable.");
   }
@@ -65,6 +70,10 @@ export function serverMarkdown(server: StepServer[], inv: Inventory | null): str
     for (const [app, m] of Object.entries(s.apps).sort()) {
       const role = inv?.apps.find((a) => a.name === app)?.role ?? "";
       lines.push(`| ${app} | ${role} | ${n(m.cpuPctAvg)} / ${n(m.cpuPctMax)} | ${n(m.cpuCoresMax)} of ${n(m.limitCores)} | ${n(m.memPctMax)} | ${n(m.replicasMax)} | ${n(m.restarts)} | ${n(m.requests)} | ${n(m.respMsAvg)} / ${n(m.respMsMax)} |`);
+    }
+    for (const [app, m] of Object.entries(s.apps).sort()) {
+      const v = m.vm;
+      if (v) lines.push("", `VM ${app} (${v.size ?? "-"}): CPU credits min ${n(v.creditsMin)} (start ${n(v.creditsStart)}), available memory min ${n(v.availMemGbMin, " GB")}${v.baselinePct !== null ? `, minutes above the ${v.baselinePct}% burst baseline ${n(v.minutesOverBaseline)}` : ""}`);
     }
     if (s.pg) {
       const p = s.pg;
