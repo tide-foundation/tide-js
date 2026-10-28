@@ -119,7 +119,7 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
   breakErrorRate: 0.05,
   abortErrorRate: 0.2,
   abortWindowMs: 30_000,
-  abortMinSamples: 5,
+  abortMinSamples: 20,
   clientCpuPct: 85,
   clientQueueWaitMs: 2000,
 };
@@ -341,7 +341,9 @@ export class Engine {
   }
 
   private trackAbort(row: EventRow): void {
-    if (row.dropped || row.expected || row.clientSide) return;
+    // Ops that finish after the step ended are the slow stragglers; judging the
+    // window on them alone reads as 100% failure, so leave them to the step verdict.
+    if (row.dropped || row.expected || row.clientSide || row.late) return;
     const now = Date.now();
     this.recent.push({ t: now, bad: !row.ok });
     const cutoff = now - this.o.thresholds.abortWindowMs;

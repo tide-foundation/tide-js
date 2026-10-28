@@ -93,7 +93,7 @@ const list = (o: Opts, k: string): string[] => (str(o, k) ?? "").split(",").map(
 
 const KNOWN = new Set([
   "scenario", "target", "tc-url", "run-id", "out", "dry-run", "start-rate", "step-factor", "step-add", "max-rate", "max-steps",
-  "step-duration", "cooldown", "drain", "arrival", "browser-pool", "concurrency", "max-queue", "abort-error-rate",
+  "step-duration", "cooldown", "drain", "arrival", "browser-pool", "concurrency", "max-queue", "abort-error-rate", "abort-min-samples",
   "break-error-rate", "knee-p95-mult", "knee-throughput", "client-cpu", "client-queue-wait", "realms", "realms-from",
   "seats-per-realm", "users-from", "users-file", "realm", "refresh-ratio", "engine", "headless", "email-domain",
   "setup-retries", "setup-retry-delay", "watch-restarts", "watch-prom", "prom-error-threshold", "ork-apps",
@@ -220,6 +220,7 @@ function thresholds(o: Opts): Thresholds {
   return {
     ...DEFAULT_THRESHOLDS,
     abortErrorRate: num(o, "abort-error-rate", DEFAULT_THRESHOLDS.abortErrorRate),
+    abortMinSamples: num(o, "abort-min-samples", DEFAULT_THRESHOLDS.abortMinSamples),
     breakErrorRate: num(o, "break-error-rate", DEFAULT_THRESHOLDS.breakErrorRate),
     kneeP95Mult: num(o, "knee-p95-mult", DEFAULT_THRESHOLDS.kneeP95Mult),
     kneeThroughput: num(o, "knee-throughput", DEFAULT_THRESHOLDS.kneeThroughput),

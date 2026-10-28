@@ -349,6 +349,20 @@ test("engine: break triggers one confirm step at the last good rate", async () =
   assert.equal(c[0].brk, 1200);
 });
 
+test("engine: stragglers that fail after the step ends count in the verdict but never trip the rolling abort", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sim-"));
+  let n = 0;
+  // The last arrivals hang past the step end and then fail, like sign-ups timing out in the drain.
+  const op: OpSpec = { name: "x", ratio: 1, pool: new Pool("p", 50), maxQueue: 100, run: async () => {
+    const slow = ++n > 18;
+    await new Promise((r) => setTimeout(r, slow ? 1500 : 5));
+    return slow ? { ok: false, code: "SIGNUP_STEP2_SUBMITTED", message: "first-broker-login form did not appear" } : { ok: true };
+  } };
+  const res = await engineFor(dir, [op], [1200]).run();
+  assert.equal(res.abortReason, null);
+  assert.ok(res.steps[0].ops[0].failed > 0, "the stragglers still count as failures");
+});
+
 test("engine: ops lost with their browser are client-side, outside abort and break, and keep arrival steps", async () => {
   const dir = mkdtempSync(join(tmpdir(), "sim-"));
   let n = 0;
