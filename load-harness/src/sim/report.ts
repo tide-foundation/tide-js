@@ -11,6 +11,7 @@ import { VM_LOG_SOURCE, type Inventory, type StepServer } from "./collect/collec
 import type { ServerMeta } from "./collect/index.js";
 import { analyse, analysisMarkdown } from "./collect/analysis.js";
 import { metadataMarkdown, phaseMarkdown, serverMarkdown, serverSignatureLines } from "./collect/render.js";
+import { pgActivityMarkdown, readPgActivity } from "./collect/pgactivity.js";
 import { atAGlance, causesMarkdown, healthMarkdown, rankCauses, stepsDigest, verdictText } from "./collect/digest.js";
 
 export function kql(startIso: string, endIso: string, apps?: string[], vm = false): string {
@@ -223,6 +224,7 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
   const server = r.server ?? [];
   const inv = r.serverMeta?.start ?? r.serverMeta?.end ?? null;
   const analysis = analyse(steps, server, inv);
+  const pg = readPgActivity(r.dir, steps);
   const localSigned = Object.values(algs).some((m) => Object.keys(m).some((a) => a !== "EdDSA"));
   const summary = {
     algs,
@@ -231,13 +233,14 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
     browser: r.browserUsage ?? null,
     analysis,
     serverCollected: server.length > 0,
+    pgActivity: pg,
     serverMissing: server.flatMap((x) => x.missing.map((m) => `step ${x.step}: ${m}`)),
     ceilings: ceil, signatures: sigTotals, codes: codeTotals, config: r.config, steps, watch: r.watch ?? null,
   };
   const json = join(r.dir, "summary.json");
   writeFileSync(json, JSON.stringify(summary, null, 2));
 
-  const causes = rankCauses(steps, server);
+  const causes = rankCauses(steps, server, pg);
   const md = [
     `# Staging incident sim: ${r.scenario} (${r.runId})`,
     ``,
@@ -245,6 +248,7 @@ export function writeReport(r: ReportInput): { json: string; md: string } {
     ...stepsDigest(steps, server, causes, clientLost),
     ...causesMarkdown(causes),
     ...healthMarkdown(server, inv, causes),
+    ...pgActivityMarkdown(pg),
     `## Client side`,
     ``,
     `- client CPU avg/max per step: ${steps.map((s) => `step ${s.step} ${s.client.cpuAvg ?? "-"}/${s.client.cpuMax ?? "-"}%`).join(", ") || "-"}`,

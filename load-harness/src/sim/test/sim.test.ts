@@ -615,3 +615,63 @@ test("console setup realm and email naming match the http setup", async () => {
   const { REALM_SLUG } = { REALM_SLUG: /^[a-z0-9][a-z0-9-]{0,60}$/ };
   assert.ok(REALM_SLUG.test("lt-ws-r9-2"), "realm name is a valid console slug");
 });
+
+test("pg activity: pool plateau rule", async () => {
+  const { poolPlateau } = await import("../collect/pgactivity.js");
+  const s = (xs: Array<[number, number]>) => xs.map(([total, active]) => ({ total, active }));
+  assert.equal(poolPlateau(s([[4, 2], [10, 9], [10, 8], [10, 10], [6, 1]])), true);
+  assert.equal(poolPlateau(s([[10, 9], [10, 9], [9, 9], [10, 9]])), false, "not 3 in a row");
+  assert.equal(poolPlateau(s([[10, 2], [10, 3], [10, 4]])), false, "mostly idle is a warm pool, not a cap");
+  assert.equal(poolPlateau(s([[3, 3], [3, 3], [3, 3]])), false, "too small to call a cap");
+  assert.equal(poolPlateau([]), false);
+});
+
+test("pg activity: client IP mapping", async () => {
+  const { clientLabel } = await import("../collect/pgactivity.js");
+  const map = {
+    "20.1.1.1": [{ name: "sork1", role: "ORK (VM)" }],
+    "20.9.9.9": [{ name: "sork6", role: "ORK + payer" }, { name: "sork7", role: "ORK + payer" }, { name: "tidecloak-staging", role: "tidecloak" }],
+  };
+  assert.equal(clientLabel("20.1.1.1", "simdb0", map), "sork1");
+  assert.equal(clientLabel("20.1.1.1/32", "simdb0", map), "sork1");
+  assert.equal(clientLabel("20.9.9.9", "zivadb", map), "payers (sork6,sork7)");
+  assert.equal(clientLabel("20.9.9.9", "dauthme", map), "tidecloak-staging");
+  assert.equal(clientLabel("20.9.9.9", "simdb0", map), "master ORKs (sork6,sork7,tidecloak-staging)");
+  assert.equal(clientLabel("1.2.3.4", "zivadb", map), "1.2.3.4");
+  assert.equal(clientLabel(null, "dauthme", map), "local");
+});
+
+test("pg activity: per-step table, causes, and old runs without the file", async () => {
+  const { readPgActivity, pgActivityMarkdown } = await import("../collect/pgactivity.js");
+  const { rankCauses } = await import("../collect/digest.js");
+  const steps = [{ step: 1, startedAt: "2026-01-01T00:00:00Z", endedAt: "2026-01-01T00:01:00Z" }];
+  const old = mkdtempSync(join(tmpdir(), "pg-"));
+  const none = readPgActivity(old, steps);
+  assert.match(none.missing!, /STAGING_PG_URL/);
+  assert.match(pgActivityMarkdown(none).join("\n"), /missing data/);
+
+  const dir = mkdtempSync(join(tmpdir(), "pg-"));
+  const ipMap = { "20.1.1.1": [{ name: "sork1", role: "ORK (VM)" }] };
+  const sample = (t: string, active: number, idle: number, serverTotal: number) => ({ kind: "sample", t, serverTotal, rows: [
+    { db: "simdb0", addr: "20.1.1.1", appName: "", state: "active", wait: "Client", n: active },
+    { db: "simdb0", addr: "20.1.1.1", appName: "", state: "idle", wait: null, n: idle },
+  ] });
+  const lines = [
+    { kind: "start", t: "2026-01-01T00:00:00Z", maxConnections: 100, ipMap, missing: [] },
+    sample("2026-01-01T00:00:05Z", 20, 30, 60),
+    sample("2026-01-01T00:00:20Z", 45, 5, 92),
+    sample("2026-01-01T00:00:35Z", 48, 2, 91),
+    sample("2026-01-01T00:00:50Z", 50, 0, 90),
+    sample("2026-01-01T00:02:00Z", 99, 0, 99), // after the step
+  ];
+  writeFileSync(join(dir, "pg-activity.jsonl"), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  const pg = readPgActivity(dir, steps);
+  const st = pg.steps[0];
+  assert.equal(st.samples, 4);
+  assert.equal(st.serverPeak, 92);
+  assert.equal(st.nearMax, true);
+  assert.deepEqual(st.clients[0], { client: "sork1", db: "simdb0", peakTotal: 50, peakActive: 50, avgActive: 40.8, peakIdleTx: 0, plateau: true });
+  const ids = rankCauses([], [], pg).map((c) => c.id);
+  assert.ok(ids.includes("pg_pool_saturated") && ids.includes("pg_server_near_max"));
+  assert.match(pgActivityMarkdown(pg).join("\n"), /\| sork1 \| simdb0 \| 50 \| 50 \| 40.8 \| 0 \| \*\*likely\*\*/);
+});

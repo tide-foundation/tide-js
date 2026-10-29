@@ -428,6 +428,15 @@ node dist/sim/cli.js report --run <runId> --recollect     # works for prepare-re
 
 Raw data is kept in `server-metrics.jsonl` (one row per step), `server-meta.json` (inventories)
 and `stub-snapshots.jsonl`. A failed query becomes a "missing data" note; it never fails the run.
+**Postgres connections per client** (optional): with `STAGING_PG_URL` set to a `postgres://` URL
+of a read-only login with `pg_read_all_stats` on `dauthme-staging` (and `psql` on PATH), the run
+samples `pg_stat_activity` for simdb0, zivadb and dauthme every 15s into `pg-activity.jsonl`.
+Client IPs are mapped to apps from the VM public IPs and Container Apps outbound IPs. `summary.md`
+then has a "Postgres connections by client" table per step and two contributor causes:
+`pg_pool_saturated` (a client flat at its peak for 3+ samples with most connections active, which
+is what a full Npgsql pool looks like) and `pg_server_near_max` (90% of `max_connections`).
+Without the variable, or for older runs, the section shows a missing-data note.
+
 Anything in query output that looks like a secret (`Password=`, `sk_`/`rk_`/`whsec_` keys, tokens)
 is redacted.
 

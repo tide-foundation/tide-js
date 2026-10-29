@@ -26,6 +26,7 @@ import { resolveBrowserOpts, AZURE_PRICE_PER_MIN, type BrowserOpts, type Browser
 import { RunCollector, collectAll, readMeta, readSnaps, type ServerMeta } from "./collect/index.js";
 import { STAGING_COLLECT, addVms, inventory, type CollectConfig, type StepWindow, type StepServer } from "./collect/collectors.js";
 import { azLoggedIn } from "./collect/az.js";
+import { PgSampler } from "./collect/pgactivity.js";
 import { dirname as pathDirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -400,6 +401,9 @@ async function cmdRun(o: Opts): Promise<number> {
   const ccfg = await collectConfig(o, c.target.name, log);
   const collector = ccfg ? new RunCollector(ccfg, dir, HARNESS_DIR, log) : null;
   if (collector) await collector.start();
+  const pgSampler = ccfg ? new PgSampler(ccfg, dir, collector?.meta.start ?? null, log) : null;
+  // Not awaited: the IP lookups must not delay the first step.
+  void pgSampler?.start().catch((e) => log(`collect: pg activity failed to start (${(e as Error).message})`));
 
   engine = new Engine({
     runId: c.runId, scenario, steps, stepMs, cooldownMs, drainMs, arrival: str(o, "arrival", "poisson") === "uniform" ? "uniform" : "poisson",
@@ -435,6 +439,7 @@ async function cmdRun(o: Opts): Promise<number> {
     if (admin) await admin.getToken();
     result = await engine.run();
   } finally {
+    pgSampler?.stop();
     watch.stop();
     monitor.stop();
     await host?.stop();

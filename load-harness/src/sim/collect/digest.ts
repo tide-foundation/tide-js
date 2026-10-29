@@ -7,6 +7,7 @@ import { isBurstable, type AppMetrics, type Inventory, type StepServer } from ".
 import { fmtRate } from "../util.js";
 import { DEFAULT_THRESHOLDS } from "../engine.js";
 import { isSoftSignature } from "../signatures.js";
+import type { PgActivity } from "./pgactivity.js";
 
 export interface CauseInfo {
   title: string;
@@ -122,6 +123,18 @@ export const CAUSES: Record<string, CauseInfo> = {
     action: "Move that ORK to a non-burstable size (or a larger B size), or let credits refill before the next run.",
     weight: 4,
   },
+  pg_pool_saturated: {
+    title: "An app's Postgres pool looks full",
+    explain: "One client held the same number of connections for several samples in a row, most of them busy. That is what a full Npgsql pool looks like: further requests queue in the app for up to the connection Timeout (30s) without logging any error.",
+    action: "Raise Maximum Pool Size on that app's connection string (keeping the total under max_connections), or put PgBouncer in front of Postgres.",
+    weight: 4,
+  },
+  pg_server_near_max: {
+    title: "Postgres close to max_connections",
+    explain: "Sessions on the server reached 90% or more of max_connections, so new connections are about to be refused.",
+    action: "Raise max_connections (a bigger SKU), shrink app pool sizes, or add PgBouncer.",
+    weight: 4,
+  },
   uid_duplicate: {
     title: "Master ORK concurrent UID insert",
     explain: "Concurrent SubmitUser calls insert the same UID on the master; the code catches the duplicate (master-libs PR #30). Usually harmless.",
@@ -176,7 +189,7 @@ export function persistentFailure(steps: StepSummary[]): Persistent | null {
   return s ? { step: s, breakStep: b } : null;
 }
 
-export function rankCauses(steps: StepSummary[], server: StepServer[]): Cause[] {
+export function rankCauses(steps: StepSummary[], server: StepServer[], pg: PgActivity | null = null): Cause[] {
   const acc = new Map<string, { count: number; apps: Set<string>; steps: Set<number>; first: string | null }>();
   const hit = (id: string, n: number, app: string, step: number, at: string | null) => {
     const a = acc.get(id) ?? { count: 0, apps: new Set(), steps: new Set(), first: null };
@@ -202,6 +215,10 @@ export function rankCauses(steps: StepSummary[], server: StepServer[]): Cause[] 
   for (const sv of server) {
     for (const [app, m] of Object.entries(sv.apps)) { const why = burstableFlag(m); if (why) hit("burstable_credits_low", 1, `${app} (${why})`, sv.step, null); }
   }
+  for (const st of pg?.steps ?? []) {
+    for (const c of st.clients) if (c.plateau) hit("pg_pool_saturated", 1, `${c.client} on ${c.db} flat at ${c.peakTotal}`, st.step, null);
+    if (st.nearMax) hit("pg_server_near_max", 1, `Postgres ${st.serverPeak} of ${pg!.maxConnections}`, st.step, null);
+  }
   const pers = persistentFailure(steps);
   // At a low error rate a soft signature or busy CPU explains little, so it stays a contributor.
   const lowErr = lowErrorRate(steps);
@@ -212,10 +229,13 @@ export function rankCauses(steps: StepSummary[], server: StepServer[]): Cause[] 
     const score = info.expected ? 100 + info.weight : noise ? info.weight - 10 : info.weight + (inFailing ? 5 : 0) + (pers && a.steps.has(pers.step.step) ? 10 : 0);
     return { id, ...info, status: info.expected ? "expected limit" : noise ? "noise" : "possible contributor", count: a.count, apps: [...a.apps].sort(), steps: [...a.steps].sort((x, y) => x - y), firstSeen: a.first, score } as Cause;
   }).sort((x, y) => y.score - x.score || y.count - x.count);
-  const top = out.find((c) => c.status !== "noise" && c.steps.some((s) => failing.has(s)) && c.id !== "high_cpu" && c.id !== "burstable_credits_low" && !(lowErr && isSoftSignature(c.id)));
+  const top = out.find((c) => c.status !== "noise" && c.steps.some((s) => failing.has(s)) && !CONTRIBUTORS.has(c.id) && !(lowErr && isSoftSignature(c.id)));
   if (top) { top.lead = true; if (!top.expected) top.status = "likely cause"; }
   return out;
 }
+
+// Busy-resource causes that can add to a failure but never lead on their own.
+const CONTRIBUTORS = new Set(["high_cpu", "burstable_credits_low", "pg_pool_saturated", "pg_server_near_max"]);
 
 export const BURST = { creditsMin: 20, minutesOverBaseline: 3 };
 
