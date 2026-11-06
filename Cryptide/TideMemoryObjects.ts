@@ -25,7 +25,7 @@ import { TideJsErrorCodes } from "../Errors/codes";
 export function CreateVRKPackage(gvrk: Ed25519PublicComponent, expiry: number | bigint){
     const serializedgvrk = gvrk.Serialize().ToBytes();
     const ex = typeof expiry == "bigint" ? expiry : BigInt(expiry);
-    if(ex < BigInt(Utils.CurrentTime() + 5)) throw new TideError({ code: TideJsErrorCodes.MODEL_VALUE_OUT_OF_RANGE, displayMessage: "Expiry must be at least 5 seconds into future", source: "tide-js/Cryptide/TideMemoryObjects.ts:26" });
+    if(ex < BigInt(Utils.CurrentTime() + 5)) throw new TideError({ code: TideJsErrorCodes.MODEL_VALUE_OUT_OF_RANGE, displayMessage: "Expiry must be at least 5 seconds into future", source: "tide-js/Cryptide/TideMemoryObjects.ts:CreateVRKPackage" });
     const time_b = writeInt64LittleEndian(ex);
     const vrk_pack = CreateTideMemory(serializedgvrk,
         4 + 4 + serializedgvrk.length + time_b.length

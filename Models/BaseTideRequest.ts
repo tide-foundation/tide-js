@@ -171,7 +171,7 @@ export default class BaseTideRequest {
     addApproval(doken: Doken, sig: Uint8Array) {
         // Ensure creation authorization has been added
         let res = {};
-        if (!Serialization.TryGetValue(this.authorization, 0, res)) throw new TideError({ code: TideJsErrorCodes.MODEL_REQUEST_NOT_INITIALIZED, displayMessage: "BaseTideRequest.addApproval: creation authorization hasn't been added yet", source: "tide-js/Models/BaseTideRequest.ts:174" });
+        if (!Serialization.TryGetValue(this.authorization, 0, res)) throw new TideError({ code: TideJsErrorCodes.MODEL_REQUEST_NOT_INITIALIZED, displayMessage: "BaseTideRequest.addApproval: creation authorization hasn't been added yet", source: "tide-js/Models/BaseTideRequest.ts:addApproval" });
 
         // Deconstruct existing authorization
         let existingSessKeySigs = [];
@@ -243,9 +243,9 @@ export default class BaseTideRequest {
     }
 
     encode() {
-        if (this.authorizer == null) throw new TideError({ code: TideJsErrorCodes.MODEL_REQUEST_NOT_INITIALIZED, displayMessage: "BaseTideRequest.encode: Authorizer not added to request", source: "tide-js/Models/BaseTideRequest.ts:246" });
-        if (this.authorizerCert == null) throw new TideError({ code: TideJsErrorCodes.MODEL_REQUEST_NOT_INITIALIZED, displayMessage: "BaseTideRequest.encode: Authorizer cert not provided", source: "tide-js/Models/BaseTideRequest.ts:247" });
-        if (this.authorization == null) throw new TideError({ code: TideJsErrorCodes.MODEL_REQUEST_NOT_INITIALIZED, displayMessage: "BaseTideRequest.encode: Authorize this request first with an authorizer", source: "tide-js/Models/BaseTideRequest.ts:248" });
+        if (this.authorizer == null) throw new TideError({ code: TideJsErrorCodes.MODEL_REQUEST_NOT_INITIALIZED, displayMessage: "BaseTideRequest.encode: Authorizer not added to request", source: "tide-js/Models/BaseTideRequest.ts:encode" });
+        if (this.authorizerCert == null) throw new TideError({ code: TideJsErrorCodes.MODEL_REQUEST_NOT_INITIALIZED, displayMessage: "BaseTideRequest.encode: Authorizer cert not provided", source: "tide-js/Models/BaseTideRequest.ts:encode" });
+        if (this.authorization == null) throw new TideError({ code: TideJsErrorCodes.MODEL_REQUEST_NOT_INITIALIZED, displayMessage: "BaseTideRequest.encode: Authorize this request first with an authorizer", source: "tide-js/Models/BaseTideRequest.ts:encode" });
 
         const te = new TextEncoder();
         const name_b = te.encode(this.name);
@@ -284,7 +284,7 @@ export default class BaseTideRequest {
 
         // Check name and version in static members if set
         if ((this as any)._name != undefined && (this as any)._version != undefined) {
-            if (name != (this as any)._name || version != (this as any)._version) throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: "BaseTideRequest.decode: name/version in decoded data don't match this object's set name and version", source: "tide-js/Models/BaseTideRequest.ts:287" });
+            if (name != (this as any)._name || version != (this as any)._version) throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: "BaseTideRequest.decode: name/version in decoded data don't match this object's set name and version", source: "tide-js/Models/BaseTideRequest.ts:decode" });
         }
 
         const expiry = BaseTideRequest.uint8ArrayToUint32LE(d.GetValue(2));
@@ -329,7 +329,7 @@ export default class BaseTideRequest {
 
     private static uint8ArrayToUint32LE(bytes: Uint8Array): number {
         if (bytes.length !== 8) {
-            throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_LENGTH, displayMessage: `BaseTideRequest.uint8ArrayToUint32LE: expected 8 bytes for a 64-bit value (got ${bytes.length})`, source: "tide-js/Models/BaseTideRequest.ts:332" });
+            throw new TideError({ code: TideJsErrorCodes.SERIAL_INVALID_LENGTH, displayMessage: `BaseTideRequest.uint8ArrayToUint32LE: expected 8 bytes for a 64-bit value (got ${bytes.length})`, source: "tide-js/Models/BaseTideRequest.ts:uint8ArrayToUint32LE" });
         }
 
         // Optional safety check: ensure high 32 bits are zero (no real 64-bit longs passed).
