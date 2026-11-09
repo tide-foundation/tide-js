@@ -26,7 +26,7 @@ export function PreSign(GRij: Point[][]){
         throw new TideError({
             code: TideJsErrorCodes.CRYPTO_ORK_ARRAY_LENGTH_MISMATCH,
             displayMessage: `ORK array length mismatch (GRs): lengths=[${arrayOfLengths.join(', ')}] (expected uniform)`,
-            source: "Math/KeySigning.ts:22",
+            source: "Math/KeySigning.ts:PreSign",
         });
     }
     return GRij[0].map((_, i) => GRij.reduce((sum, next) => sum.add(next[i]), Point.ZERO));
@@ -38,7 +38,7 @@ export function Sign(Sis: bigint[][]){
         throw new TideError({
             code: TideJsErrorCodes.CRYPTO_ORK_ARRAY_LENGTH_MISMATCH,
             displayMessage: `ORK array length mismatch (Si): lengths=[${arrayOfLengths.join(', ')}] (expected uniform)`,
-            source: "Math/KeySigning.ts:27",
+            source: "Math/KeySigning.ts:Sign",
         });
     }
     return Sis[0].map((_, i) => mod(Sis.reduce((sum, next) => sum + next[i], BigInt(0))));

@@ -36,7 +36,7 @@ export function AuthorizedSigningFlow(config: { vendorId: string, token: Doken, 
             throw new TideError({
                 code: TideJsErrorCodes.CRYPTO_SESSION_KEY_MISMATCH,
                 displayMessage: `Doken session key (${dokenFp}) does not match supplied session key (${suppliedFp})`,
-                source: "Flow/SigningFlows/AuthorizedSigningFlow.ts:31",
+                source: "Flow/SigningFlows/AuthorizedSigningFlow.ts:AuthorizedSigningFlow",
             });
         }
     }

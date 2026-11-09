@@ -79,7 +79,7 @@ function add_nums(num1,num2,modulus=curveP){return mod(num1+num2,modulus);}; //a
 function multiply_nums(num1,num2,modulus=curveP){return mod(BigInt(num1*num2),modulus);}; //multiplies numbers then reduces them below curveP
 function to_the_power_of(number,power,modulus=curveP){
     if (power < _0n)
-        throw new TideError({ code: TideJsErrorCodes.CRYPTO_HASH_TO_POINT_INVALID_INPUT, displayMessage: "to_the_power_of: expected power > 0", source: "tide-js/Cryptide/Hashing/H2P.ts:82" });
+        throw new TideError({ code: TideJsErrorCodes.CRYPTO_HASH_TO_POINT_INVALID_INPUT, displayMessage: "to_the_power_of: expected power > 0", source: "tide-js/Cryptide/Hashing/H2P.ts:to_the_power_of" });
     if (power === _0n)
         return _1n;
     if (power === _1n)
@@ -163,7 +163,7 @@ function map_to_curve_elligator2_edwards25519_(u) {
 
 function i2osp(value, length) {
     if (value < 0 || value >= 1 << (8 * length)) {
-        throw new TideError({ code: TideJsErrorCodes.CRYPTO_HASH_TO_POINT_INVALID_INPUT, displayMessage: `i2osp: value out of range for ${length}-byte encoding`, source: "tide-js/Cryptide/Hashing/H2P.ts:166" });
+        throw new TideError({ code: TideJsErrorCodes.CRYPTO_HASH_TO_POINT_INVALID_INPUT, displayMessage: `i2osp: value out of range for ${length}-byte encoding`, source: "tide-js/Cryptide/Hashing/H2P.ts:i2osp" });
     }
     const res: any = Array.from({ length }).fill(0);
     for (let i = length - 1; i >= 0; i--) {
@@ -185,7 +185,7 @@ async function expand_message_xmd(msg: Uint8Array, DST: Uint8Array, len_in_bytes
     const b_in_bytes = 64;
     const r_in_bytes = 128;
     const ell = Math.ceil(len_in_bytes/b_in_bytes);
-    if (ell > 255) throw new TideError({ code: TideJsErrorCodes.CRYPTO_HASH_TO_POINT_INVALID_INPUT, displayMessage: `expand_message_xmd: invalid length (ell=${ell} > 255)`, source: "tide-js/Cryptide/Hashing/H2P.ts:188" });
+    if (ell > 255) throw new TideError({ code: TideJsErrorCodes.CRYPTO_HASH_TO_POINT_INVALID_INPUT, displayMessage: `expand_message_xmd: invalid length (ell=${ell} > 255)`, source: "tide-js/Cryptide/Hashing/H2P.ts:expand_message_xmd" });
     const DST_prime = ConcatUint8Arrays([DST, i2osp(DST.length, 1)]);
     const Z_pad = i2osp(0,r_in_bytes);
     const len_in_bytes_str = i2osp(len_in_bytes,2);

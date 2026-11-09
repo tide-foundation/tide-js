@@ -49,7 +49,7 @@ export default class dVVKSigningFlow {
                 throw new TideError({
                     code: TideJsErrorCodes.CRYPTO_SESSION_KEY_MISMATCH,
                     displayMessage: `Doken session key (${dokenFp}) does not match supplied session key (${suppliedFp})`,
-                    source: "Flow/SigningFlows/dVVKSigningFlow.ts:44",
+                    source: "Flow/SigningFlows/dVVKSigningFlow.ts:constructor",
                 });
             }
             this.doken = doken.serialize();
@@ -86,7 +86,7 @@ export default class dVVKSigningFlow {
         if (GRj.length != Sj.length) throw new TideError({
             code: TideJsErrorCodes.CRYPTO_GRJ_SJ_LENGTH_MISMATCH,
             displayMessage: `GRj/Sj length mismatch: GRjs=${GRj.length}, Sjs=${Sj.length}, vvkid=${String(this.vvkid).slice(0, 12)}`,
-            source: "Flow/SigningFlows/dVVKSigningFlow.ts:76",
+            source: "Flow/SigningFlows/dVVKSigningFlow.ts:start",
         });
         let sigs = [];
         for (let i = 0; i < GRj.length; i++) {

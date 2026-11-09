@@ -32,6 +32,7 @@ class DokenPayload{
     homeOrk: any;
     exp: any;
     aud: any;
+    sid: any;
     realm_access: any;
     resource_access: any;
 
@@ -39,33 +40,36 @@ class DokenPayload{
         var s = BaseComponent.DeserializeComponent(json["t.ssk"]);
         if(s instanceof Ed25519PublicComponent){
             this.sessionKey = s;
-        }else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: "Unexpected session key type", source: "tide-js/Models/Doken.ts:40" });
+        }else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: "Unexpected session key type", source: "tide-js/Models/Doken.ts:DokenPayload.constructor" });
 
         var u = BaseComponent.DeserializeComponent(json["tideuserkey"]);
         if(u instanceof Ed25519PublicComponent){
             this.tideuserkey = u;
-        }else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: "Unexpected tide user key type", source: "tide-js/Models/Doken.ts:45" });
+        }else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: "Unexpected tide user key type", source: "tide-js/Models/Doken.ts:DokenPayload.constructor" });
 
         if( typeof json.vuid === "string") this.vuid = json.vuid;
-        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `Expected vuid to be string (got ${typeof json.vuid})`, source: "tide-js/Models/Doken.ts:48" });
+        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `Expected vuid to be string (got ${typeof json.vuid})`, source: "tide-js/Models/Doken.ts:DokenPayload.constructor" });
 
         if( typeof json["t.uho"] === "string") this.homeOrk = json["t.uho"];
-        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `Expected user home to be string (got ${typeof json["t.uho"]})`, source: "tide-js/Models/Doken.ts:51" });
+        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `Expected user home to be string (got ${typeof json["t.uho"]})`, source: "tide-js/Models/Doken.ts:DokenPayload.constructor" });
 
         // Will be affected by 2032 problem
         if( typeof json.exp === "number") this.exp = json.exp;
-        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `Expected exp to be a number (got ${typeof json.exp})`, source: "tide-js/Models/Doken.ts:55" });
+        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `Expected exp to be a number (got ${typeof json.exp})`, source: "tide-js/Models/Doken.ts:DokenPayload.constructor" });
 
         if( typeof json.aud === "string") this.aud = json.aud;
-        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `Expected aud to be string (got ${typeof json.aud})`, source: "tide-js/Models/Doken.ts:58" });
+        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `Expected aud to be string (got ${typeof json.aud})`, source: "tide-js/Models/Doken.ts:DokenPayload.constructor" });
+
+        if( typeof json.sid === "string") this.sid = json.sid;
+        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `Expected sid to be string (got ${typeof json.sid})`, source: "tide-js/Models/Doken.ts:DokenPayload.constructor" });
 
         if( typeof json.realm_access === "object") this.realm_access = json.realm_access;
         else if(!json.realm_access) this.realm_access = null;
-        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `Expected realm_access to be string (got ${typeof json.realm_access})`, source: "tide-js/Models/Doken.ts:62" });
+        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `Expected realm_access to be string (got ${typeof json.realm_access})`, source: "tide-js/Models/Doken.ts:DokenPayload.constructor" });
 
         if( typeof json.resource_access === "object") this.resource_access = json.resource_access;
         else if(!json.resource_access) this.resource_access = null;
-        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `Expected resource_access to be string (got ${typeof json.resource_access})`, source: "tide-js/Models/Doken.ts:66" });
+        else throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_FIELD, displayMessage: `Expected resource_access to be string (got ${typeof json.resource_access})`, source: "tide-js/Models/Doken.ts:DokenPayload.constructor" });
     }
 
     serialize(){
@@ -76,6 +80,7 @@ class DokenPayload{
             "t.uho": this.homeOrk,
             "exp": this.exp,
             "aud": this.aud,
+            "sid": this.sid,
             "realm_access": this.realm_access,
             "resource_access": this.resource_access
         })
@@ -91,7 +96,7 @@ export class Doken {
 
     constructor(data: string) {
         const parts = data.split(".");
-        if(parts.length != 3) throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_SHAPE, displayMessage: `Doken must be a 3 part token (including signature) (got ${parts.length} parts)`, source: "tide-js/Models/Doken.ts:92" });
+        if(parts.length != 3) throw new TideError({ code: TideJsErrorCodes.MODEL_INVALID_SHAPE, displayMessage: `Doken must be a 3 part token (including signature) (got ${parts.length} parts)`, source: "tide-js/Models/Doken.ts:Doken.constructor" });
         this.parts = parts;
         this.dataRef = data.slice(0);
 
@@ -132,8 +137,8 @@ export class Doken {
         // When an error is thrown - its a criticial error so the whole page should stop
         // But if validation just fails, then we return false with a reason why
 
-        if(this.header.alg != "EdDSA") throw new TideError({ code: TideJsErrorCodes.MODEL_UNEXPECTED_HEADER, displayMessage: "Doken header alg expected to be EdDSA but got " + this.header.alg, source: "tide-js/Models/Doken.ts:133" });
-        if(this.header.typ != "doken") throw new TideError({ code: TideJsErrorCodes.MODEL_UNEXPECTED_HEADER, displayMessage: "Doken header typ expected to be doken but got " + this.header.typ, source: "tide-js/Models/Doken.ts:134" });
+        if(this.header.alg != "EdDSA") throw new TideError({ code: TideJsErrorCodes.MODEL_UNEXPECTED_HEADER, displayMessage: "Doken header alg expected to be EdDSA but got " + this.header.alg, source: "tide-js/Models/Doken.ts:Doken.validate" });
+        if(this.header.typ != "doken") throw new TideError({ code: TideJsErrorCodes.MODEL_UNEXPECTED_HEADER, displayMessage: "Doken header typ expected to be doken but got " + this.header.typ, source: "tide-js/Models/Doken.ts:Doken.validate" });
 
         // Check expiry
         if(Utils.CurrentTime() > this.payload.exp) return {success: false, reason: "expired"}
