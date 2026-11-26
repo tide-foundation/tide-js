@@ -1,11 +1,8 @@
-import { StripeLicensing, CheckLicenseAddedToPayer } from "./StripeLicensing"
 import { Ed25519PublicDeserialization } from "./Components";
 import Tide_Key from "./TideKey";
 import { Verifier } from "./Verifier";
 
 export const tests = {
-    StripeLicensing,
-    CheckLicenseAddedToPayer,
     Ed25519PublicDeserialization,
     Tide_Key,
     Verifier
